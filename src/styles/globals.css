@@ -1,0 +1,31 @@
+/* src/styles/globals.css */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --foreground-rgb: 255, 255, 255;
+  --background-start-rgb: 15, 23, 42;
+  --background-end-rgb: 2, 6, 23;
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  color: rgb(var(--foreground-rgb));
+  background: linear-gradient(
+      to bottom,
+      transparent,
+      rgb(var(--background-end-rgb))
+    )
+    rgb(var(--background-start-rgb));
+  height: 100vh;
+  width: 100vw;
+  overflow: hidden; /* Prevents scrolling when using Space/WASD */
+}
+
+/* Optional: Smooth canvas rendering */
+canvas {
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
+}
