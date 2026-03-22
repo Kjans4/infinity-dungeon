@@ -1,7 +1,7 @@
 // src/components/GameCanvas.tsx
 "use client";
 
-import React, { useRef, useEffect, useState } from "react";
+import React, { useRef, useEffect, useState, useCallback } from "react";
 import { Player } from "@/engine/Player";
 import { InputHandler } from "@/engine/Input";
 import { Enemy, spawnWave } from "@/engine/Enemy";
@@ -10,19 +10,13 @@ import HUD from "@/components/HUD";
 
 // ============================================================
 // [🧱 BLOCK: Constants]
-// Tune game balance here in one place.
 // ============================================================
 const CANVAS_W       = 800;
 const CANVAS_H       = 600;
-const KILL_THRESHOLD = 8;   // Kills needed to open the gate
+const KILL_THRESHOLD = 8;
 const MAX_HP         = 100;
 const MAX_STAMINA    = 100;
 
-// ============================================================
-// [🧱 BLOCK: HUD Sync State Shape]
-// React state is ONLY used for the HUD overlay.
-// All physics / AI run in refs at 60fps — no re-renders.
-// ============================================================
 interface HUDState {
   hp: number;
   stamina: number;
@@ -40,7 +34,8 @@ export default function GameCanvas() {
   const enemiesRef = useRef<Enemy[]>([]);
   const killsRef   = useRef<number>(0);
 
-  // ── HUD State (synced at 10fps via interval) ───────────────
+  // ── React State ────────────────────────────────────────────
+  const [isGameOver, setIsGameOver] = useState(false);
   const [hud, setHud] = useState<HUDState>({
     hp: MAX_HP,
     stamina: MAX_STAMINA,
@@ -50,17 +45,14 @@ export default function GameCanvas() {
   });
 
   // ============================================================
-  // [🧱 BLOCK: Init — runs once on mount]
+  // [🧱 BLOCK: Init]
   // ============================================================
   useEffect(() => {
     if (typeof window !== "undefined") {
       inputRef.current = new InputHandler();
     }
-
-    // Spawn first wave
     enemiesRef.current = spawnWave(KILL_THRESHOLD, CANVAS_W, CANVAS_H);
 
-    // Sync HUD values at 10fps so React doesn't fight the 60fps loop
     const hudSync = setInterval(() => {
       setHud((prev) => ({
         ...prev,
@@ -74,7 +66,21 @@ export default function GameCanvas() {
   }, []);
 
   // ============================================================
+  // [🧱 BLOCK: Restart]
+  // ============================================================
+  const handleRestart = useCallback(() => {
+    playerRef.current  = new Player(CANVAS_W / 2, CANVAS_H / 2);
+    enemiesRef.current = spawnWave(KILL_THRESHOLD, CANVAS_W, CANVAS_H);
+    killsRef.current   = 0;
+    setHud({ hp: MAX_HP, stamina: MAX_STAMINA, kills: 0, room: 1, floor: 1 });
+    setIsGameOver(false);
+  }, []);
+
+  // ============================================================
   // [🧱 BLOCK: Game Loop — ~60fps]
+  // We never read isGameOver inside here — we check hp directly
+  // so the loop callback never goes stale.
+  // setIsGameOver is a stable React setter, safe to call here.
   // ============================================================
   useGameLoop((_deltaTime: number) => {
     const canvas = canvasRef.current;
@@ -82,8 +88,11 @@ export default function GameCanvas() {
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
 
-    // Stop all updates on death (HUD death overlay takes over)
-    if (playerRef.current.hp <= 0) return;
+    // ── Death check ──────────────────────────────────────────
+    if (playerRef.current.hp <= 0) {
+      setIsGameOver(true); // was missing in the previous version
+      return;
+    }
 
     // --- 1. Clear ---
     ctx.clearRect(0, 0, CANVAS_W, CANVAS_H);
@@ -91,7 +100,6 @@ export default function GameCanvas() {
     // --- 2. Update Player ---
     playerRef.current.update(inputRef.current);
 
-    // Clamp player inside arena walls
     playerRef.current.x = Math.max(
       0,
       Math.min(CANVAS_W - playerRef.current.width, playerRef.current.x)
@@ -105,13 +113,11 @@ export default function GameCanvas() {
     enemiesRef.current.forEach((enemy) => {
       enemy.update(playerRef.current, CANVAS_W, CANVAS_H);
 
-      // Enemy body touches player → deal contact damage
       if (enemy.isCollidingWithPlayer(playerRef.current)) {
         playerRef.current.hp = Math.max(
           0,
           playerRef.current.hp - enemy.damage
         );
-        // Nudge enemy back so it doesn't stick
         enemy.x -= enemy.vx * 3;
         enemy.y -= enemy.vy * 3;
         enemy.damageCooldown = 800;
@@ -120,7 +126,6 @@ export default function GameCanvas() {
 
     // ============================================================
     // [🧱 BLOCK: Attack Collision — Circle vs AABB]
-    // Mirrors the attack circle drawn in Player.ts draw()
     // ============================================================
     if (playerRef.current.isAttacking) {
       const p      = playerRef.current;
@@ -144,25 +149,75 @@ export default function GameCanvas() {
 
     // ============================================================
     // [🧱 BLOCK: Kill Tracking]
-    // Count how many died this frame, add to the kill ref.
     // ============================================================
     const before = enemiesRef.current.length;
     enemiesRef.current = enemiesRef.current.filter((e) => !e.isDead);
     killsRef.current += before - enemiesRef.current.length;
 
-    // --- 4. Draw — enemies first, player renders on top ---
+    // --- 4. Draw ---
     enemiesRef.current.forEach((e) => e.draw(ctx));
     playerRef.current.draw(ctx);
   });
 
   // ============================================================
   // [🧱 BLOCK: JSX]
-  // Canvas + HUD overlay stacked in a relative container.
   // ============================================================
   return (
-    <div className="flex flex-col items-center justify-center w-full h-screen bg-slate-900 gap-0">
+    <div className="flex flex-col items-center justify-center w-full h-screen bg-slate-900">
 
-      {/* Game Canvas */}
+      {/* ── Game Over Overlay ── */}
+      {isGameOver && (
+        <div
+          className="absolute inset-0 z-50 flex flex-col items-center justify-center bg-black/80"
+          style={{ pointerEvents: "auto" }}
+        >
+          <p
+            style={{
+              fontFamily: "'Courier New', monospace",
+              fontSize: 52,
+              fontWeight: 900,
+              color: "#ef4444",
+              letterSpacing: "0.1em",
+              textShadow: "0 0 40px #ef4444",
+              marginBottom: 8,
+            }}
+          >
+            GAME OVER
+          </p>
+          <p
+            style={{
+              fontFamily: "'Courier New', monospace",
+              fontSize: 13,
+              color: "#475569",
+              marginBottom: 32,
+            }}
+          >
+            You were slain on Floor {hud.floor} — Room {hud.room}
+          </p>
+          <button
+            onClick={handleRestart}
+            style={{
+              fontFamily: "'Courier New', monospace",
+              fontSize: 14,
+              fontWeight: 700,
+              letterSpacing: "0.2em",
+              color: "#0f172a",
+              backgroundColor: "#ef4444",
+              border: "none",
+              padding: "12px 36px",
+              borderRadius: 4,
+              cursor: "pointer",
+              textTransform: "uppercase",
+            }}
+            onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "#f87171")}
+            onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "#ef4444")}
+          >
+            ▶ Raid Again
+          </button>
+        </div>
+      )}
+
+      {/* ── Game Canvas ── */}
       <canvas
         ref={canvasRef}
         width={CANVAS_W}
@@ -171,7 +226,7 @@ export default function GameCanvas() {
         className="bg-slate-800 border-4 border-slate-700 rounded-t-lg shadow-2xl"
       />
 
-      {/* HUD Footer — sits directly below the canvas */}
+      {/* ── HUD Footer ── */}
       <HUD
         hp={hud.hp}
         maxHp={MAX_HP}
