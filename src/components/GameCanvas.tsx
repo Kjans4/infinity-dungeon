@@ -14,7 +14,10 @@ import HUD from "@/components/HUD";
 // Canvas size is now dynamic — set on mount from window size.
 // WORLD size stays fixed in Camera.ts.
 // ============================================================
-const KILL_THRESHOLD = 8;
+const KILL_THRESHOLD  = 20; // Total kills needed to clear the room
+const INITIAL_WAVE    = 8;  // First batch on spawn
+const WAVE_SIZE       = 6;  // Each respawn batch size
+const MAX_ENEMIES     = 10; // Cap — never more than this alive at once
 const MAX_HP         = 100;
 const MAX_STAMINA    = 100;
 
@@ -34,6 +37,8 @@ export default function GameCanvas() {
   const inputRef   = useRef<InputHandler | null>(null);
   const enemiesRef = useRef<Enemy[]>([]);
   const killsRef   = useRef<number>(0);
+  const aliveRef   = useRef<number>(0); // Tracks currently living enemies
+  const lastSpawnRef = useRef<number>(0); // Timestamp of last wave spawn
   const cameraRef  = useRef<Camera | null>(null);
 
   // ── Screen size — read once on mount ──────────────────────
@@ -73,7 +78,8 @@ export default function GameCanvas() {
     inputRef.current = new InputHandler();
 
     // First wave
-    enemiesRef.current = spawnWave(KILL_THRESHOLD, WORLD_W, WORLD_H);
+    enemiesRef.current = spawnWave(INITIAL_WAVE, WORLD_W, WORLD_H);
+    aliveRef.current   = INITIAL_WAVE;
 
     // Resize handler — keeps canvas fullscreen if window resizes
     const handleResize = () => {
@@ -111,7 +117,8 @@ export default function GameCanvas() {
   // ============================================================
   const handleRestart = useCallback(() => {
     playerRef.current  = new Player(WORLD_W / 2, WORLD_H / 2);
-    enemiesRef.current = spawnWave(KILL_THRESHOLD, WORLD_W, WORLD_H);
+    enemiesRef.current = spawnWave(INITIAL_WAVE, WORLD_W, WORLD_H);
+    aliveRef.current   = INITIAL_WAVE;
     killsRef.current   = 0;
     cameraRef.current  = new Camera(screenW.current, screenH.current);
     cameraRef.current.update(playerRef.current);
@@ -201,13 +208,32 @@ export default function GameCanvas() {
       });
     }
 
-    // ============================================================
-    // [🧱 BLOCK: Kill Tracking]
-    // ============================================================
-    const before = enemiesRef.current.length;
-    enemiesRef.current = enemiesRef.current.filter((e) => !e.isDead);
-    killsRef.current  += before - enemiesRef.current.length;
+// ============================================================
+// [🧱 BLOCK: Kill Tracking + Wave Respawn]
+// ============================================================
+const before = enemiesRef.current.length;
+enemiesRef.current = enemiesRef.current.filter((e) => !e.isDead);
+const justKilled = before - enemiesRef.current.length;
 
+if (justKilled > 0) {
+  killsRef.current += justKilled;
+  aliveRef.current -= justKilled;
+}
+
+// Hard stop — never spawn more once threshold is reached
+const killsLeft = KILL_THRESHOLD - killsRef.current;
+
+if (
+  killsLeft > 0 &&                              // Still need more kills
+  aliveRef.current === 0 &&                     // ALL current enemies are dead
+  Date.now() - lastSpawnRef.current > 1000      // 1 second cooldown between waves
+) {
+  const spawnCount = Math.min(WAVE_SIZE, killsLeft);
+  const newWave = spawnWave(spawnCount, WORLD_W, WORLD_H);
+  enemiesRef.current.push(...newWave);
+  aliveRef.current   = spawnCount;
+  lastSpawnRef.current = Date.now();
+}
     // --- 7. Draw Entities ---
     enemiesRef.current.forEach((e) => e.draw(ctx, camera));
     playerRef.current.draw(ctx, camera);
