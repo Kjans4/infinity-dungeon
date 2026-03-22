@@ -5,11 +5,14 @@ import React, { useRef, useEffect, useState, useCallback } from "react";
 import { Player } from "@/engine/Player";
 import { InputHandler } from "@/engine/Input";
 import { Enemy, spawnWave } from "@/engine/Enemy";
+import { Camera, WORLD_W, WORLD_H } from "@/engine/Camera";
 import { useGameLoop } from "@/hooks/useGameLoop";
 import HUD from "@/components/HUD";
 
 // ============================================================
 // [🧱 BLOCK: Constants]
+// CANVAS = the browser window viewport size.
+// WORLD  = the actual scrollable arena size (defined in Camera.ts).
 // ============================================================
 const CANVAS_W       = 800;
 const CANVAS_H       = 600;
@@ -29,10 +32,11 @@ export default function GameCanvas() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   // ── Engine Refs ────────────────────────────────────────────
-  const playerRef  = useRef<Player>(new Player(CANVAS_W / 2, CANVAS_H / 2));
+  const playerRef  = useRef<Player>(new Player(WORLD_W / 2, WORLD_H / 2));
   const inputRef   = useRef<InputHandler | null>(null);
   const enemiesRef = useRef<Enemy[]>([]);
   const killsRef   = useRef<number>(0);
+  const cameraRef  = useRef<Camera>(new Camera(CANVAS_W, CANVAS_H));
 
   // ── React State ────────────────────────────────────────────
   const [isGameOver, setIsGameOver] = useState(false);
@@ -51,7 +55,12 @@ export default function GameCanvas() {
     if (typeof window !== "undefined") {
       inputRef.current = new InputHandler();
     }
-    enemiesRef.current = spawnWave(KILL_THRESHOLD, CANVAS_W, CANVAS_H);
+
+    // Spawn wave across the full world
+    enemiesRef.current = spawnWave(KILL_THRESHOLD, WORLD_W, WORLD_H);
+
+    // Snap camera to player spawn position immediately
+    cameraRef.current.update(playerRef.current);
 
     const hudSync = setInterval(() => {
       setHud((prev) => ({
@@ -69,18 +78,17 @@ export default function GameCanvas() {
   // [🧱 BLOCK: Restart]
   // ============================================================
   const handleRestart = useCallback(() => {
-    playerRef.current  = new Player(CANVAS_W / 2, CANVAS_H / 2);
-    enemiesRef.current = spawnWave(KILL_THRESHOLD, CANVAS_W, CANVAS_H);
+    playerRef.current  = new Player(WORLD_W / 2, WORLD_H / 2);
+    enemiesRef.current = spawnWave(KILL_THRESHOLD, WORLD_W, WORLD_H);
     killsRef.current   = 0;
+    cameraRef.current  = new Camera(CANVAS_W, CANVAS_H);
+    cameraRef.current.update(playerRef.current);
     setHud({ hp: MAX_HP, stamina: MAX_STAMINA, kills: 0, room: 1, floor: 1 });
     setIsGameOver(false);
   }, []);
 
   // ============================================================
   // [🧱 BLOCK: Game Loop — ~60fps]
-  // We never read isGameOver inside here — we check hp directly
-  // so the loop callback never goes stale.
-  // setIsGameOver is a stable React setter, safe to call here.
   // ============================================================
   useGameLoop((_deltaTime: number) => {
     const canvas = canvasRef.current;
@@ -90,28 +98,39 @@ export default function GameCanvas() {
 
     // ── Death check ──────────────────────────────────────────
     if (playerRef.current.hp <= 0) {
-      setIsGameOver(true); // was missing in the previous version
+      setIsGameOver(true);
       return;
     }
 
     // --- 1. Clear ---
     ctx.clearRect(0, 0, CANVAS_W, CANVAS_H);
 
-    // --- 2. Update Player ---
+    // --- 2. Update Camera ---
+    cameraRef.current.update(playerRef.current);
+
+    // --- 3. Draw World Background ---
+    // Dark grid pattern to show the world is scrolling
+    drawWorldGrid(ctx, cameraRef.current);
+
+    // --- 4. Draw World Boundary Walls ---
+    drawWorldBounds(ctx, cameraRef.current);
+
+    // --- 5. Update Player ---
     playerRef.current.update(inputRef.current);
 
+    // Clamp player inside WORLD boundaries (not canvas)
     playerRef.current.x = Math.max(
       0,
-      Math.min(CANVAS_W - playerRef.current.width, playerRef.current.x)
+      Math.min(WORLD_W - playerRef.current.width, playerRef.current.x)
     );
     playerRef.current.y = Math.max(
       0,
-      Math.min(CANVAS_H - playerRef.current.height, playerRef.current.y)
+      Math.min(WORLD_H - playerRef.current.height, playerRef.current.y)
     );
 
-    // --- 3. Update Enemies + Contact Damage ---
+    // --- 6. Update Enemies + Contact Damage ---
     enemiesRef.current.forEach((enemy) => {
-      enemy.update(playerRef.current, CANVAS_W, CANVAS_H);
+      enemy.update(playerRef.current, WORLD_W, WORLD_H);
 
       if (enemy.isCollidingWithPlayer(playerRef.current)) {
         playerRef.current.hp = Math.max(
@@ -126,6 +145,8 @@ export default function GameCanvas() {
 
     // ============================================================
     // [🧱 BLOCK: Attack Collision — Circle vs AABB]
+    // Attack circle uses world coords for collision,
+    // screen coords only matter for drawing (handled in Player.ts)
     // ============================================================
     if (playerRef.current.isAttacking) {
       const p      = playerRef.current;
@@ -133,6 +154,7 @@ export default function GameCanvas() {
       const radius = p.attackType === "light" ? 15 : 25;
       const damage = p.attackType === "light" ? 10 : 25;
 
+      // Use WORLD coords for collision math
       const circleX = (p.x + p.width  / 2) + p.facing.x * range;
       const circleY = (p.y + p.height / 2) + p.facing.y * range;
 
@@ -152,11 +174,11 @@ export default function GameCanvas() {
     // ============================================================
     const before = enemiesRef.current.length;
     enemiesRef.current = enemiesRef.current.filter((e) => !e.isDead);
-    killsRef.current += before - enemiesRef.current.length;
+    killsRef.current  += before - enemiesRef.current.length;
 
-    // --- 4. Draw ---
-    enemiesRef.current.forEach((e) => e.draw(ctx));
-    playerRef.current.draw(ctx);
+    // --- 7. Draw Entities (pass camera to offset positions) ---
+    enemiesRef.current.forEach((e) => e.draw(ctx, cameraRef.current));
+    playerRef.current.draw(ctx, cameraRef.current);
   });
 
   // ============================================================
@@ -171,43 +193,28 @@ export default function GameCanvas() {
           className="absolute inset-0 z-50 flex flex-col items-center justify-center bg-black/80"
           style={{ pointerEvents: "auto" }}
         >
-          <p
-            style={{
-              fontFamily: "'Courier New', monospace",
-              fontSize: 52,
-              fontWeight: 900,
-              color: "#ef4444",
-              letterSpacing: "0.1em",
-              textShadow: "0 0 40px #ef4444",
-              marginBottom: 8,
-            }}
-          >
+          <p style={{
+            fontFamily: "'Courier New', monospace",
+            fontSize: 52, fontWeight: 900,
+            color: "#ef4444", letterSpacing: "0.1em",
+            textShadow: "0 0 40px #ef4444", marginBottom: 8,
+          }}>
             GAME OVER
           </p>
-          <p
-            style={{
-              fontFamily: "'Courier New', monospace",
-              fontSize: 13,
-              color: "#475569",
-              marginBottom: 32,
-            }}
-          >
+          <p style={{
+            fontFamily: "'Courier New', monospace",
+            fontSize: 13, color: "#475569", marginBottom: 32,
+          }}>
             You were slain on Floor {hud.floor} — Room {hud.room}
           </p>
           <button
             onClick={handleRestart}
             style={{
               fontFamily: "'Courier New', monospace",
-              fontSize: 14,
-              fontWeight: 700,
-              letterSpacing: "0.2em",
-              color: "#0f172a",
-              backgroundColor: "#ef4444",
-              border: "none",
-              padding: "12px 36px",
-              borderRadius: 4,
-              cursor: "pointer",
-              textTransform: "uppercase",
+              fontSize: 14, fontWeight: 700, letterSpacing: "0.2em",
+              color: "#0f172a", backgroundColor: "#ef4444",
+              border: "none", padding: "12px 36px",
+              borderRadius: 4, cursor: "pointer", textTransform: "uppercase",
             }}
             onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "#f87171")}
             onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "#ef4444")}
@@ -240,4 +247,44 @@ export default function GameCanvas() {
 
     </div>
   );
+}
+
+// ============================================================
+// [🧱 BLOCK: World Grid Painter]
+// Draws a subtle scrolling dot grid so the player can feel
+// they're moving through a space, not standing still.
+// ============================================================
+function drawWorldGrid(ctx: CanvasRenderingContext2D, camera: Camera) {
+  const gridSize = 80;
+  const dotSize  = 1.5;
+
+  ctx.fillStyle = "rgba(148, 163, 184, 0.12)"; // slate-400 at low opacity
+
+  // Offset grid lines by camera position so they scroll
+  const startX = -(camera.x % gridSize);
+  const startY = -(camera.y % gridSize);
+
+  for (let x = startX; x < CANVAS_W; x += gridSize) {
+    for (let y = startY; y < CANVAS_H; y += gridSize) {
+      ctx.beginPath();
+      ctx.arc(x, y, dotSize, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+}
+
+// ============================================================
+// [🧱 BLOCK: World Boundary Painter]
+// Draws a visible red border at the world's edges so the
+// player knows where the arena ends.
+// ============================================================
+function drawWorldBounds(ctx: CanvasRenderingContext2D, camera: Camera) {
+  const sx = camera.toScreenX(0);
+  const sy = camera.toScreenY(0);
+  const sw = WORLD_W;
+  const sh = WORLD_H;
+
+  ctx.strokeStyle = "#ef4444";
+  ctx.lineWidth   = 6;
+  ctx.strokeRect(sx, sy, sw, sh);
 }
