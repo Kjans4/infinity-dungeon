@@ -1,6 +1,5 @@
 // src/app/layout.tsx
 import type { Metadata } from "next";
-// We use the alias @/ to point to the src folder
 import "@/styles/globals.css";
 
 export const metadata: Metadata = {
@@ -15,9 +14,8 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
-      <body className="antialiased bg-slate-950 overflow-hidden">
-        {children}
-      </body>
+      {/* No extra classes — globals.css handles the reset */}
+      <body>{children}</body>
     </html>
   );
 }
