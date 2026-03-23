@@ -7,51 +7,18 @@ import React from "react";
 // [🧱 BLOCK: HUD Props]
 // ============================================================
 interface HUDProps {
-  hp:             number;
-  maxHp:          number;
-  stamina:        number;
-  maxStamina:     number;
-  kills:          number;
-  killThreshold:  number;
-  room:           number;
-  floor:          number;
-}
-
-// ============================================================
-// [🧱 BLOCK: Pill Wrapper]
-// Shared glass-pill container used by every HUD element.
-// ============================================================
-function Pill({
-  children,
-  style,
-}: {
-  children: React.ReactNode;
-  style?: React.CSSProperties;
-}) {
-  return (
-    <div
-      style={{
-        background:   "rgba(10, 15, 30, 0.55)",
-        backdropFilter: "blur(8px)",
-        WebkitBackdropFilter: "blur(8px)",
-        border:       "1px solid rgba(255,255,255,0.07)",
-        borderRadius: 8,
-        padding:      "8px 14px",
-        display:      "flex",
-        flexDirection:"column",
-        gap:          6,
-        fontFamily:   "'Courier New', monospace",
-        ...style,
-      }}
-    >
-      {children}
-    </div>
-  );
+  hp:            number;
+  maxHp:         number;
+  stamina:       number;
+  maxStamina:    number;
+  kills:         number;
+  killThreshold: number;
+  room:          number;
+  floor:         number;
 }
 
 // ============================================================
 // [🧱 BLOCK: Thin Bar]
-// Compact progress bar used inside pills.
 // ============================================================
 function ThinBar({
   value, max, color, label,
@@ -60,23 +27,29 @@ function ThinBar({
 }) {
   const pct = Math.max(0, Math.min(1, value / max)) * 100;
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 3, minWidth: 110 }}>
+    <div style={{ display: "flex", flexDirection: "column", gap: 3, minWidth: 120 }}>
       <div style={{ display: "flex", justifyContent: "space-between" }}>
-        <span style={{ fontSize: 9, color: "rgba(148,163,184,0.8)", letterSpacing: "0.12em", textTransform: "uppercase" }}>
+        <span style={{
+          fontSize: 9, color: "rgba(148,163,184,0.8)",
+          letterSpacing: "0.12em", textTransform: "uppercase",
+          fontFamily: "'Courier New', monospace",
+        }}>
           {label}
         </span>
-        <span style={{ fontSize: 9, color: "rgba(148,163,184,0.6)" }}>
+        <span style={{ fontSize: 9, color: "rgba(148,163,184,0.6)", fontFamily: "'Courier New', monospace" }}>
           {Math.round(value)}/{max}
         </span>
       </div>
-      <div style={{ width: "100%", height: 5, background: "rgba(30,41,59,0.8)", borderRadius: 3, overflow: "hidden" }}>
+      <div style={{
+        width: "100%", height: 5,
+        background: "rgba(30,41,59,0.8)",
+        borderRadius: 3, overflow: "hidden",
+      }}>
         <div style={{
-          width:        `${pct}%`,
-          height:       "100%",
-          background:   color,
-          borderRadius: 3,
-          transition:   "width 0.1s linear",
-          boxShadow:    `0 0 6px ${color}`,
+          width: `${pct}%`, height: "100%",
+          background: color, borderRadius: 3,
+          transition: "width 0.1s linear",
+          boxShadow: `0 0 6px ${color}`,
         }} />
       </div>
     </div>
@@ -85,68 +58,78 @@ function ThinBar({
 
 // ============================================================
 // [🧱 BLOCK: Kill Ring]
-// Circular progress for the kill counter — top right pill.
 // ============================================================
 function KillRing({ kills, threshold }: { kills: number; threshold: number }) {
   const pct          = Math.min(kills / threshold, 1);
-  const radius       = 18;
+  const radius       = 16;
   const circumference = 2 * Math.PI * radius;
   const dashOffset   = circumference * (1 - pct);
   const done         = kills >= threshold;
 
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-      {/* Ring */}
-      <div style={{ position: "relative", width: 44, height: 44 }}>
+    <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 3 }}>
+      <div style={{ position: "relative", width: 40, height: 40 }}>
         <svg
           style={{ position: "absolute", inset: 0, transform: "rotate(-90deg)" }}
-          width="44" height="44" viewBox="0 0 44 44"
+          width="40" height="40" viewBox="0 0 40 40"
         >
-          <circle cx="22" cy="22" r={radius} fill="none" stroke="rgba(30,41,59,0.8)" strokeWidth="4" />
+          <circle cx="20" cy="20" r={radius} fill="none" stroke="rgba(30,41,59,0.8)" strokeWidth="4" />
           <circle
-            cx="22" cy="22" r={radius} fill="none"
+            cx="20" cy="20" r={radius} fill="none"
             stroke={done ? "#4ade80" : "#f87171"}
             strokeWidth="4"
             strokeDasharray={circumference}
             strokeDashoffset={dashOffset}
             strokeLinecap="round"
-            style={{ transition: "stroke-dashoffset 0.1s linear", filter: done ? "drop-shadow(0 0 4px #4ade80)" : "none" }}
+            style={{
+              transition: "stroke-dashoffset 0.1s linear",
+              filter: done ? "drop-shadow(0 0 4px #4ade80)" : "none",
+            }}
           />
         </svg>
         <div style={{
           position: "absolute", inset: 0,
-          display: "flex", flexDirection: "column",
-          alignItems: "center", justifyContent: "center",
+          display: "flex", alignItems: "center", justifyContent: "center",
         }}>
-          <span style={{ fontSize: 11, fontWeight: 900, color: done ? "#4ade80" : "#f1f5f9", fontFamily: "'Courier New', monospace" }}>
+          <span style={{
+            fontSize: 10, fontWeight: 900,
+            color: done ? "#4ade80" : "#f1f5f9",
+            fontFamily: "'Courier New', monospace",
+          }}>
             {kills}
           </span>
         </div>
       </div>
-
-      {/* Label */}
-      <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
-        <span style={{ fontSize: 9, color: "rgba(148,163,184,0.7)", letterSpacing: "0.12em", textTransform: "uppercase" }}>
-          Kills
-        </span>
-        <span style={{ fontSize: 9, color: done ? "#4ade80" : "rgba(148,163,184,0.5)" }}>
-          {done ? "⚡ Gate Open" : `${kills} / ${threshold}`}
-        </span>
-      </div>
+      <span style={{
+        fontSize: 8, fontFamily: "'Courier New', monospace",
+        color: done ? "#4ade80" : "rgba(148,163,184,0.6)",
+        letterSpacing: "0.1em", textTransform: "uppercase",
+        textShadow: done ? "0 0 8px #4ade80" : "none",
+      }}>
+        {done ? "⚡ open" : `${kills}/${threshold}`}
+      </span>
     </div>
   );
 }
 
 // ============================================================
+// [🧱 BLOCK: Divider]
+// Thin vertical line separating pill sections.
+// ============================================================
+function Divider() {
+  return (
+    <div style={{
+      width: 1, alignSelf: "stretch",
+      background: "rgba(255,255,255,0.07)",
+      margin: "0 4px",
+    }} />
+  );
+}
+
+// ============================================================
 // [🧱 BLOCK: HUD Root]
-// Four floating pills in the corners — nothing at bottom
-// center where the player spawns.
-//
-// Layout:
-//   TOP-LEFT     → HP + Stamina
-//   TOP-RIGHT    → Kill counter
-//   BOTTOM-LEFT  → Room / Floor label
-//   (bottom-center and bottom-right intentionally empty)
+// Single transparent pill fixed to bottom center.
+// All sections in one horizontal row so eyes never travel.
 // ============================================================
 export default function HUD({
   hp, maxHp, stamina, maxStamina,
@@ -159,47 +142,62 @@ export default function HUD({
       : "#ef4444";
 
   return (
-    // Full screen container — pointer-events: none so clicks pass through
     <div style={{
       position:      "fixed",
-      inset:         0,
-      pointerEvents: "none",
+      bottom:        20,
+      left:          "50%",
+      transform:     "translateX(-50%)",
       zIndex:        20,
+      pointerEvents: "none",
+
+      // Glass pill
+      display:        "flex",
+      flexDirection:  "row",
+      alignItems:     "center",
+      gap:            16,
+      padding:        "10px 20px",
+      background:     "rgba(10, 15, 30, 0.55)",
+      backdropFilter: "blur(12px)",
+      WebkitBackdropFilter: "blur(12px)",
+      border:         "1px solid rgba(255,255,255,0.07)",
+      borderRadius:   12,
+      boxShadow:      "0 4px 24px rgba(0,0,0,0.4)",
+      whiteSpace:     "nowrap",
     }}>
 
-      {/* ── TOP-LEFT: HP + Stamina ── */}
-      <div style={{ position: "absolute", top: 16, left: 16 }}>
-        <Pill>
-          <ThinBar value={hp}      max={maxHp}      color={hpColor}   label="HP"      />
-          <ThinBar value={stamina} max={maxStamina}  color="#facc15"   label="Stamina" />
-        </Pill>
+      {/* ── HP + Stamina ── */}
+      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+        <ThinBar value={hp}      max={maxHp}     color={hpColor}  label="HP"      />
+        <ThinBar value={stamina} max={maxStamina} color="#facc15"  label="Stamina" />
       </div>
 
-      {/* ── TOP-RIGHT: Kill Counter ── */}
-      <div style={{ position: "absolute", top: 16, right: 16 }}>
-        <Pill>
-          <KillRing kills={kills} threshold={killThreshold} />
-        </Pill>
+      <Divider />
+
+      {/* ── Room / Floor ── */}
+      <div style={{
+        display: "flex", flexDirection: "column",
+        alignItems: "center", gap: 2,
+      }}>
+        <span style={{
+          fontSize: 8, color: "rgba(100,116,139,0.8)",
+          letterSpacing: "0.18em", textTransform: "uppercase",
+          fontFamily: "'Courier New', monospace",
+        }}>
+          Floor {floor}
+        </span>
+        <span style={{
+          fontSize: 18, fontWeight: 900, lineHeight: 1,
+          color: "#f1f5f9", letterSpacing: "0.04em",
+          fontFamily: "'Courier New', monospace",
+        }}>
+          ROOM {room}
+        </span>
       </div>
 
-      {/* ── BOTTOM-LEFT: Room + Floor ── */}
-      <div style={{ position: "absolute", bottom: 16, left: 16 }}>
-        <Pill style={{ padding: "6px 12px" }}>
-          <span style={{
-            fontSize: 9, color: "rgba(148,163,184,0.5)",
-            letterSpacing: "0.15em", textTransform: "uppercase",
-          }}>
-            Floor {floor}
-          </span>
-          <span style={{
-            fontSize: 16, fontWeight: 900,
-            color: "#f1f5f9", letterSpacing: "0.05em",
-            lineHeight: 1,
-          }}>
-            ROOM {room}
-          </span>
-        </Pill>
-      </div>
+      <Divider />
+
+      {/* ── Kill Ring ── */}
+      <KillRing kills={kills} threshold={killThreshold} />
 
     </div>
   );
