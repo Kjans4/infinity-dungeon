@@ -14,6 +14,7 @@ import {
 import { useGameLoop } from "@/hooks/useGameLoop";
 import HUD from "@/components/HUD";
 import Shop from "@/components/Shop";
+import Menu from "@/components/Menu";
 
 // ============================================================
 // [🧱 BLOCK: Constants]
@@ -54,6 +55,7 @@ export default function GameCanvas() {
   // ── React State (UI only) ──────────────────────────────────
   const [isGameOver,  setIsGameOver]  = useState(false);
   const [isVictory,   setIsVictory]   = useState(false);
+  const [showMenu, setShowMenu] = useState(true);
   const [showShop,    setShowShop]    = useState(false);
   const [hud, setHud] = useState<HUDState>({
     hp: MAX_HP, stamina: MAX_STAMINA,
@@ -224,7 +226,7 @@ export default function GameCanvas() {
     if (!ctx) return;
 
     // Pause during overlays
-    if (showShop || isVictory || isGameOver) return;
+    if (showShop || showShop || isVictory || isGameOver) return;
 
     const W  = screenW.current;
     const H  = screenH.current;
@@ -391,6 +393,11 @@ export default function GameCanvas() {
   kills={hud.kills} killThreshold={KILL_THRESHOLD}
   room={hud.room} floor={hud.floor}
 />
+
+{/* ── Main Menu ── */}
+{showMenu && (
+  <Menu onStart={() => setShowMenu(true)} />
+)}
 
       {/* ── Shop Overlay ── */}
       {showShop && (
