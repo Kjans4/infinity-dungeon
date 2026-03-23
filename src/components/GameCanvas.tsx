@@ -25,9 +25,8 @@ const WAVE_SIZE      = 6;
 const MAX_HP         = 100;
 const MAX_STAMINA    = 100;
 
-// Spawn positions
-const hordeSpawn  = (wW: number, wH: number) => ({ x: wW / 2, y: wH - 100 });
-const bossSpawn   = () => ({ x: BOSS_WORLD_W / 2, y: BOSS_WORLD_H - 100 });
+const hordeSpawn = (wW: number, wH: number) => ({ x: wW / 2, y: wH - 100 });
+const bossSpawn  = () => ({ x: BOSS_WORLD_W / 2, y: BOSS_WORLD_H - 100 });
 
 interface HUDState {
   hp: number; stamina: number;
@@ -38,25 +37,26 @@ export default function GameCanvas() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   // ── Engine Refs ────────────────────────────────────────────
-  const playerRef      = useRef<Player | null>(null);
-  const inputRef       = useRef<InputHandler | null>(null);
-  const enemiesRef     = useRef<Enemy[]>([]);
-  const bossRef        = useRef<Boss | null>(null);
-  const doorRef        = useRef<Door | null>(null);
-  const cameraRef      = useRef<Camera | null>(null);
-  const killsRef       = useRef<number>(0);
-  const aliveRef       = useRef<number>(0);
-  const lastSpawnRef   = useRef<number>(0);
-  const roomStateRef   = useRef<RoomState>(initialRoomState());
+  const playerRef    = useRef<Player | null>(null);
+  const inputRef     = useRef<InputHandler | null>(null);
+  const enemiesRef   = useRef<Enemy[]>([]);
+  const bossRef      = useRef<Boss | null>(null);
+  const doorRef      = useRef<Door | null>(null);
+  const cameraRef    = useRef<Camera | null>(null);
+  const killsRef     = useRef<number>(0);
+  const aliveRef     = useRef<number>(0);
+  const lastSpawnRef = useRef<number>(0);
+  const roomStateRef = useRef<RoomState>(initialRoomState());
 
   const screenW = useRef<number>(800);
   const screenH = useRef<number>(600);
 
   // ── React State (UI only) ──────────────────────────────────
-  const [isGameOver,  setIsGameOver]  = useState(false);
-  const [isVictory,   setIsVictory]   = useState(false);
-  const [showMenu, setShowMenu] = useState(true);
-  const [showShop,    setShowShop]    = useState(false);
+  // ✅ FIX: showMenu starts true — nothing runs until RAID clicked
+  const [showMenu,   setShowMenu]   = useState(true);
+  const [isGameOver, setIsGameOver] = useState(false);
+  const [isVictory,  setIsVictory]  = useState(false);
+  const [showShop,   setShowShop]   = useState(false);
   const [hud, setHud] = useState<HUDState>({
     hp: MAX_HP, stamina: MAX_STAMINA,
     kills: 0, room: 1, floor: 1,
@@ -66,11 +66,14 @@ export default function GameCanvas() {
   // [🧱 BLOCK: Setup Horde Room]
   // ============================================================
   const setupHordeRoom = useCallback((rs: RoomState) => {
+    if (!playerRef.current || !cameraRef.current) return;
+
     const sp = hordeSpawn(WORLD_W, WORLD_H);
-    playerRef.current!.x  = sp.x;
-    playerRef.current!.y  = sp.y;
-    playerRef.current!.vx = 0;
-    playerRef.current!.vy = 0;
+    playerRef.current.x  = sp.x;
+    playerRef.current.y  = sp.y;
+    playerRef.current.vx = 0;
+    playerRef.current.vy = 0;
+    playerRef.current.hp = MAX_HP;
 
     killsRef.current     = 0;
     aliveRef.current     = INITIAL_WAVE;
@@ -78,39 +81,35 @@ export default function GameCanvas() {
 
     enemiesRef.current = spawnWave(INITIAL_WAVE, WORLD_W, WORLD_H, 'grunt', rs.floor);
     bossRef.current    = null;
-
     doorRef.current    = new Door(WORLD_W);
     doorRef.current.isActive = false;
 
-    cameraRef.current!.update(playerRef.current!, WORLD_W, WORLD_H);
+    cameraRef.current.update(playerRef.current, WORLD_W, WORLD_H);
   }, []);
 
   // ============================================================
   // [🧱 BLOCK: Setup Boss Room]
   // ============================================================
   const setupBossRoom = useCallback((rs: RoomState) => {
+    if (!playerRef.current || !cameraRef.current) return;
+
     const sp = bossSpawn();
-    playerRef.current!.x  = sp.x;
-    playerRef.current!.y  = sp.y;
-    playerRef.current!.vx = 0;
-    playerRef.current!.vy = 0;
+    playerRef.current.x  = sp.x;
+    playerRef.current.y  = sp.y;
+    playerRef.current.vx = 0;
+    playerRef.current.vy = 0;
 
     enemiesRef.current = [];
     killsRef.current   = 0;
+    bossRef.current    = new Boss(BOSS_WORLD_W / 2 - 40, 80, rs.floor);
+    doorRef.current    = null;
 
-    bossRef.current = new Boss(
-      BOSS_WORLD_W / 2 - 40,
-      80,
-      rs.floor
-    );
-
-    doorRef.current = null; // No door in boss room
-
-    cameraRef.current!.update(playerRef.current!, BOSS_WORLD_W, BOSS_WORLD_H);
+    cameraRef.current.update(playerRef.current, BOSS_WORLD_W, BOSS_WORLD_H);
   }, []);
 
   // ============================================================
-  // [🧱 BLOCK: Init]
+  // [🧱 BLOCK: Init — canvas + input only, NO game setup]
+  // Game setup happens in handleStart when RAID is clicked.
   // ============================================================
   useEffect(() => {
     screenW.current = window.innerWidth;
@@ -120,19 +119,21 @@ export default function GameCanvas() {
     canvas.width  = screenW.current;
     canvas.height = screenH.current;
 
+    // Camera and input ready — but no enemies, no player stats
     cameraRef.current = new Camera(screenW.current, screenH.current);
     inputRef.current  = new InputHandler();
+    playerRef.current = new Player(WORLD_W / 2, WORLD_H / 2);
 
-    const sp = hordeSpawn(WORLD_W, WORLD_H);
-    playerRef.current = new Player(sp.x, sp.y);
-
-    setupHordeRoom(roomStateRef.current);
+    // ✅ FIX: Leave everything empty until RAID is clicked
+    enemiesRef.current = [];
+    doorRef.current    = null;
+    bossRef.current    = null;
 
     const handleResize = () => {
-      screenW.current = window.innerWidth;
-      screenH.current = window.innerHeight;
-      canvas.width    = screenW.current;
-      canvas.height   = screenH.current;
+      screenW.current   = window.innerWidth;
+      screenH.current   = window.innerHeight;
+      canvas.width      = screenW.current;
+      canvas.height     = screenH.current;
       if (cameraRef.current) {
         cameraRef.current.screenW = screenW.current;
         cameraRef.current.screenH = screenH.current;
@@ -155,18 +156,18 @@ export default function GameCanvas() {
       clearInterval(hudSync);
       window.removeEventListener("resize", handleResize);
     };
-  }, [setupHordeRoom]);
+  }, []);
 
   // ============================================================
-  // [🧱 BLOCK: Restart]
+  // [🧱 BLOCK: Handle Start — called by RAID button]
+  // Initializes everything fresh and hides the menu.
   // ============================================================
-  const handleRestart = useCallback(() => {
-    const rs  = initialRoomState();
+  const handleStart = useCallback(() => {
+    const rs = initialRoomState();
     roomStateRef.current = rs;
 
-    const sp = hordeSpawn(WORLD_W, WORLD_H);
-    playerRef.current    = new Player(sp.x, sp.y);
-    cameraRef.current    = new Camera(screenW.current, screenH.current);
+    playerRef.current  = new Player(WORLD_W / 2, WORLD_H / 2);
+    cameraRef.current  = new Camera(screenW.current, screenH.current);
 
     setupHordeRoom(rs);
 
@@ -174,7 +175,30 @@ export default function GameCanvas() {
     setIsGameOver(false);
     setIsVictory(false);
     setShowShop(false);
+    setShowMenu(false); // ✅ Hide menu LAST so game is ready before it appears
   }, [setupHordeRoom]);
+
+  // ============================================================
+  // [🧱 BLOCK: Handle Restart — goes back to main menu]
+  // ============================================================
+  const handleRestart = useCallback(() => {
+    // ✅ FIX: Reset everything and return to menu
+    enemiesRef.current = [];
+    bossRef.current    = null;
+    doorRef.current    = null;
+    killsRef.current   = 0;
+    aliveRef.current   = 0;
+
+    roomStateRef.current = initialRoomState();
+    playerRef.current    = new Player(WORLD_W / 2, WORLD_H / 2);
+    cameraRef.current    = new Camera(screenW.current, screenH.current);
+
+    setHud({ hp: MAX_HP, stamina: MAX_STAMINA, kills: 0, room: 1, floor: 1 });
+    setIsGameOver(false);
+    setIsVictory(false);
+    setShowShop(false);
+    setShowMenu(true); // ✅ Back to menu
+  }, []);
 
   // ============================================================
   // [🧱 BLOCK: Shop Continue → Boss Room]
@@ -188,11 +212,12 @@ export default function GameCanvas() {
   // [🧱 BLOCK: Victory Continue → Next Floor]
   // ============================================================
   const handleVictoryContinue = useCallback(() => {
-    const rs             = nextFloor(roomStateRef.current);
+    const rs = nextFloor(roomStateRef.current);
     roomStateRef.current = rs;
-    const sp = hordeSpawn(WORLD_W, WORLD_H);
-    playerRef.current    = new Player(sp.x, sp.y);
-    cameraRef.current    = new Camera(screenW.current, screenH.current);
+
+    playerRef.current = new Player(WORLD_W / 2, WORLD_H / 2);
+    cameraRef.current = new Camera(screenW.current, screenH.current);
+
     setupHordeRoom(rs);
     setIsVictory(false);
     setShowShop(false);
@@ -202,14 +227,12 @@ export default function GameCanvas() {
   // [🧱 BLOCK: Door Transition]
   // ============================================================
   const handleDoorEnter = useCallback(() => {
-    const rs  = advanceRoom(roomStateRef.current);
+    const rs = advanceRoom(roomStateRef.current);
     roomStateRef.current = rs;
 
     if (rs.phase === 'shop') {
-      // Pause game, show shop overlay
       setShowShop(true);
     } else {
-      // Room 1 → Room 2: another horde room
       setupHordeRoom(rs);
     }
   }, [setupHordeRoom]);
@@ -225,15 +248,15 @@ export default function GameCanvas() {
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
 
-    // Pause during overlays
-    if (showShop || showShop || isVictory || isGameOver) return;
+    // ✅ FIX: Pause during ALL overlays including menu
+    if (showMenu || showShop || isVictory || isGameOver) return;
 
-    const W  = screenW.current;
-    const H  = screenH.current;
-    const rs = roomStateRef.current;
-    const isBoss  = rs.phase === 'boss';
-    const worldW  = isBoss ? BOSS_WORLD_W : WORLD_W;
-    const worldH  = isBoss ? BOSS_WORLD_H : WORLD_H;
+    const W      = screenW.current;
+    const H      = screenH.current;
+    const rs     = roomStateRef.current;
+    const isBoss = rs.phase === 'boss';
+    const worldW = isBoss ? BOSS_WORLD_W : WORLD_W;
+    const worldH = isBoss ? BOSS_WORLD_H : WORLD_H;
 
     // ── Death check ──────────────────────────────────────────
     if (player.hp <= 0) { setIsGameOver(true); return; }
@@ -241,31 +264,28 @@ export default function GameCanvas() {
     // --- 1. Clear ---
     ctx.clearRect(0, 0, W, H);
 
-    // --- 2. Update Camera ---
+    // --- 2. Camera ---
     camera.update(player, worldW, worldH);
 
     // --- 3. Draw World ---
     drawWorldGrid(ctx, camera, W, H);
     drawWorldBounds(ctx, camera, worldW, worldH, isBoss);
 
-    // --- 4. Update & Draw Door ---
+    // --- 4. Door ---
     if (doorRef.current) {
       doorRef.current.update();
       doorRef.current.draw(ctx, camera);
 
-      // Activate door once threshold met
       if (killsRef.current >= KILL_THRESHOLD && !doorRef.current.isActive) {
         doorRef.current.activate();
       }
-
-      // Door collision — transition room
       if (doorRef.current.isCollidingWithPlayer(player)) {
         handleDoorEnter();
         return;
       }
     }
 
-    // --- 5. Update Player ---
+    // --- 5. Player ---
     player.update(inputRef.current);
     player.x = Math.max(0, Math.min(worldW - player.width,  player.x));
     player.y = Math.max(0, Math.min(worldH - player.height, player.y));
@@ -284,7 +304,6 @@ export default function GameCanvas() {
         }
       });
 
-      // Attack collision
       if (player.isAttacking) {
         const range  = player.attackType === "light" ? 35 : 55;
         const radius = player.attackType === "light" ? 15 : 25;
@@ -302,8 +321,7 @@ export default function GameCanvas() {
         });
       }
 
-      // Kill tracking + wave respawn
-      const before     = enemiesRef.current.length;
+      const before   = enemiesRef.current.length;
       enemiesRef.current = enemiesRef.current.filter((e) => !e.isDead);
       const justKilled = before - enemiesRef.current.length;
       if (justKilled > 0) {
@@ -334,18 +352,14 @@ export default function GameCanvas() {
       const boss = bossRef.current;
       boss.update(player, worldW, worldH);
 
-      // Boss contact damage
       if (boss.isCollidingWithPlayer(player)) {
         player.hp = Math.max(0, player.hp - boss.damage);
         boss.damageCooldown = 800;
       }
-
-      // Boss slam AoE damage
       if (boss.isSlamHittingPlayer(player)) {
         player.hp = Math.max(0, player.hp - 30);
       }
 
-      // Player attacks boss
       if (player.isAttacking) {
         const range  = player.attackType === "light" ? 35 : 55;
         const radius = player.attackType === "light" ? 15 : 25;
@@ -359,13 +373,8 @@ export default function GameCanvas() {
         }
       }
 
-      // Boss defeated
       if (boss.isDead) {
-        // Mark as victory, advance room state to cycle 3 beaten
-        roomStateRef.current = {
-          ...roomStateRef.current,
-          phase: 'victory',
-        };
+        roomStateRef.current = { ...roomStateRef.current, phase: 'victory' };
         setIsVictory(true);
         return;
       }
@@ -373,12 +382,14 @@ export default function GameCanvas() {
       boss.draw(ctx, camera);
     }
 
-    // --- Draw Player (always on top) ---
+    // --- Draw Player on top ---
     player.draw(ctx, camera);
   });
 
   // ============================================================
   // [🧱 BLOCK: JSX]
+  // z-index order (low → high): canvas, HUD(20), shop(40),
+  // victory(45), gameOver(48), menu(50 — always on top)
   // ============================================================
   return (
     <div style={{ width: "100vw", height: "100vh", overflow: "hidden", background: "#0f172a" }}>
@@ -386,18 +397,15 @@ export default function GameCanvas() {
       {/* ── Fullscreen Canvas ── */}
       <canvas ref={canvasRef} style={{ display: "block" }} />
 
-      {/* ── HUD Footer ── */}
-      <HUD
-  hp={hud.hp} maxHp={MAX_HP}
-  stamina={hud.stamina} maxStamina={MAX_STAMINA}
-  kills={hud.kills} killThreshold={KILL_THRESHOLD}
-  room={hud.room} floor={hud.floor}
-/>
-
-{/* ── Main Menu ── */}
-{showMenu && (
-  <Menu onStart={() => setShowMenu(true)} />
-)}
+      {/* ── HUD — hidden while menu is showing ── */}
+      {!showMenu && (
+        <HUD
+          hp={hud.hp}           maxHp={MAX_HP}
+          stamina={hud.stamina} maxStamina={MAX_STAMINA}
+          kills={hud.kills}     killThreshold={KILL_THRESHOLD}
+          room={hud.room}       floor={hud.floor}
+        />
+      )}
 
       {/* ── Shop Overlay ── */}
       {showShop && (
@@ -453,10 +461,10 @@ export default function GameCanvas() {
         </div>
       )}
 
-      {/* ── Game Over ── */}
-      {isGameOver && (
+      {/* ── Game Over — ✅ only shows if menu is NOT showing ── */}
+      {isGameOver && !showMenu && (
         <div style={{
-          position: "absolute", inset: 0, zIndex: 50,
+          position: "absolute", inset: 0, zIndex: 48,
           display: "flex", flexDirection: "column",
           alignItems: "center", justifyContent: "center",
           background: "rgba(0,0,0,0.82)",
@@ -492,6 +500,11 @@ export default function GameCanvas() {
         </div>
       )}
 
+      {/* ── Main Menu — ✅ zIndex 50, always on top ── */}
+      {showMenu && (
+        <Menu onStart={handleStart} />
+      )}
+
     </div>
   );
 }
@@ -515,7 +528,6 @@ function drawWorldGrid(ctx: CanvasRenderingContext2D, camera: Camera, W: number,
 
 // ============================================================
 // [🧱 BLOCK: World Boundary Painter]
-// Boss room uses a different (orange) border color.
 // ============================================================
 function drawWorldBounds(
   ctx: CanvasRenderingContext2D,
