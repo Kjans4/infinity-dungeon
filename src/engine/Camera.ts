@@ -1,23 +1,20 @@
 // src/engine/Camera.ts
-
 import { Player } from "./Player";
 
 // ============================================================
-// [🧱 BLOCK: Camera Constants]
+// [🧱 BLOCK: World Size Constants]
 // ============================================================
-export const WORLD_W = 2400;
-export const WORLD_H = 1800;
+export const WORLD_W      = 2400;
+export const WORLD_H      = 1800;
+export const BOSS_WORLD_W = 1200;
+export const BOSS_WORLD_H = 900;
 
 // ============================================================
 // [🧱 BLOCK: Camera Class]
-// Keeps the player centered on screen by tracking an offset.
-// Every draw call subtracts (camera.x, camera.y) from world
-// coordinates to get screen coordinates.
 // ============================================================
 export class Camera {
   x: number = 0;
   y: number = 0;
-
   screenW: number;
   screenH: number;
 
@@ -28,36 +25,20 @@ export class Camera {
 
   // ============================================================
   // [🧱 BLOCK: Update — Follow Player]
-  // Centers camera on the player, clamped so it never shows
-  // outside the world boundary.
+  // worldW and worldH are passed in so the same camera works
+  // for both the horde world and the smaller boss world.
   // ============================================================
-  update(player: Player) {
-    // Target: player center on screen
+  update(player: Player, worldW: number = WORLD_W, worldH: number = WORLD_H) {
     const targetX = player.x + player.width  / 2 - this.screenW / 2;
     const targetY = player.y + player.height / 2 - this.screenH / 2;
 
-    // Clamp so we don't scroll past world edges
-    this.x = Math.max(0, Math.min(WORLD_W - this.screenW, targetX));
-    this.y = Math.max(0, Math.min(WORLD_H - this.screenH, targetY));
+    this.x = Math.max(0, Math.min(worldW - this.screenW, targetX));
+    this.y = Math.max(0, Math.min(worldH - this.screenH, targetY));
   }
 
-  // ============================================================
-  // [🧱 BLOCK: World → Screen helpers]
-  // Use these when drawing anything on the canvas.
-  // ============================================================
-  toScreenX(worldX: number): number {
-    return worldX - this.x;
-  }
+  toScreenX(worldX: number): number { return worldX - this.x; }
+  toScreenY(worldY: number): number { return worldY - this.y; }
 
-  toScreenY(worldY: number): number {
-    return worldY - this.y;
-  }
-
-  // ============================================================
-  // [🧱 BLOCK: Frustum Cull Check]
-  // Returns false if a world-space rect is off screen.
-  // Lets us skip drawing enemies the player can't see.
-  // ============================================================
   isVisible(worldX: number, worldY: number, w: number, h: number): boolean {
     return (
       worldX + w > this.x &&
