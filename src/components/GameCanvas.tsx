@@ -385,17 +385,12 @@ export default function GameCanvas() {
       <canvas ref={canvasRef} style={{ display: "block" }} />
 
       {/* ── HUD Footer ── */}
-      <div style={{
-        position: "absolute", bottom: 0, left: "50%",
-        transform: "translateX(-50%)", zIndex: 10, pointerEvents: "none",
-      }}>
-        <HUD
-          hp={hud.hp} maxHp={MAX_HP}
-          stamina={hud.stamina} maxStamina={MAX_STAMINA}
-          kills={hud.kills} killThreshold={KILL_THRESHOLD}
-          room={hud.room} floor={hud.floor}
-        />
-      </div>
+      <HUD
+  hp={hud.hp} maxHp={MAX_HP}
+  stamina={hud.stamina} maxStamina={MAX_STAMINA}
+  kills={hud.kills} killThreshold={KILL_THRESHOLD}
+  room={hud.room} floor={hud.floor}
+/>
 
       {/* ── Shop Overlay ── */}
       {showShop && (
