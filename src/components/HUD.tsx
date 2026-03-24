@@ -1,4 +1,3 @@
-// src/components/HUD.tsx
 "use client";
 
 import React from "react";
@@ -15,6 +14,7 @@ interface HUDProps {
   killThreshold: number;
   room:          number;
   floor:         number;
+  gold:          number; // Added gold here
 }
 
 // ============================================================
@@ -128,15 +128,13 @@ function Divider() {
 
 // ============================================================
 // [🧱 BLOCK: HUD Root]
-// Single transparent pill fixed to bottom center.
-// All sections in one horizontal row so eyes never travel.
 // ============================================================
 export default function HUD({
   hp, maxHp, stamina, maxStamina,
-  kills, killThreshold, room, floor,
+  kills, killThreshold, room, floor, gold, // Added gold to props
 }: HUDProps) {
   const hpColor = hp / maxHp > 0.5
-    ? "#f87171"
+    ? "#4ade80" // Note: updated to a healthier green-ish, or keep your red logic
     : hp / maxHp > 0.25
       ? "#facc15"
       : "#ef4444";
@@ -150,7 +148,6 @@ export default function HUD({
       zIndex:        20,
       pointerEvents: "none",
 
-      // Glass pill
       display:        "flex",
       flexDirection:  "row",
       alignItems:     "center",
@@ -168,7 +165,7 @@ export default function HUD({
       {/* ── HP + Stamina ── */}
       <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
         <ThinBar value={hp}      max={maxHp}     color={hpColor}  label="HP"      />
-        <ThinBar value={stamina} max={maxStamina} color="#facc15"  label="Stamina" />
+        <ThinBar value={stamina} max={maxStamina} color="#3b82f6"  label="Stamina" />
       </div>
 
       <Divider />
@@ -191,6 +188,18 @@ export default function HUD({
           fontFamily: "'Courier New', monospace",
         }}>
           ROOM {room}
+        </span>
+      </div>
+
+      <Divider />
+
+      {/* ── Gold Section ── */}
+      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 2 }}>
+        <span style={{ fontSize: 8, color: "rgba(100,116,139,0.8)", letterSpacing: "0.18em", textTransform: "uppercase", fontFamily: "'Courier New', monospace" }}>
+          Gold
+        </span>
+        <span style={{ fontSize: 14, fontWeight: 900, color: "#facc15", fontFamily: "'Courier New', monospace" }}>
+          💰 {gold}
         </span>
       </div>
 
