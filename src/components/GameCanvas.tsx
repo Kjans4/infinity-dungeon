@@ -4,9 +4,7 @@
 import React, { useRef, useEffect, useState, useCallback } from "react";
 import { Player } from "@/engine/Player";
 import { InputHandler } from "@/engine/Input";
-// 🧱 Brick 2 — Add Projectile to the Enemy import at the top:
-import { Enemy, spawnWave, Projectile } from "@/engine/Enemy";
-import { Boss } from "@/engine/Boss";
+import { Grunt, Shooter, Boss, Projectile, spawnWave } from "@/engine/enemy";
 import { Door } from "@/engine/Door";
 import { Camera, WORLD_W, WORLD_H, BOSS_WORLD_W, BOSS_WORLD_H } from "@/engine/Camera";
 import {
@@ -16,7 +14,6 @@ import { useGameLoop } from "@/hooks/useGameLoop";
 import HUD from "@/components/HUD";
 import Shop from "@/components/Shop";
 import Menu from "@/components/Menu";
-
 
 // ============================================================
 // [🧱 BLOCK: Constants]
@@ -39,23 +36,22 @@ export default function GameCanvas() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   // ── Engine Refs ────────────────────────────────────────────
-  const playerRef    = useRef<Player | null>(null);
-  const inputRef     = useRef<InputHandler | null>(null);
-  const enemiesRef   = useRef<Enemy[]>([]);
-  const bossRef      = useRef<Boss | null>(null);
-  const doorRef      = useRef<Door | null>(null);
-  const cameraRef    = useRef<Camera | null>(null);
-  const killsRef     = useRef<number>(0);
-  const aliveRef     = useRef<number>(0);
-  const lastSpawnRef = useRef<number>(0);
-  // 🧱 Brick 1 — Add projectilesRef after lastSpawnRef:
+  const playerRef      = useRef<Player | null>(null);
+  const inputRef       = useRef<InputHandler | null>(null);
+  const enemiesRef     = useRef<(Grunt | Shooter)[]>([]);
+  const bossRef        = useRef<Boss | null>(null);
+  const doorRef        = useRef<Door | null>(null);
+  const cameraRef      = useRef<Camera | null>(null);
   const projectilesRef = useRef<Projectile[]>([]);
-  const roomStateRef = useRef<RoomState>(initialRoomState());
+  const killsRef       = useRef<number>(0);
+  const aliveRef       = useRef<number>(0);
+  const lastSpawnRef   = useRef<number>(0);
+  const roomStateRef   = useRef<RoomState>(initialRoomState());
 
   const screenW = useRef<number>(800);
   const screenH = useRef<number>(600);
 
-  // ── React State (UI only) ──────────────────────────────────
+  // ── React State ────────────────────────────────────────────
   const [showMenu,   setShowMenu]   = useState(true);
   const [isGameOver, setIsGameOver] = useState(false);
   const [isVictory,  setIsVictory]  = useState(false);
@@ -79,15 +75,13 @@ export default function GameCanvas() {
     playerRef.current.hp = MAX_HP;
 
     killsRef.current     = 0;
-    // 🧱 Brick 3 — Clear projectiles on room setup.
-    projectilesRef.current = [];
     aliveRef.current     = INITIAL_WAVE;
     lastSpawnRef.current = 0;
 
-    // 🧱 Brick 6 — Update spawnWave calls to pass roomInCycle:
-    enemiesRef.current = spawnWave(INITIAL_WAVE, WORLD_W, WORLD_H, rs.roomInCycle, rs.floor);
-    bossRef.current    = null;
-    doorRef.current    = new Door(WORLD_W);
+    projectilesRef.current = [];
+    enemiesRef.current     = spawnWave(INITIAL_WAVE, WORLD_W, WORLD_H, rs.roomInCycle, rs.floor);
+    bossRef.current        = null;
+    doorRef.current        = new Door(WORLD_W);
     doorRef.current.isActive = false;
 
     cameraRef.current.update(playerRef.current, WORLD_W, WORLD_H);
@@ -105,18 +99,21 @@ export default function GameCanvas() {
     playerRef.current.vx = 0;
     playerRef.current.vy = 0;
 
-    enemiesRef.current = [];
-    killsRef.current   = 0;
-    // 🧱 Brick 3 — Clear projectiles on room setup.
+    enemiesRef.current     = [];
     projectilesRef.current = [];
-    bossRef.current    = new Boss(BOSS_WORLD_W / 2 - 40, 80, rs.floor);
-    doorRef.current    = null;
+    killsRef.current       = 0;
 
+    bossRef.current = new Boss(
+      BOSS_WORLD_W / 2 - 40, 80, rs.floor
+    );
+    doorRef.current = null;
+
+    // ✅ Phase is already set to 'boss' by enterBossPhase before this runs
     cameraRef.current.update(playerRef.current, BOSS_WORLD_W, BOSS_WORLD_H);
   }, []);
 
   // ============================================================
-  // [🧱 BLOCK: Init — canvas + input only, NO game setup]
+  // [🧱 BLOCK: Init]
   // ============================================================
   useEffect(() => {
     screenW.current = window.innerWidth;
@@ -130,10 +127,11 @@ export default function GameCanvas() {
     inputRef.current  = new InputHandler();
     playerRef.current = new Player(WORLD_W / 2, WORLD_H / 2);
 
-    enemiesRef.current = [];
-    doorRef.current    = null;
-    roomStateRef.current = { ...roomStateRef.current, phase: 'boss' };
-    bossRef.current    = null;
+    // Nothing active until RAID is clicked
+    enemiesRef.current     = [];
+    projectilesRef.current = [];
+    doorRef.current        = null;
+    bossRef.current        = null;
 
     const handleResize = () => {
       screenW.current   = window.innerWidth;
@@ -165,35 +163,33 @@ export default function GameCanvas() {
   }, []);
 
   // ============================================================
-  // [🧱 BLOCK: Handle Start — called by RAID button]
+  // [🧱 BLOCK: Handle Start]
   // ============================================================
   const handleStart = useCallback(() => {
     const rs = initialRoomState();
     roomStateRef.current = rs;
 
-    playerRef.current  = new Player(WORLD_W / 2, WORLD_H / 2);
-    cameraRef.current  = new Camera(screenW.current, screenH.current);
+    playerRef.current = new Player(WORLD_W / 2, WORLD_H / 2);
+    cameraRef.current = new Camera(screenW.current, screenH.current);
 
     setupHordeRoom(rs);
-
     setHud({ hp: MAX_HP, stamina: MAX_STAMINA, kills: 0, room: 1, floor: 1 });
     setIsGameOver(false);
     setIsVictory(false);
     setShowShop(false);
-    setShowMenu(false); 
+    setShowMenu(false);
   }, [setupHordeRoom]);
 
   // ============================================================
-  // [🧱 BLOCK: Handle Restart — goes back to main menu]
+  // [🧱 BLOCK: Handle Restart]
   // ============================================================
   const handleRestart = useCallback(() => {
-    enemiesRef.current = [];
-    // 🧱 Brick 3 — Clear projectiles on restart.
+    enemiesRef.current     = [];
+    bossRef.current        = null;
+    doorRef.current        = null;
     projectilesRef.current = [];
-    bossRef.current    = null;
-    doorRef.current    = null;
-    killsRef.current   = 0;
-    aliveRef.current   = 0;
+    killsRef.current       = 0;
+    aliveRef.current       = 0;
 
     roomStateRef.current = initialRoomState();
     playerRef.current    = new Player(WORLD_W / 2, WORLD_H / 2);
@@ -203,21 +199,21 @@ export default function GameCanvas() {
     setIsGameOver(false);
     setIsVictory(false);
     setShowShop(false);
-    setShowMenu(true); 
+    setShowMenu(true);
   }, []);
 
   // ============================================================
   // [🧱 BLOCK: Shop Continue → Boss Room]
+  // ✅ enterBossPhase sets phase BEFORE setupBossRoom runs
   // ============================================================
   const handleShopContinue = useCallback(() => {
-  // ✅ Set phase to 'boss' BEFORE setupBossRoom so isBoss is true in the loop
-  roomStateRef.current = enterBossPhase(roomStateRef.current);
-  setShowShop(false);
-  setupBossRoom(roomStateRef.current);
-}, [setupBossRoom]);
+    roomStateRef.current = enterBossPhase(roomStateRef.current);
+    setShowShop(false);
+    setupBossRoom(roomStateRef.current);
+  }, [setupBossRoom]);
 
   // ============================================================
-  // [🧱 BLOCK: Victory Continue → Next Floor]
+  // [🧱 BLOCK: Victory Continue]
   // ============================================================
   const handleVictoryContinue = useCallback(() => {
     const rs = nextFloor(roomStateRef.current);
@@ -267,15 +263,20 @@ export default function GameCanvas() {
 
     if (player.hp <= 0) { setIsGameOver(true); return; }
 
+    // --- 1. Clear ---
     ctx.clearRect(0, 0, W, H);
+
+    // --- 2. Camera ---
     camera.update(player, worldW, worldH);
+
+    // --- 3. World ---
     drawWorldGrid(ctx, camera, W, H);
     drawWorldBounds(ctx, camera, worldW, worldH, isBoss);
 
+    // --- 4. Door ---
     if (doorRef.current) {
       doorRef.current.update();
       doorRef.current.draw(ctx, camera);
-
       if (killsRef.current >= KILL_THRESHOLD && !doorRef.current.isActive) {
         doorRef.current.activate();
       }
@@ -285,6 +286,7 @@ export default function GameCanvas() {
       }
     }
 
+    // --- 5. Player ---
     player.update(inputRef.current);
     player.x = Math.max(0, Math.min(worldW - player.width,  player.x));
     player.y = Math.max(0, Math.min(worldH - player.height, player.y));
@@ -293,21 +295,26 @@ export default function GameCanvas() {
     // [🧱 BLOCK: Horde Logic]
     // ============================================================
     if (!isBoss) {
-      // 🧱 Brick 4 — Replace the entire Horde Logic block's enemy contact damage and collision section:
       enemiesRef.current.forEach((enemy) => {
         enemy.update(player, worldW, worldH);
-        // Collect any fired projectile this frame
+
+        // Collect projectiles fired this frame
         if (enemy.pendingProjectile) {
           projectilesRef.current.push(enemy.pendingProjectile);
           enemy.pendingProjectile = null;
         }
+
         // Melee strike hit check
-        if (enemy.isMeleeHittingPlayer(player)) {
-          const dmg = enemy.type === 'shooter' ? 8 : 15;
+        if (
+          (enemy instanceof Grunt || enemy instanceof Shooter) &&
+          enemy.isMeleeHittingPlayer(player)
+        ) {
+          const dmg = enemy instanceof Shooter ? 8 : 15;
           player.hp = Math.max(0, player.hp - dmg);
         }
       });
 
+      // Player attack collision
       if (player.isAttacking) {
         const range  = player.attackType === "light" ? 35 : 55;
         const radius = player.attackType === "light" ? 15 : 25;
@@ -325,7 +332,8 @@ export default function GameCanvas() {
         });
       }
 
-      const before   = enemiesRef.current.length;
+      // Kill tracking + wave respawn
+      const before     = enemiesRef.current.length;
       enemiesRef.current = enemiesRef.current.filter((e) => !e.isDead);
       const justKilled = before - enemiesRef.current.length;
       if (justKilled > 0) {
@@ -340,28 +348,25 @@ export default function GameCanvas() {
         Date.now() - lastSpawnRef.current > 1000
       ) {
         const spawnCount = Math.min(WAVE_SIZE, killsLeft);
-        // 🧱 Brick 6 — Update spawnWave call for wave respawn:
         const newWave    = spawnWave(spawnCount, worldW, worldH, rs.roomInCycle, rs.floor);
         enemiesRef.current.push(...newWave);
         aliveRef.current     = spawnCount;
         lastSpawnRef.current = Date.now();
       }
 
-      // 🧱 Brick 5 — Add projectile update/draw/collision:
-      // ============================================================
-      // [🧱 BLOCK: Projectile Update + Collision]
-      // ============================================================
+      // Projectile update + collision
       projectilesRef.current.forEach((proj) => {
         proj.update();
         if (proj.isHittingPlayer(player)) {
-          player.hp = Math.max(0, player.hp - proj.damage);
+          player.hp   = Math.max(0, player.hp - proj.damage);
           proj.isDone = true;
         }
       });
       projectilesRef.current = projectilesRef.current.filter((p) => !p.isDone);
-      projectilesRef.current.forEach((p) => p.draw(ctx, camera));
 
-      enemiesRef.current.forEach((e) => e.draw(ctx, camera));
+      // Draw
+      enemiesRef.current.forEach((e)  => e.draw(ctx, camera));
+      projectilesRef.current.forEach((p) => p.draw(ctx, camera));
     }
 
     // ============================================================
@@ -372,11 +377,11 @@ export default function GameCanvas() {
       boss.update(player, worldW, worldH);
 
       if (boss.isCollidingWithPlayer(player)) {
-        player.hp = Math.max(0, player.hp - boss.damage);
+        player.hp = Math.max(0, player.hp - boss.contactDamage);
         boss.damageCooldown = 800;
       }
       if (boss.isSlamHittingPlayer(player)) {
-        player.hp = Math.max(0, player.hp - 30);
+        player.hp = Math.max(0, player.hp - boss.slamDamage);
       }
 
       if (player.isAttacking) {
@@ -401,11 +406,16 @@ export default function GameCanvas() {
       boss.draw(ctx, camera);
     }
 
+    // --- Player always on top ---
     player.draw(ctx, camera);
   });
 
+  // ============================================================
+  // [🧱 BLOCK: JSX]
+  // ============================================================
   return (
     <div style={{ width: "100vw", height: "100vh", overflow: "hidden", background: "#0f172a" }}>
+
       <canvas ref={canvasRef} style={{ display: "block" }} />
 
       {!showMenu && (
@@ -432,35 +442,16 @@ export default function GameCanvas() {
           alignItems: "center", justifyContent: "center",
           background: "rgba(0,0,0,0.85)",
         }}>
-          <p style={{
-            fontFamily: "'Courier New', monospace",
-            fontSize: 64, fontWeight: 900,
-            color: "#4ade80", letterSpacing: "0.1em",
-            textShadow: "0 0 60px #4ade80", marginBottom: 12,
-          }}>
+          <p style={{ fontFamily: "'Courier New', monospace", fontSize: 64, fontWeight: 900, color: "#4ade80", letterSpacing: "0.1em", textShadow: "0 0 60px #4ade80", marginBottom: 12 }}>
             VICTORY
           </p>
-          <p style={{
-            fontFamily: "'Courier New', monospace",
-            fontSize: 14, color: "#475569", marginBottom: 8,
-          }}>
+          <p style={{ fontFamily: "'Courier New', monospace", fontSize: 14, color: "#475569", marginBottom: 8 }}>
             Floor {hud.floor} cleared.
           </p>
-          <p style={{
-            fontFamily: "'Courier New', monospace",
-            fontSize: 12, color: "#334155", marginBottom: 40,
-          }}>
+          <p style={{ fontFamily: "'Courier New', monospace", fontSize: 12, color: "#334155", marginBottom: 40 }}>
             Floor {hud.floor + 1} — enemies are stronger.
           </p>
-          <button
-            onClick={handleVictoryContinue}
-            style={{
-              fontFamily: "'Courier New', monospace",
-              fontSize: 15, fontWeight: 700, letterSpacing: "0.2em",
-              color: "#0f172a", backgroundColor: "#4ade80",
-              border: "none", padding: "14px 44px",
-              borderRadius: 4, cursor: "pointer", textTransform: "uppercase",
-            }}
+          <button onClick={handleVictoryContinue} style={{ fontFamily: "'Courier New', monospace", fontSize: 15, fontWeight: 700, letterSpacing: "0.2em", color: "#0f172a", backgroundColor: "#4ade80", border: "none", padding: "14px 44px", borderRadius: 4, cursor: "pointer", textTransform: "uppercase" }}
             onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "#86efac")}
             onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "#4ade80")}
           >
@@ -476,29 +467,13 @@ export default function GameCanvas() {
           alignItems: "center", justifyContent: "center",
           background: "rgba(0,0,0,0.82)",
         }}>
-          <p style={{
-            fontFamily: "'Courier New', monospace",
-            fontSize: 64, fontWeight: 900,
-            color: "#ef4444", letterSpacing: "0.1em",
-            textShadow: "0 0 60px #ef4444", marginBottom: 12,
-          }}>
+          <p style={{ fontFamily: "'Courier New', monospace", fontSize: 64, fontWeight: 900, color: "#ef4444", letterSpacing: "0.1em", textShadow: "0 0 60px #ef4444", marginBottom: 12 }}>
             GAME OVER
           </p>
-          <p style={{
-            fontFamily: "'Courier New', monospace",
-            fontSize: 14, color: "#475569", marginBottom: 40,
-          }}>
+          <p style={{ fontFamily: "'Courier New', monospace", fontSize: 14, color: "#475569", marginBottom: 40 }}>
             You were slain on Floor {hud.floor} — Room {hud.room}
           </p>
-          <button
-            onClick={handleRestart}
-            style={{
-              fontFamily: "'Courier New', monospace",
-              fontSize: 15, fontWeight: 700, letterSpacing: "0.2em",
-              color: "#0f172a", backgroundColor: "#ef4444",
-              border: "none", padding: "14px 44px",
-              borderRadius: 4, cursor: "pointer", textTransform: "uppercase",
-            }}
+          <button onClick={handleRestart} style={{ fontFamily: "'Courier New', monospace", fontSize: 15, fontWeight: 700, letterSpacing: "0.2em", color: "#0f172a", backgroundColor: "#ef4444", border: "none", padding: "14px 44px", borderRadius: 4, cursor: "pointer", textTransform: "uppercase" }}
             onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "#f87171")}
             onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "#ef4444")}
           >
@@ -507,13 +482,15 @@ export default function GameCanvas() {
         </div>
       )}
 
-      {showMenu && (
-        <Menu onStart={handleStart} />
-      )}
+      {showMenu && <Menu onStart={handleStart} />}
+
     </div>
   );
 }
 
+// ============================================================
+// [🧱 BLOCK: World Grid Painter]
+// ============================================================
 function drawWorldGrid(ctx: CanvasRenderingContext2D, camera: Camera, W: number, H: number) {
   const gridSize = 80;
   ctx.fillStyle  = "rgba(148, 163, 184, 0.1)";
@@ -528,12 +505,12 @@ function drawWorldGrid(ctx: CanvasRenderingContext2D, camera: Camera, W: number,
   }
 }
 
+// ============================================================
+// [🧱 BLOCK: World Boundary Painter]
+// ============================================================
 function drawWorldBounds(
-  ctx: CanvasRenderingContext2D,
-  camera: Camera,
-  worldW: number,
-  worldH: number,
-  isBoss: boolean
+  ctx: CanvasRenderingContext2D, camera: Camera,
+  worldW: number, worldH: number, isBoss: boolean
 ) {
   ctx.strokeStyle = isBoss ? "#f97316" : "#ef4444";
   ctx.lineWidth   = 6;
