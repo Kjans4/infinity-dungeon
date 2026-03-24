@@ -2,30 +2,28 @@
 "use client";
 
 import React, { useRef, useEffect, useState, useCallback } from "react";
-import { Player } from "@/engine/Player";
-import { InputHandler } from "@/engine/Input";
-import { Grunt, Shooter, Boss, Projectile, spawnWave } from "@/engine/enemy";
-import { Door } from "@/engine/Door";
-import { Camera, WORLD_W, WORLD_H, BOSS_WORLD_W, BOSS_WORLD_H } from "@/engine/Camera";
+import { InputHandler }  from "@/engine/Input";
+import { GameState }     from "@/engine/GameState";
+import { HordeSystem }   from "@/engine/systems/HordeSystem";
+import { BossSystem }    from "@/engine/systems/BossSystem";
+import { RenderSystem }  from "@/engine/systems/RenderSystem";
+import { WORLD_W, WORLD_H, BOSS_WORLD_W, BOSS_WORLD_H } from "@/engine/Camera";
 import {
-  RoomState, initialRoomState, advanceRoom, nextFloor, enterBossPhase,
+  RoomState, initialRoomState, advanceRoom,
+  nextFloor, enterBossPhase,
 } from "@/engine/RoomManager";
-import { useGameLoop } from "@/hooks/useGameLoop";
-import HUD from "@/components/HUD";
-import Shop from "@/components/Shop";
-import Menu from "@/components/Menu";
+import { useGameLoop }       from "@/hooks/useGameLoop";
+import HUD                   from "@/components/HUD";
+import Menu                  from "@/components/Menu";
+import Shop                  from "@/components/Shop";
+import GameOverOverlay        from "@/components/overlays/GameOverOverlay";
+import VictoryOverlay         from "@/components/overlays/VictoryOverlay";
 
 // ============================================================
 // [🧱 BLOCK: Constants]
 // ============================================================
-const KILL_THRESHOLD = 20;
-const INITIAL_WAVE   = 8;
-const WAVE_SIZE      = 6;
-const MAX_HP         = 100;
-const MAX_STAMINA    = 100;
-
-const hordeSpawn = (wW: number, wH: number) => ({ x: wW / 2, y: wH - 100 });
-const bossSpawn  = () => ({ x: BOSS_WORLD_W / 2, y: BOSS_WORLD_H - 100 });
+const MAX_HP      = 100;
+const MAX_STAMINA = 100;
 
 interface HUDState {
   hp: number; stamina: number;
@@ -35,23 +33,15 @@ interface HUDState {
 export default function GameCanvas() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
-  // ── Engine Refs ────────────────────────────────────────────
-  const playerRef      = useRef<Player | null>(null);
-  const inputRef       = useRef<InputHandler | null>(null);
-  const enemiesRef     = useRef<(Grunt | Shooter)[]>([]);
-  const bossRef        = useRef<Boss | null>(null);
-  const doorRef        = useRef<Door | null>(null);
-  const cameraRef      = useRef<Camera | null>(null);
-  const projectilesRef = useRef<Projectile[]>([]);
-  const killsRef       = useRef<number>(0);
-  const aliveRef       = useRef<number>(0);
-  const lastSpawnRef   = useRef<number>(0);
-  const roomStateRef   = useRef<RoomState>(initialRoomState());
+  // ── Systems (created once, live for app lifetime) ──────────
+  const stateRef  = useRef<GameState | null>(null);
+  const inputRef  = useRef<InputHandler | null>(null);
+  const hordeRef  = useRef(new HordeSystem());
+  const bossRef   = useRef(new BossSystem());
+  const renderRef = useRef(new RenderSystem());
+  const roomRef   = useRef<RoomState>(initialRoomState());
 
-  const screenW = useRef<number>(800);
-  const screenH = useRef<number>(600);
-
-  // ── React State ────────────────────────────────────────────
+  // ── React State (UI only) ──────────────────────────────────
   const [showMenu,   setShowMenu]   = useState(true);
   const [isGameOver, setIsGameOver] = useState(false);
   const [isVictory,  setIsVictory]  = useState(false);
@@ -62,138 +52,73 @@ export default function GameCanvas() {
   });
 
   // ============================================================
-  // [🧱 BLOCK: Setup Horde Room]
-  // ============================================================
-  const setupHordeRoom = useCallback((rs: RoomState) => {
-    if (!playerRef.current || !cameraRef.current) return;
-
-    const sp = hordeSpawn(WORLD_W, WORLD_H);
-    playerRef.current.x  = sp.x;
-    playerRef.current.y  = sp.y;
-    playerRef.current.vx = 0;
-    playerRef.current.vy = 0;
-    playerRef.current.hp = MAX_HP;
-
-    killsRef.current     = 0;
-    aliveRef.current     = INITIAL_WAVE;
-    lastSpawnRef.current = 0;
-
-    projectilesRef.current = [];
-    enemiesRef.current     = spawnWave(INITIAL_WAVE, WORLD_W, WORLD_H, rs.roomInCycle, rs.floor);
-    bossRef.current        = null;
-    doorRef.current        = new Door(WORLD_W);
-    doorRef.current.isActive = false;
-
-    cameraRef.current.update(playerRef.current, WORLD_W, WORLD_H);
-  }, []);
-
-  // ============================================================
-  // [🧱 BLOCK: Setup Boss Room]
-  // ============================================================
-  const setupBossRoom = useCallback((rs: RoomState) => {
-    if (!playerRef.current || !cameraRef.current) return;
-
-    const sp = bossSpawn();
-    playerRef.current.x  = sp.x;
-    playerRef.current.y  = sp.y;
-    playerRef.current.vx = 0;
-    playerRef.current.vy = 0;
-
-    enemiesRef.current     = [];
-    projectilesRef.current = [];
-    killsRef.current       = 0;
-
-    bossRef.current = new Boss(
-      BOSS_WORLD_W / 2 - 40, 80, rs.floor
-    );
-    doorRef.current = null;
-
-    // ✅ Phase is already set to 'boss' by enterBossPhase before this runs
-    cameraRef.current.update(playerRef.current, BOSS_WORLD_W, BOSS_WORLD_H);
-  }, []);
-
-  // ============================================================
-  // [🧱 BLOCK: Init]
+  // [🧱 BLOCK: Init — canvas + input only]
+  // Game state not initialized until RAID is clicked.
   // ============================================================
   useEffect(() => {
-    screenW.current = window.innerWidth;
-    screenH.current = window.innerHeight;
+    const canvas  = canvasRef.current!;
+    const w       = window.innerWidth;
+    const h       = window.innerHeight;
+    canvas.width  = w;
+    canvas.height = h;
 
-    const canvas = canvasRef.current!;
-    canvas.width  = screenW.current;
-    canvas.height = screenH.current;
+    stateRef.current = new GameState(w, h);
+    inputRef.current = new InputHandler();
 
-    cameraRef.current = new Camera(screenW.current, screenH.current);
-    inputRef.current  = new InputHandler();
-    playerRef.current = new Player(WORLD_W / 2, WORLD_H / 2);
-
-    // Nothing active until RAID is clicked
-    enemiesRef.current     = [];
-    projectilesRef.current = [];
-    doorRef.current        = null;
-    bossRef.current        = null;
-
-    const handleResize = () => {
-      screenW.current   = window.innerWidth;
-      screenH.current   = window.innerHeight;
-      canvas.width      = screenW.current;
-      canvas.height     = screenH.current;
-      if (cameraRef.current) {
-        cameraRef.current.screenW = screenW.current;
-        cameraRef.current.screenH = screenH.current;
-      }
+    const onResize = () => {
+      canvas.width  = window.innerWidth;
+      canvas.height = window.innerHeight;
+      stateRef.current?.resize(window.innerWidth, window.innerHeight);
     };
-    window.addEventListener("resize", handleResize);
+    window.addEventListener("resize", onResize);
 
+    // Sync HUD at 10fps
     const hudSync = setInterval(() => {
-      if (!playerRef.current) return;
+      const s = stateRef.current;
+      const r = roomRef.current;
+      if (!s) return;
       setHud({
-        hp:      Math.max(0, playerRef.current.hp),
-        stamina: Math.round(playerRef.current.stamina),
-        kills:   killsRef.current,
-        room:    roomStateRef.current.roomDisplay,
-        floor:   roomStateRef.current.floor,
+        hp:      Math.max(0, s.player.hp),
+        stamina: Math.round(s.player.stamina),
+        kills:   s.kills,
+        room:    r.roomDisplay,
+        floor:   r.floor,
       });
     }, 100);
 
     return () => {
       clearInterval(hudSync);
-      window.removeEventListener("resize", handleResize);
+      window.removeEventListener("resize", onResize);
     };
   }, []);
 
   // ============================================================
-  // [🧱 BLOCK: Handle Start]
+  // [🧱 BLOCK: Handle Start — RAID button]
   // ============================================================
   const handleStart = useCallback(() => {
     const rs = initialRoomState();
-    roomStateRef.current = rs;
+    roomRef.current = rs;
 
-    playerRef.current = new Player(WORLD_W / 2, WORLD_H / 2);
-    cameraRef.current = new Camera(screenW.current, screenH.current);
+    stateRef.current!.reset();
+    hordeRef.current.setup(
+      stateRef.current!, rs, WORLD_W, WORLD_H
+    );
 
-    setupHordeRoom(rs);
     setHud({ hp: MAX_HP, stamina: MAX_STAMINA, kills: 0, room: 1, floor: 1 });
     setIsGameOver(false);
     setIsVictory(false);
     setShowShop(false);
     setShowMenu(false);
-  }, [setupHordeRoom]);
+  }, []);
 
   // ============================================================
-  // [🧱 BLOCK: Handle Restart]
+  // [🧱 BLOCK: Handle Restart — back to menu]
   // ============================================================
   const handleRestart = useCallback(() => {
-    enemiesRef.current     = [];
-    bossRef.current        = null;
-    doorRef.current        = null;
-    projectilesRef.current = [];
-    killsRef.current       = 0;
-    aliveRef.current       = 0;
-
-    roomStateRef.current = initialRoomState();
-    playerRef.current    = new Player(WORLD_W / 2, WORLD_H / 2);
-    cameraRef.current    = new Camera(screenW.current, screenH.current);
+    stateRef.current!.reset();
+    hordeRef.current.reset(stateRef.current!);
+    bossRef.current.reset(stateRef.current!);
+    roomRef.current = initialRoomState();
 
     setHud({ hp: MAX_HP, stamina: MAX_STAMINA, kills: 0, room: 1, floor: 1 });
     setIsGameOver(false);
@@ -203,211 +128,102 @@ export default function GameCanvas() {
   }, []);
 
   // ============================================================
-  // [🧱 BLOCK: Shop Continue → Boss Room]
-  // ✅ enterBossPhase sets phase BEFORE setupBossRoom runs
-  // ============================================================
-  const handleShopContinue = useCallback(() => {
-    roomStateRef.current = enterBossPhase(roomStateRef.current);
-    setShowShop(false);
-    setupBossRoom(roomStateRef.current);
-  }, [setupBossRoom]);
-
-  // ============================================================
-  // [🧱 BLOCK: Victory Continue]
-  // ============================================================
-  const handleVictoryContinue = useCallback(() => {
-    const rs = nextFloor(roomStateRef.current);
-    roomStateRef.current = rs;
-
-    playerRef.current = new Player(WORLD_W / 2, WORLD_H / 2);
-    cameraRef.current = new Camera(screenW.current, screenH.current);
-
-    setupHordeRoom(rs);
-    setIsVictory(false);
-    setShowShop(false);
-  }, [setupHordeRoom]);
-
-  // ============================================================
-  // [🧱 BLOCK: Door Transition]
+  // [🧱 BLOCK: Handle Door Enter]
   // ============================================================
   const handleDoorEnter = useCallback(() => {
-    const rs = advanceRoom(roomStateRef.current);
-    roomStateRef.current = rs;
+    const rs = advanceRoom(roomRef.current);
+    roomRef.current = rs;
 
     if (rs.phase === 'shop') {
       setShowShop(true);
     } else {
-      setupHordeRoom(rs);
+      hordeRef.current.setup(stateRef.current!, rs, WORLD_W, WORLD_H);
     }
-  }, [setupHordeRoom]);
+  }, []);
+
+  // ============================================================
+  // [🧱 BLOCK: Handle Shop Continue → Boss]
+  // ============================================================
+  const handleShopContinue = useCallback(() => {
+    roomRef.current = enterBossPhase(roomRef.current);
+    setShowShop(false);
+    bossRef.current.setup(stateRef.current!, roomRef.current);
+  }, []);
+
+  // ============================================================
+  // [🧱 BLOCK: Handle Victory → Next Floor]
+  // ============================================================
+  const handleVictoryContinue = useCallback(() => {
+    const rs = nextFloor(roomRef.current);
+    roomRef.current = rs;
+
+    stateRef.current!.reset();
+    hordeRef.current.setup(stateRef.current!, rs, WORLD_W, WORLD_H);
+    setIsVictory(false);
+    setShowShop(false);
+  }, []);
 
   // ============================================================
   // [🧱 BLOCK: Game Loop — ~60fps]
+  // Thin orchestration — each system does its own work.
   // ============================================================
-  useGameLoop((_deltaTime: number) => {
+  useGameLoop((_dt: number) => {
     const canvas = canvasRef.current;
-    const camera = cameraRef.current;
-    const player = playerRef.current;
-    if (!canvas || !camera || !player || !inputRef.current) return;
+    const state  = stateRef.current;
+    const input  = inputRef.current;
+    if (!canvas || !state || !input) return;
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
 
+    // Pause during any overlay
     if (showMenu || showShop || isVictory || isGameOver) return;
 
-    const W      = screenW.current;
-    const H      = screenH.current;
-    const rs     = roomStateRef.current;
+    const rs     = roomRef.current;
     const isBoss = rs.phase === 'boss';
     const worldW = isBoss ? BOSS_WORLD_W : WORLD_W;
     const worldH = isBoss ? BOSS_WORLD_H : WORLD_H;
+    const player = state.player;
 
+    // ── Death check ──────────────────────────────────────────
     if (player.hp <= 0) { setIsGameOver(true); return; }
 
-    // --- 1. Clear ---
-    ctx.clearRect(0, 0, W, H);
+    // ── 1. Clear ─────────────────────────────────────────────
+    renderRef.current.clear(ctx, state.screenW, state.screenH);
 
-    // --- 2. Camera ---
-    camera.update(player, worldW, worldH);
+    // ── 2. Camera ────────────────────────────────────────────
+    state.camera.update(player, worldW, worldH);
 
-    // --- 3. World ---
-    drawWorldGrid(ctx, camera, W, H);
-    drawWorldBounds(ctx, camera, worldW, worldH, isBoss);
+    // ── 3. World ─────────────────────────────────────────────
+    renderRef.current.drawWorld(
+      ctx, state.camera,
+      state.screenW, state.screenH,
+      isBoss
+    );
 
-    // --- 4. Door ---
-    if (doorRef.current) {
-      doorRef.current.update();
-      doorRef.current.draw(ctx, camera);
-      if (killsRef.current >= KILL_THRESHOLD && !doorRef.current.isActive) {
-        doorRef.current.activate();
-      }
-      if (doorRef.current.isCollidingWithPlayer(player)) {
-        handleDoorEnter();
-        return;
-      }
-    }
-
-    // --- 5. Player ---
-    player.update(inputRef.current);
+    // ── 4. Player update + clamp ─────────────────────────────
+    player.update(input);
     player.x = Math.max(0, Math.min(worldW - player.width,  player.x));
     player.y = Math.max(0, Math.min(worldH - player.height, player.y));
 
-    // ============================================================
-    // [🧱 BLOCK: Horde Logic]
-    // ============================================================
+    // ── 5. Systems ───────────────────────────────────────────
     if (!isBoss) {
-      enemiesRef.current.forEach((enemy) => {
-        enemy.update(player, worldW, worldH);
-
-        // Collect projectiles fired this frame
-        if (enemy.pendingProjectile) {
-          projectilesRef.current.push(enemy.pendingProjectile);
-          enemy.pendingProjectile = null;
-        }
-
-        // Melee strike hit check
-        if (
-          (enemy instanceof Grunt || enemy instanceof Shooter) &&
-          enemy.isMeleeHittingPlayer(player)
-        ) {
-          const dmg = enemy instanceof Shooter ? 8 : 15;
-          player.hp = Math.max(0, player.hp - dmg);
-        }
-      });
-
-      // Player attack collision
-      if (player.isAttacking) {
-        const range  = player.attackType === "light" ? 35 : 55;
-        const radius = player.attackType === "light" ? 15 : 25;
-        const damage = player.attackType === "light" ? 10 : 25;
-        const cx = (player.x + player.width  / 2) + player.facing.x * range;
-        const cy = (player.y + player.height / 2) + player.facing.y * range;
-
-        enemiesRef.current.forEach((enemy) => {
-          if (enemy.isDead) return;
-          const nx = Math.max(enemy.x, Math.min(cx, enemy.x + enemy.width));
-          const ny = Math.max(enemy.y, Math.min(cy, enemy.y + enemy.height));
-          if ((cx - nx) ** 2 + (cy - ny) ** 2 < radius * radius) {
-            enemy.takeDamage(damage);
-          }
-        });
-      }
-
-      // Kill tracking + wave respawn
-      const before     = enemiesRef.current.length;
-      enemiesRef.current = enemiesRef.current.filter((e) => !e.isDead);
-      const justKilled = before - enemiesRef.current.length;
-      if (justKilled > 0) {
-        killsRef.current += justKilled;
-        aliveRef.current -= justKilled;
-      }
-
-      const killsLeft = KILL_THRESHOLD - killsRef.current;
-      if (
-        killsLeft > 0 &&
-        aliveRef.current === 0 &&
-        Date.now() - lastSpawnRef.current > 1000
-      ) {
-        const spawnCount = Math.min(WAVE_SIZE, killsLeft);
-        const newWave    = spawnWave(spawnCount, worldW, worldH, rs.roomInCycle, rs.floor);
-        enemiesRef.current.push(...newWave);
-        aliveRef.current     = spawnCount;
-        lastSpawnRef.current = Date.now();
-      }
-
-      // Projectile update + collision
-      projectilesRef.current.forEach((proj) => {
-        proj.update();
-        if (proj.isHittingPlayer(player)) {
-          player.hp   = Math.max(0, player.hp - proj.damage);
-          proj.isDone = true;
-        }
-      });
-      projectilesRef.current = projectilesRef.current.filter((p) => !p.isDone);
-
-      // Draw
-      enemiesRef.current.forEach((e)  => e.draw(ctx, camera));
-      projectilesRef.current.forEach((p) => p.draw(ctx, camera));
+      const result = hordeRef.current.update(state, player, rs, worldW, worldH);
+      if (result === 'door') { handleDoorEnter(); return; }
+      hordeRef.current.draw(state, ctx, state.camera);
     }
 
-    // ============================================================
-    // [🧱 BLOCK: Boss Logic]
-    // ============================================================
-    if (isBoss && bossRef.current) {
-      const boss = bossRef.current;
-      boss.update(player, worldW, worldH);
-
-      if (boss.isCollidingWithPlayer(player)) {
-        player.hp = Math.max(0, player.hp - boss.contactDamage);
-        boss.damageCooldown = 800;
-      }
-      if (boss.isSlamHittingPlayer(player)) {
-        player.hp = Math.max(0, player.hp - boss.slamDamage);
-      }
-
-      if (player.isAttacking) {
-        const range  = player.attackType === "light" ? 35 : 55;
-        const radius = player.attackType === "light" ? 15 : 25;
-        const damage = player.attackType === "light" ? 10 : 25;
-        const cx = (player.x + player.width  / 2) + player.facing.x * range;
-        const cy = (player.y + player.height / 2) + player.facing.y * range;
-        const nx = Math.max(boss.x, Math.min(cx, boss.x + boss.width));
-        const ny = Math.max(boss.y, Math.min(cy, boss.y + boss.height));
-        if ((cx - nx) ** 2 + (cy - ny) ** 2 < radius * radius) {
-          boss.takeDamage(damage);
-        }
-      }
-
-      if (boss.isDead) {
-        roomStateRef.current = { ...roomStateRef.current, phase: 'victory' };
+    if (isBoss) {
+      const result = bossRef.current.update(state, player, worldW, worldH);
+      if (result === 'victory') {
+        roomRef.current = { ...rs, phase: 'victory' };
         setIsVictory(true);
         return;
       }
-
-      boss.draw(ctx, camera);
+      bossRef.current.draw(state, ctx, state.camera);
     }
 
-    // --- Player always on top ---
-    player.draw(ctx, camera);
+    // ── 6. Player draw (always on top) ───────────────────────
+    player.draw(ctx, state.camera);
   });
 
   // ============================================================
@@ -418,101 +234,22 @@ export default function GameCanvas() {
 
       <canvas ref={canvasRef} style={{ display: "block" }} />
 
+      {/* HUD */}
       {!showMenu && (
         <HUD
           hp={hud.hp}           maxHp={MAX_HP}
           stamina={hud.stamina} maxStamina={MAX_STAMINA}
-          kills={hud.kills}     killThreshold={KILL_THRESHOLD}
+          kills={hud.kills}     killThreshold={hordeRef.current.killThreshold}
           room={hud.room}       floor={hud.floor}
         />
       )}
 
-      {showShop && (
-        <Shop
-          floor={roomStateRef.current.floor}
-          room={roomStateRef.current.roomDisplay}
-          onContinue={handleShopContinue}
-        />
-      )}
-
-      {isVictory && (
-        <div style={{
-          position: "absolute", inset: 0, zIndex: 45,
-          display: "flex", flexDirection: "column",
-          alignItems: "center", justifyContent: "center",
-          background: "rgba(0,0,0,0.85)",
-        }}>
-          <p style={{ fontFamily: "'Courier New', monospace", fontSize: 64, fontWeight: 900, color: "#4ade80", letterSpacing: "0.1em", textShadow: "0 0 60px #4ade80", marginBottom: 12 }}>
-            VICTORY
-          </p>
-          <p style={{ fontFamily: "'Courier New', monospace", fontSize: 14, color: "#475569", marginBottom: 8 }}>
-            Floor {hud.floor} cleared.
-          </p>
-          <p style={{ fontFamily: "'Courier New', monospace", fontSize: 12, color: "#334155", marginBottom: 40 }}>
-            Floor {hud.floor + 1} — enemies are stronger.
-          </p>
-          <button onClick={handleVictoryContinue} style={{ fontFamily: "'Courier New', monospace", fontSize: 15, fontWeight: 700, letterSpacing: "0.2em", color: "#0f172a", backgroundColor: "#4ade80", border: "none", padding: "14px 44px", borderRadius: 4, cursor: "pointer", textTransform: "uppercase" }}
-            onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "#86efac")}
-            onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "#4ade80")}
-          >
-            ▶ Enter Floor {hud.floor + 1}
-          </button>
-        </div>
-      )}
-
-      {isGameOver && !showMenu && (
-        <div style={{
-          position: "absolute", inset: 0, zIndex: 48,
-          display: "flex", flexDirection: "column",
-          alignItems: "center", justifyContent: "center",
-          background: "rgba(0,0,0,0.82)",
-        }}>
-          <p style={{ fontFamily: "'Courier New', monospace", fontSize: 64, fontWeight: 900, color: "#ef4444", letterSpacing: "0.1em", textShadow: "0 0 60px #ef4444", marginBottom: 12 }}>
-            GAME OVER
-          </p>
-          <p style={{ fontFamily: "'Courier New', monospace", fontSize: 14, color: "#475569", marginBottom: 40 }}>
-            You were slain on Floor {hud.floor} — Room {hud.room}
-          </p>
-          <button onClick={handleRestart} style={{ fontFamily: "'Courier New', monospace", fontSize: 15, fontWeight: 700, letterSpacing: "0.2em", color: "#0f172a", backgroundColor: "#ef4444", border: "none", padding: "14px 44px", borderRadius: 4, cursor: "pointer", textTransform: "uppercase" }}
-            onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "#f87171")}
-            onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "#ef4444")}
-          >
-            ▶ Raid Again
-          </button>
-        </div>
-      )}
-
-      {showMenu && <Menu onStart={handleStart} />}
+      {/* Overlays — order matters for z-index */}
+      {showShop    && <Shop floor={roomRef.current.floor} room={roomRef.current.roomDisplay} onContinue={handleShopContinue} />}
+      {isVictory   && <VictoryOverlay  floor={hud.floor} onContinue={handleVictoryContinue} />}
+      {isGameOver && !showMenu && <GameOverOverlay floor={hud.floor} room={hud.room} onRetry={handleRestart} />}
+      {showMenu    && <Menu onStart={handleStart} />}
 
     </div>
   );
-}
-
-// ============================================================
-// [🧱 BLOCK: World Grid Painter]
-// ============================================================
-function drawWorldGrid(ctx: CanvasRenderingContext2D, camera: Camera, W: number, H: number) {
-  const gridSize = 80;
-  ctx.fillStyle  = "rgba(148, 163, 184, 0.1)";
-  const startX   = -(camera.x % gridSize);
-  const startY   = -(camera.y % gridSize);
-  for (let x = startX; x < W; x += gridSize) {
-    for (let y = startY; y < H; y += gridSize) {
-      ctx.beginPath();
-      ctx.arc(x, y, 1.5, 0, Math.PI * 2);
-      ctx.fill();
-    }
-  }
-}
-
-// ============================================================
-// [🧱 BLOCK: World Boundary Painter]
-// ============================================================
-function drawWorldBounds(
-  ctx: CanvasRenderingContext2D, camera: Camera,
-  worldW: number, worldH: number, isBoss: boolean
-) {
-  ctx.strokeStyle = isBoss ? "#f97316" : "#ef4444";
-  ctx.lineWidth   = 6;
-  ctx.strokeRect(camera.toScreenX(0), camera.toScreenY(0), worldW, worldH);
 }
