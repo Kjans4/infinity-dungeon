@@ -4,7 +4,8 @@
 import React, { useRef, useEffect, useState, useCallback } from "react";
 import { Player } from "@/engine/Player";
 import { InputHandler } from "@/engine/Input";
-import { Enemy, spawnWave } from "@/engine/Enemy";
+// 🧱 Brick 2 — Add Projectile to the Enemy import at the top:
+import { Enemy, spawnWave, Projectile } from "@/engine/Enemy";
 import { Boss } from "@/engine/Boss";
 import { Door } from "@/engine/Door";
 import { Camera, WORLD_W, WORLD_H, BOSS_WORLD_W, BOSS_WORLD_H } from "@/engine/Camera";
@@ -46,13 +47,14 @@ export default function GameCanvas() {
   const killsRef     = useRef<number>(0);
   const aliveRef     = useRef<number>(0);
   const lastSpawnRef = useRef<number>(0);
+  // 🧱 Brick 1 — Add projectilesRef after lastSpawnRef:
+  const projectilesRef = useRef<Projectile[]>([]);
   const roomStateRef = useRef<RoomState>(initialRoomState());
 
   const screenW = useRef<number>(800);
   const screenH = useRef<number>(600);
 
   // ── React State (UI only) ──────────────────────────────────
-  // ✅ FIX: showMenu starts true — nothing runs until RAID clicked
   const [showMenu,   setShowMenu]   = useState(true);
   const [isGameOver, setIsGameOver] = useState(false);
   const [isVictory,  setIsVictory]  = useState(false);
@@ -76,10 +78,13 @@ export default function GameCanvas() {
     playerRef.current.hp = MAX_HP;
 
     killsRef.current     = 0;
+    // 🧱 Brick 3 — Clear projectiles on room setup.
+    projectilesRef.current = [];
     aliveRef.current     = INITIAL_WAVE;
     lastSpawnRef.current = 0;
 
-    enemiesRef.current = spawnWave(INITIAL_WAVE, WORLD_W, WORLD_H, 'grunt', rs.floor);
+    // 🧱 Brick 6 — Update spawnWave calls to pass roomInCycle:
+    enemiesRef.current = spawnWave(INITIAL_WAVE, WORLD_W, WORLD_H, rs.roomInCycle, rs.floor);
     bossRef.current    = null;
     doorRef.current    = new Door(WORLD_W);
     doorRef.current.isActive = false;
@@ -101,6 +106,8 @@ export default function GameCanvas() {
 
     enemiesRef.current = [];
     killsRef.current   = 0;
+    // 🧱 Brick 3 — Clear projectiles on room setup.
+    projectilesRef.current = [];
     bossRef.current    = new Boss(BOSS_WORLD_W / 2 - 40, 80, rs.floor);
     doorRef.current    = null;
 
@@ -109,7 +116,6 @@ export default function GameCanvas() {
 
   // ============================================================
   // [🧱 BLOCK: Init — canvas + input only, NO game setup]
-  // Game setup happens in handleStart when RAID is clicked.
   // ============================================================
   useEffect(() => {
     screenW.current = window.innerWidth;
@@ -119,12 +125,10 @@ export default function GameCanvas() {
     canvas.width  = screenW.current;
     canvas.height = screenH.current;
 
-    // Camera and input ready — but no enemies, no player stats
     cameraRef.current = new Camera(screenW.current, screenH.current);
     inputRef.current  = new InputHandler();
     playerRef.current = new Player(WORLD_W / 2, WORLD_H / 2);
 
-    // ✅ FIX: Leave everything empty until RAID is clicked
     enemiesRef.current = [];
     doorRef.current    = null;
     bossRef.current    = null;
@@ -160,7 +164,6 @@ export default function GameCanvas() {
 
   // ============================================================
   // [🧱 BLOCK: Handle Start — called by RAID button]
-  // Initializes everything fresh and hides the menu.
   // ============================================================
   const handleStart = useCallback(() => {
     const rs = initialRoomState();
@@ -175,15 +178,16 @@ export default function GameCanvas() {
     setIsGameOver(false);
     setIsVictory(false);
     setShowShop(false);
-    setShowMenu(false); // ✅ Hide menu LAST so game is ready before it appears
+    setShowMenu(false); 
   }, [setupHordeRoom]);
 
   // ============================================================
   // [🧱 BLOCK: Handle Restart — goes back to main menu]
   // ============================================================
   const handleRestart = useCallback(() => {
-    // ✅ FIX: Reset everything and return to menu
     enemiesRef.current = [];
+    // 🧱 Brick 3 — Clear projectiles on restart.
+    projectilesRef.current = [];
     bossRef.current    = null;
     doorRef.current    = null;
     killsRef.current   = 0;
@@ -197,7 +201,7 @@ export default function GameCanvas() {
     setIsGameOver(false);
     setIsVictory(false);
     setShowShop(false);
-    setShowMenu(true); // ✅ Back to menu
+    setShowMenu(true); 
   }, []);
 
   // ============================================================
@@ -248,7 +252,6 @@ export default function GameCanvas() {
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
 
-    // ✅ FIX: Pause during ALL overlays including menu
     if (showMenu || showShop || isVictory || isGameOver) return;
 
     const W      = screenW.current;
@@ -258,20 +261,13 @@ export default function GameCanvas() {
     const worldW = isBoss ? BOSS_WORLD_W : WORLD_W;
     const worldH = isBoss ? BOSS_WORLD_H : WORLD_H;
 
-    // ── Death check ──────────────────────────────────────────
     if (player.hp <= 0) { setIsGameOver(true); return; }
 
-    // --- 1. Clear ---
     ctx.clearRect(0, 0, W, H);
-
-    // --- 2. Camera ---
     camera.update(player, worldW, worldH);
-
-    // --- 3. Draw World ---
     drawWorldGrid(ctx, camera, W, H);
     drawWorldBounds(ctx, camera, worldW, worldH, isBoss);
 
-    // --- 4. Door ---
     if (doorRef.current) {
       doorRef.current.update();
       doorRef.current.draw(ctx, camera);
@@ -285,7 +281,6 @@ export default function GameCanvas() {
       }
     }
 
-    // --- 5. Player ---
     player.update(inputRef.current);
     player.x = Math.max(0, Math.min(worldW - player.width,  player.x));
     player.y = Math.max(0, Math.min(worldH - player.height, player.y));
@@ -294,13 +289,18 @@ export default function GameCanvas() {
     // [🧱 BLOCK: Horde Logic]
     // ============================================================
     if (!isBoss) {
+      // 🧱 Brick 4 — Replace the entire Horde Logic block's enemy contact damage and collision section:
       enemiesRef.current.forEach((enemy) => {
         enemy.update(player, worldW, worldH);
-        if (enemy.isCollidingWithPlayer(player)) {
-          player.hp = Math.max(0, player.hp - enemy.damage);
-          enemy.x  -= enemy.vx * 3;
-          enemy.y  -= enemy.vy * 3;
-          enemy.damageCooldown = 800;
+        // Collect any fired projectile this frame
+        if (enemy.pendingProjectile) {
+          projectilesRef.current.push(enemy.pendingProjectile);
+          enemy.pendingProjectile = null;
+        }
+        // Melee strike hit check
+        if (enemy.isMeleeHittingPlayer(player)) {
+          const dmg = enemy.type === 'shooter' ? 8 : 15;
+          player.hp = Math.max(0, player.hp - dmg);
         }
       });
 
@@ -336,11 +336,26 @@ export default function GameCanvas() {
         Date.now() - lastSpawnRef.current > 1000
       ) {
         const spawnCount = Math.min(WAVE_SIZE, killsLeft);
-        const newWave    = spawnWave(spawnCount, worldW, worldH, 'grunt', rs.floor);
+        // 🧱 Brick 6 — Update spawnWave call for wave respawn:
+        const newWave    = spawnWave(spawnCount, worldW, worldH, rs.roomInCycle, rs.floor);
         enemiesRef.current.push(...newWave);
         aliveRef.current     = spawnCount;
         lastSpawnRef.current = Date.now();
       }
+
+      // 🧱 Brick 5 — Add projectile update/draw/collision:
+      // ============================================================
+      // [🧱 BLOCK: Projectile Update + Collision]
+      // ============================================================
+      projectilesRef.current.forEach((proj) => {
+        proj.update();
+        if (proj.isHittingPlayer(player)) {
+          player.hp = Math.max(0, player.hp - proj.damage);
+          proj.isDone = true;
+        }
+      });
+      projectilesRef.current = projectilesRef.current.filter((p) => !p.isDone);
+      projectilesRef.current.forEach((p) => p.draw(ctx, camera));
 
       enemiesRef.current.forEach((e) => e.draw(ctx, camera));
     }
@@ -382,22 +397,13 @@ export default function GameCanvas() {
       boss.draw(ctx, camera);
     }
 
-    // --- Draw Player on top ---
     player.draw(ctx, camera);
   });
 
-  // ============================================================
-  // [🧱 BLOCK: JSX]
-  // z-index order (low → high): canvas, HUD(20), shop(40),
-  // victory(45), gameOver(48), menu(50 — always on top)
-  // ============================================================
   return (
     <div style={{ width: "100vw", height: "100vh", overflow: "hidden", background: "#0f172a" }}>
-
-      {/* ── Fullscreen Canvas ── */}
       <canvas ref={canvasRef} style={{ display: "block" }} />
 
-      {/* ── HUD — hidden while menu is showing ── */}
       {!showMenu && (
         <HUD
           hp={hud.hp}           maxHp={MAX_HP}
@@ -407,7 +413,6 @@ export default function GameCanvas() {
         />
       )}
 
-      {/* ── Shop Overlay ── */}
       {showShop && (
         <Shop
           floor={roomStateRef.current.floor}
@@ -416,7 +421,6 @@ export default function GameCanvas() {
         />
       )}
 
-      {/* ── Victory Screen ── */}
       {isVictory && (
         <div style={{
           position: "absolute", inset: 0, zIndex: 45,
@@ -461,7 +465,6 @@ export default function GameCanvas() {
         </div>
       )}
 
-      {/* ── Game Over — ✅ only shows if menu is NOT showing ── */}
       {isGameOver && !showMenu && (
         <div style={{
           position: "absolute", inset: 0, zIndex: 48,
@@ -500,18 +503,13 @@ export default function GameCanvas() {
         </div>
       )}
 
-      {/* ── Main Menu — ✅ zIndex 50, always on top ── */}
       {showMenu && (
         <Menu onStart={handleStart} />
       )}
-
     </div>
   );
 }
 
-// ============================================================
-// [🧱 BLOCK: World Grid Painter]
-// ============================================================
 function drawWorldGrid(ctx: CanvasRenderingContext2D, camera: Camera, W: number, H: number) {
   const gridSize = 80;
   ctx.fillStyle  = "rgba(148, 163, 184, 0.1)";
@@ -526,9 +524,6 @@ function drawWorldGrid(ctx: CanvasRenderingContext2D, camera: Camera, W: number,
   }
 }
 
-// ============================================================
-// [🧱 BLOCK: World Boundary Painter]
-// ============================================================
 function drawWorldBounds(
   ctx: CanvasRenderingContext2D,
   camera: Camera,
