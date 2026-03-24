@@ -88,3 +88,14 @@ export function nextFloor(current: RoomState): RoomState {
     phase:       'horde',
   };
 }
+
+// ============================================================
+// [🧱 BLOCK: Enter Boss Phase]
+// Called by GameCanvas after shop is dismissed.
+// ============================================================
+export function enterBossPhase(current: RoomState): RoomState {
+  return {
+    ...current,
+    phase: 'boss',
+  };
+}

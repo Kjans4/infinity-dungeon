@@ -10,12 +10,13 @@ import { Boss } from "@/engine/Boss";
 import { Door } from "@/engine/Door";
 import { Camera, WORLD_W, WORLD_H, BOSS_WORLD_W, BOSS_WORLD_H } from "@/engine/Camera";
 import {
-  RoomState, initialRoomState, advanceRoom, nextFloor,
+  RoomState, initialRoomState, advanceRoom, nextFloor, enterBossPhase,
 } from "@/engine/RoomManager";
 import { useGameLoop } from "@/hooks/useGameLoop";
 import HUD from "@/components/HUD";
 import Shop from "@/components/Shop";
 import Menu from "@/components/Menu";
+
 
 // ============================================================
 // [🧱 BLOCK: Constants]
@@ -131,6 +132,7 @@ export default function GameCanvas() {
 
     enemiesRef.current = [];
     doorRef.current    = null;
+    roomStateRef.current = { ...roomStateRef.current, phase: 'boss' };
     bossRef.current    = null;
 
     const handleResize = () => {
@@ -208,9 +210,11 @@ export default function GameCanvas() {
   // [🧱 BLOCK: Shop Continue → Boss Room]
   // ============================================================
   const handleShopContinue = useCallback(() => {
-    setShowShop(false);
-    setupBossRoom(roomStateRef.current);
-  }, [setupBossRoom]);
+  // ✅ Set phase to 'boss' BEFORE setupBossRoom so isBoss is true in the loop
+  roomStateRef.current = enterBossPhase(roomStateRef.current);
+  setShowShop(false);
+  setupBossRoom(roomStateRef.current);
+}, [setupBossRoom]);
 
   // ============================================================
   // [🧱 BLOCK: Victory Continue → Next Floor]
