@@ -1,13 +1,14 @@
 // src/engine/GameState.ts
-import { Player } from "./Player";
+import { Player }      from "./Player";
 import { Camera, WORLD_W, WORLD_H } from "./Camera";
-import { Door } from "./Door";
+import { Door }        from "./Door";
+import { GoldDrop }    from "./GoldDrop";
+import { PlayerStats } from "./PlayerStats";
 import { Grunt, Shooter, Boss, Projectile } from "./enemy";
 
 // ============================================================
 // [🧱 BLOCK: GameState Class]
 // Single source of truth for all engine state.
-// GameCanvas holds one ref to this — no more 15 scattered refs.
 // ============================================================
 export class GameState {
   // ── Entities ───────────────────────────────────────────────
@@ -17,6 +18,11 @@ export class GameState {
   boss:        Boss | null         = null;
   door:        Door | null         = null;
   projectiles: Projectile[]        = [];
+  goldDrops:   GoldDrop[]          = [];
+
+  // ── Economy ────────────────────────────────────────────────
+  gold:        number      = 0;
+  playerStats: PlayerStats = new PlayerStats();
 
   // ── Horde Tracking ─────────────────────────────────────────
   kills:     number = 0;
@@ -35,29 +41,53 @@ export class GameState {
   }
 
   // ============================================================
-  // [🧱 BLOCK: Reset]
-  // Called on restart — wipes all entities and counters.
+  // [🧱 BLOCK: Full Reset]
+  // Wipes all entities, economy, and stats on restart.
   // ============================================================
   reset() {
+  this.enemies     = [];
+  this.boss        = null;
+  this.door        = null;
+  this.projectiles = [];
+  this.goldDrops   = [];
+  this.gold        = 0;
+  this.kills       = 0;
+  this.alive       = 0;
+  this.lastSpawn   = 0;
+
+  this.player      = new Player(WORLD_W / 2, WORLD_H / 2);
+  this.camera      = new Camera(this.screenW, this.screenH);
+
+  // ✅ Always create a fresh PlayerStats instance
+  this.playerStats = new PlayerStats();
+
+  // ✅ Apply immediately so player values are correct from the start
+  this.playerStats.applyToPlayer(this.player);
+}
+
+  // ============================================================
+  // [🧱 BLOCK: Room Reset]
+  // Wipes room-specific state between rooms but keeps
+  // gold, stats, and charms (they persist across rooms).
+  // ============================================================
+  resetRoom() {
     this.enemies     = [];
-    this.boss        = null;
-    this.door        = null;
     this.projectiles = [];
+    this.goldDrops   = [];
     this.kills       = 0;
     this.alive       = 0;
     this.lastSpawn   = 0;
-    this.player      = new Player(WORLD_W / 2, WORLD_H / 2);
-    this.camera      = new Camera(this.screenW, this.screenH);
+    this.door        = null;
+    this.boss        = null;
   }
 
   // ============================================================
   // [🧱 BLOCK: Resize]
-  // Called by window resize handler.
   // ============================================================
   resize(w: number, h: number) {
-    this.screenW          = w;
-    this.screenH          = h;
-    this.camera.screenW   = w;
-    this.camera.screenH   = h;
+    this.screenW        = w;
+    this.screenH        = h;
+    this.camera.screenW = w;
+    this.camera.screenH = h;
   }
 }
