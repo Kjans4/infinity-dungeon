@@ -1,4 +1,3 @@
-// src/components/GameCanvas.tsx
 "use client";
 
 import React, { useRef, useEffect, useState, useCallback } from "react";
@@ -16,8 +15,9 @@ import { useGameLoop }       from "@/hooks/useGameLoop";
 import HUD                   from "@/components/HUD";
 import Menu                  from "@/components/Menu";
 import Shop                  from "@/components/Shop";
-import GameOverOverlay        from "@/components/overlays/GameOverOverlay";
-import VictoryOverlay         from "@/components/overlays/VictoryOverlay";
+import GameOverOverlay         from "@/components/overlays/GameOverOverlay";
+import VictoryOverlay          from "@/components/overlays/VictoryOverlay";
+import PauseOverlay           from "@/components/overlays/PauseOverlay";
 
 // ============================================================
 // [🧱 BLOCK: Constants]
@@ -42,11 +42,12 @@ export default function GameCanvas() {
   const roomRef   = useRef<RoomState>(initialRoomState());
 
   // ── React State ────────────────────────────────────────────
-  const [showMenu,   setShowMenu]   = useState(true);
-  const [isGameOver, setIsGameOver] = useState(false);
-  const [isVictory,  setIsVictory]  = useState(false);
-  const [showShop,   setShowShop]   = useState(false);
-  const [gold,       setGold]       = useState(0);
+  const [showMenu,    setShowMenu]    = useState(true);
+  const [isGameOver,  setIsGameOver]  = useState(false);
+  const [isVictory,   setIsVictory]   = useState(false);
+  const [showShop,    setShowShop]    = useState(false);
+  const [isPaused,    setIsPaused]    = useState(false); // Brick 2: State
+  const [gold,        setGold]        = useState(0);
   const [hud, setHud] = useState<HUDState>({
     hp: MAX_HP, stamina: MAX_STAMINA,
     kills: 0, room: 1, floor: 1,
@@ -62,7 +63,15 @@ export default function GameCanvas() {
     canvas.width  = w;
     canvas.height = h;
 
-    // Prime the save/restore stack that RenderSystem.clear() expects
+    // Brick 3: ESC Listener logic
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.code === "Escape") {
+        // Prevent pausing if the menu or shop is open
+        setIsPaused((prev) => !prev);
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+
     const ctx = canvas.getContext("2d");
     if (ctx) ctx.save();
 
@@ -93,11 +102,12 @@ export default function GameCanvas() {
     return () => {
       clearInterval(hudSync);
       window.removeEventListener("resize", onResize);
+      window.removeEventListener("keydown", onKeyDown); // Clean up!
     };
   }, []);
 
   // ============================================================
-  // [🧱 BLOCK: Handle Start]
+  // [🧱 BLOCK: Handlers]
   // ============================================================
   const handleStart = useCallback(() => {
     const rs = initialRoomState();
@@ -109,12 +119,10 @@ export default function GameCanvas() {
     setIsGameOver(false);
     setIsVictory(false);
     setShowShop(false);
+    setIsPaused(false);
     setShowMenu(false);
   }, []);
 
-  // ============================================================
-  // [🧱 BLOCK: Handle Restart]
-  // ============================================================
   const handleRestart = useCallback(() => {
     stateRef.current!.reset();
     hordeRef.current.reset(stateRef.current!);
@@ -125,17 +133,14 @@ export default function GameCanvas() {
     setIsGameOver(false);
     setIsVictory(false);
     setShowShop(false);
+    setIsPaused(false);
     setShowMenu(true);
   }, []);
 
-  // ============================================================
-  // [🧱 BLOCK: Handle Door Enter]
-  // ============================================================
   const handleDoorEnter = useCallback(() => {
     const rs = advanceRoom(roomRef.current);
     roomRef.current = rs;
     if (rs.phase === 'shop') {
-      // Generate fresh charm options before showing shop
       stateRef.current!.playerStats.generateShopOptions();
       setShowShop(true);
     } else {
@@ -143,31 +148,20 @@ export default function GameCanvas() {
     }
   }, []);
 
-  // ============================================================
-  // [🧱 BLOCK: Handle Shop Continue]
-  // ============================================================
   const handleShopContinue = useCallback(() => {
     roomRef.current = enterBossPhase(roomRef.current);
     setShowShop(false);
     bossRef.current.setup(stateRef.current!, roomRef.current);
   }, []);
 
-  // ============================================================
-  // [🧱 BLOCK: Handle Victory]
-  // ============================================================
   const handleVictoryContinue = useCallback(() => {
     const rs = nextFloor(roomRef.current);
     roomRef.current = rs;
     stateRef.current!.resetRoom();
     hordeRef.current.setup(stateRef.current!, rs, WORLD_W, WORLD_H);
     setIsVictory(false);
-    setShowShop(false);
   }, []);
 
-  // ============================================================
-  // [🧱 BLOCK: Gold Change Handler]
-  // Called by Shop when player spends or earns gold.
-  // ============================================================
   const handleGoldChange = useCallback((newGold: number) => {
     if (stateRef.current) stateRef.current.gold = newGold;
     setGold(newGold);
@@ -184,7 +178,8 @@ export default function GameCanvas() {
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
 
-    if (showMenu || showShop || isVictory || isGameOver) return;
+    // Brick 4a: Pause Guard
+    if (showMenu || showShop || isVictory || isGameOver || isPaused) return;
 
     const rs     = roomRef.current;
     const isBoss = rs.phase === 'boss';
@@ -194,52 +189,31 @@ export default function GameCanvas() {
 
     if (player.hp <= 0) { setIsGameOver(true); return; }
 
-    // 1. Clear
     renderRef.current.clear(ctx, state.screenW, state.screenH);
-
-    // 2. Camera
     state.camera.update(player, worldW, worldH);
-
-    // 3. World
     renderRef.current.drawWorld(ctx, state.camera, state.screenW, state.screenH, isBoss);
 
-    // 4. Player update + clamp
     player.update(input);
     player.x = Math.max(0, Math.min(worldW - player.width,  player.x));
     player.y = Math.max(0, Math.min(worldH - player.height, player.y));
 
-    // 5. Systems
     if (!isBoss) {
-const prevHp = player.hp;
-const { event, goldCollected } = hordeRef.current.update(state, player, rs, worldW, worldH);
-
-// Shake when player takes damage
-if (player.hp < prevHp) {
-  renderRef.current.shake('light');
-}
-      if (goldCollected > 0) {
-        state.gold += goldCollected;
-      }
-
+      const prevHp = player.hp;
+      const { event, goldCollected } = hordeRef.current.update(state, player, rs, worldW, worldH);
+      if (player.hp < prevHp) renderRef.current.shake('light');
+      if (goldCollected > 0) state.gold += goldCollected;
       if (event === 'door') { handleDoorEnter(); return; }
       hordeRef.current.draw(state, ctx, state.camera);
     }
 
     if (isBoss) {
-const prevHpBoss = player.hp;
-const { event, goldCollected } = bossRef.current.update(state, player, worldW, worldH);
-
-// Heavier shake for boss hits
-if (player.hp < prevHpBoss) {
-  const rs2 = roomRef.current;
-  // Slam does more damage — use heavy shake, otherwise medium
-  const dmgTaken = prevHpBoss - player.hp;
-  renderRef.current.shake(dmgTaken >= 25 ? 'heavy' : 'medium');
-}
-      if (goldCollected > 0) {
-        state.gold += goldCollected;
+      const prevHpBoss = player.hp;
+      const { event, goldCollected } = bossRef.current.update(state, player, worldW, worldH);
+      if (player.hp < prevHpBoss) {
+        const dmgTaken = prevHpBoss - player.hp;
+        renderRef.current.shake(dmgTaken >= 25 ? 'heavy' : 'medium');
       }
-
+      if (goldCollected > 0) state.gold += goldCollected;
       if (event === 'victory') {
         roomRef.current = { ...rs, phase: 'victory' };
         setIsVictory(true);
@@ -248,18 +222,14 @@ if (player.hp < prevHpBoss) {
       bossRef.current.draw(state, ctx, state.camera);
     }
 
-    // 6. Player on top
     player.draw(ctx, state.camera);
   });
 
   // ============================================================
   // [🧱 BLOCK: JSX]
   // ============================================================
-  const state = stateRef.current;
-
   return (
     <div style={{ width: "100vw", height: "100vh", overflow: "hidden", background: "#0f172a" }}>
-
       <canvas ref={canvasRef} style={{ display: "block" }} />
 
       {!showMenu && (
@@ -272,22 +242,35 @@ if (player.hp < prevHpBoss) {
         />
       )}
 
-      {showShop && state && (
+      {showShop && stateRef.current && (
         <Shop
           floor={roomRef.current.floor}
           room={roomRef.current.roomDisplay}
           gold={gold}
-          playerStats={state.playerStats}
-          player={state.player}
+          playerStats={stateRef.current.playerStats}
+          player={stateRef.current.player}
           onGoldChange={handleGoldChange}
           onContinue={handleShopContinue}
         />
       )}
 
-      {isVictory   && <VictoryOverlay  floor={hud.floor} onContinue={handleVictoryContinue} />}
+      {isVictory  && <VictoryOverlay floor={hud.floor} onContinue={handleVictoryContinue} />}
       {isGameOver && !showMenu && <GameOverOverlay floor={hud.floor} room={hud.room} onRetry={handleRestart} />}
-      {showMenu    && <Menu onStart={handleStart} />}
+      
+      {/* Brick 4b: Pause Overlay JSX */}
+      {isPaused && !showMenu && !isGameOver && (
+        <PauseOverlay
+          floor={hud.floor}
+          room={hud.room}
+          onResume={() => setIsPaused(false)}
+          onQuit={() => {
+            setIsPaused(false);
+            handleRestart();
+          }}
+        />
+      )}
 
+      {showMenu && <Menu onStart={handleStart} />}
     </div>
   );
 }
