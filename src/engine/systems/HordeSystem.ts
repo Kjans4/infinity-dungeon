@@ -99,7 +99,6 @@ export class HordeSystem {
         enemy.pendingProjectile = null;
       }
 
-      // [UPDATE]: Added i-frame check and 0.6s i-frame grant on hit
       if (enemy.isMeleeHittingPlayer(player) && player.iFrames <= 0) {
         const rawDmg   = enemy instanceof Shooter ? 8 : 15;
         const finalDmg = Math.round(rawDmg * (1 - ps.damageReduction));
@@ -118,8 +117,14 @@ export class HordeSystem {
       const lastStand = ps.hasCharm('last_stand') && player.hp / (player.maxHp ?? 100) < 0.25;
       const finalDmg  = damage + (lastStand ? 15 : 0);
 
-      const cx = (player.x + player.width  / 2) + player.facing.x * range;
-      const cy = (player.y + player.height / 2) + player.facing.y * range;
+      // Use locked facing for heavy so the hitbox matches where
+      // the player was aiming when they pressed K
+      const dir = (player.attackType === 'heavy' && player.lockedFacing)
+        ? player.lockedFacing
+        : player.facing;
+
+      const cx = (player.x + player.width  / 2) + dir.x * range;
+      const cy = (player.y + player.height / 2) + dir.y * range;
 
       state.enemies.forEach((enemy) => {
         if (enemy.isDead) return;
@@ -185,7 +190,6 @@ export class HordeSystem {
     // ── Projectile Update ───────────────────────────────────
     state.projectiles.forEach((proj) => {
       proj.update();
-      // [UPDATE]: Added i-frame check and 0.4s i-frame grant on hit
       if (proj.isHittingPlayer(player) && player.iFrames <= 0) {
         const rawDmg   = proj.damage;
         const finalDmg = Math.round(rawDmg * (1 - ps.damageReduction));

@@ -71,7 +71,6 @@ export class BossSystem {
     boss.update(player, worldW, worldH);
 
     // ── Boss contact damage ─────────────────────────────────
-    // [UPDATE]: Added player.iFrames check and 0.8s grant
     if (boss.isCollidingWithPlayer(player) && player.iFrames <= 0) {
       const raw       = boss.contactDamage;
       const final     = Math.round(raw * (1 - ps.damageReduction));
@@ -81,7 +80,6 @@ export class BossSystem {
     }
 
     // ── Boss slam AoE damage ────────────────────────────────
-    // [UPDATE]: Added player.iFrames check and 0.6s grant
     if (boss.isSlamHittingPlayer(player) && player.iFrames <= 0) {
       const raw   = boss.slamDamage;
       const final = Math.round(raw * (1 - ps.damageReduction));
@@ -99,8 +97,14 @@ export class BossSystem {
       const lastStand = ps.hasCharm('last_stand') && player.hp / (player.maxHp ?? 100) < 0.25;
       const finalDmg   = damage + (lastStand ? 15 : 0);
 
-      const cx = (player.x + player.width  / 2) + player.facing.x * range;
-      const cy = (player.y + player.height / 2) + player.facing.y * range;
+      // Use locked facing for heavy so the hitbox matches where
+      // the player was aiming when they pressed K
+      const dir = (player.attackType === 'heavy' && player.lockedFacing)
+        ? player.lockedFacing
+        : player.facing;
+
+      const cx = (player.x + player.width  / 2) + dir.x * range;
+      const cy = (player.y + player.height / 2) + dir.y * range;
       const nx = Math.max(boss.x, Math.min(cx, boss.x + boss.width));
       const ny = Math.max(boss.y, Math.min(cy, boss.y + boss.height));
 

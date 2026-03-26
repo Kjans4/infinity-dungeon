@@ -15,18 +15,20 @@ export class Player {
 
   // Stats
   hp: number = 100;
-  maxHp: number = 100; // Fixed: initialized to 100
+  maxHp: number = 100;
   maxStamina: number = 100;
   stamina: number = 100;
 
   // States
-  isDashing: boolean = false;
-  isAttacking: boolean = false;
-  attackType: 'light' | 'heavy' | null = null;
-  attackTimer: number = 0;
-  heavyCooldown: number = 0;
-  iFrames: number = 0; // [NEW] Invincibility frames after taking damage
-  facing: { x: number; y: number } = { x: 0, y: 1 };
+  isDashing:        boolean                    = false;
+  isAttacking:      boolean                    = false;
+  isHeavyAttacking: boolean                    = false; // ← locks movement
+  attackType:       'light' | 'heavy' | null   = null;
+  attackTimer:      number                     = 0;
+  heavyCooldown:    number                     = 0;
+  iFrames:          number                     = 0;
+  facing:           { x: number; y: number }   = { x: 0, y: 1 };
+  lockedFacing:     { x: number; y: number } | null = null; // ← locked on heavy press
 
   constructor(x: number, y: number) {
     this.x = x;
@@ -41,21 +43,28 @@ export class Player {
     if (input.movement.left)  inputX -= 1;
     if (input.movement.right) inputX += 1;
 
-    if (inputX !== 0 || inputY !== 0) {
-      const length = Math.sqrt(inputX * inputX + inputY * inputY);
-      inputX /= length; inputY /= length;
-
-      this.vx += inputX * this.accel;
-      this.vy += inputY * this.accel;
-
-      this.facing = { x: inputX, y: inputY };
+    // Only apply movement if NOT in a heavy attack
+    if (!this.isHeavyAttacking) {
+      if (inputX !== 0 || inputY !== 0) {
+        const length = Math.sqrt(inputX * inputX + inputY * inputY);
+        inputX /= length; inputY /= length;
+        this.vx += inputX * this.accel;
+        this.vy += inputY * this.accel;
+        // Update facing only when moving freely
+        this.facing = { x: inputX, y: inputY };
+      }
+    } else {
+      // Halted — bleed velocity to zero fast
+      this.vx *= 0.5;
+      this.vy *= 0.5;
     }
 
     // [🧱 BLOCK: Combat & Dash Execution] --------------------------
     if (input.movement.dash && this.stamina >= 30 && !this.isDashing && !this.isAttacking) {
-      this.stamina -= 30;
-      this.isDashing = true;
-      this.vx *= 4; this.vy *= 4;
+      this.stamina     -= 30;
+      this.isDashing    = true;
+      this.vx          *= 4;
+      this.vy          *= 4;
       setTimeout(() => { this.isDashing = false; }, 200);
     }
 
@@ -63,24 +72,26 @@ export class Player {
       if (input.movement.light && this.stamina >= 10) {
         this.performAttack('light', 10, 150);
       } else if (input.movement.heavy && this.stamina >= 25 && this.heavyCooldown <= 0) {
+        // Lock facing at the moment K is pressed
+        this.lockedFacing = { ...this.facing };
         this.performAttack('heavy', 25, 400);
-        this.heavyCooldown = 1200; // 1.2s cooldown between heavy attacks
+        this.heavyCooldown    = 1200;
+        this.isHeavyAttacking = true;
       }
     }
 
-    // [🧱 BLOCK: Physics Solver & Timers] --------------------------
-    // Tick cooldowns and i-frames
-    if (this.heavyCooldown > 0) this.heavyCooldown -= 16;
-    if (this.iFrames > 0) this.iFrames -= 16; // [NEW] Tick i-frames down
-
+    // [🧱 BLOCK: Attack Timer] -------------------------------------
     if (this.isAttacking) {
       this.attackTimer -= 16;
       if (this.attackTimer <= 0) {
-        this.isAttacking = false;
-        this.attackType  = null;
+        this.isAttacking      = false;
+        this.isHeavyAttacking = false;
+        this.lockedFacing     = null;
+        this.attackType       = null;
       }
     }
 
+    // [🧱 BLOCK: Physics Solver] -----------------------------------
     this.vx *= this.friction;
     this.vy *= this.friction;
 
@@ -99,10 +110,14 @@ export class Player {
     if (this.stamina < this.maxStamina) {
       this.stamina += 0.4;
     }
+
+    // Tick cooldowns
+    if (this.heavyCooldown > 0) this.heavyCooldown -= 16;
+    if (this.iFrames > 0)       this.iFrames       -= 16;
   }
 
   draw(ctx: CanvasRenderingContext2D, camera: Camera) {
-    // [NEW] Visual Feedback: Flicker the player when in i-frames
+    // Visual Feedback: Flicker the player when in i-frames
     if (this.iFrames > 0 && Math.floor(Date.now() / 50) % 2 === 0) {
        return; // Skip drawing this frame to create "blink" effect
     }
@@ -118,8 +133,12 @@ export class Player {
 
       const range   = this.attackType === 'light' ? 35 : 55;
       const size    = this.attackType === 'light' ? 15 : 25;
-      const attackX = (sx + this.width  / 2) + this.facing.x * range;
-      const attackY = (sy + this.height / 2) + this.facing.y * range;
+      
+      // Use locked facing for heavy so the hitbox matches where
+      // the player was aiming when they pressed K
+      const dir     = (this.attackType === 'heavy' && this.lockedFacing)  ? this.lockedFacing  : this.facing;
+      const attackX = (sx + this.width  / 2) + dir.x * range;
+      const attackY = (sy + this.height / 2) + dir.y * range;
 
       ctx.beginPath();
       ctx.arc(attackX, attackY, size, 0, Math.PI * 2);
