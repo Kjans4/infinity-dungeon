@@ -5,11 +5,11 @@ import { Door }        from "./Door";
 import { GoldDrop }    from "./GoldDrop";
 import { PlayerStats } from "./PlayerStats";
 import { Grunt, Shooter, Boss, Projectile } from "./enemy";
+import { Particle }    from "./Particle"; // [🧱 BRICK 1: Import]
 
 // ============================================================
 // [🧱 BLOCK: GameState Class]
 // Single source of truth for all engine state.
-// GameCanvas holds one ref to this — no more scattered refs.
 // ============================================================
 export class GameState {
   // ── Entities ───────────────────────────────────────────────
@@ -20,6 +20,7 @@ export class GameState {
   door:        Door | null;
   projectiles: Projectile[];
   goldDrops:   GoldDrop[];
+  particles:   Particle[] = []; // [🧱 BRICK 1: Field]
 
   // ── Economy ────────────────────────────────────────────────
   gold:        number;
@@ -36,10 +37,6 @@ export class GameState {
 
   // ============================================================
   // [🧱 BLOCK: Constructor]
-  // Everything initialized here explicitly — no field
-  // initializers. This avoids Turbopack module resolution
-  // timing issues where `= new PlayerStats()` as a class
-  // field can run before its module is fully loaded.
   // ============================================================
   constructor(screenW: number, screenH: number) {
     this.screenW = screenW;
@@ -53,8 +50,9 @@ export class GameState {
     this.door        = null;
     this.projectiles = [];
     this.goldDrops   = [];
+    this.particles   = []; // [🧱 BRICK 1: Constructor Init]
 
-    // Economy — created here so module is guaranteed loaded
+    // Economy
     this.gold        = 0;
     this.playerStats = new PlayerStats();
 
@@ -77,6 +75,7 @@ export class GameState {
     this.door        = null;
     this.projectiles = [];
     this.goldDrops   = [];
+    this.particles   = []; // [🧱 BRICK 1: Reset]
     this.gold        = 0;
     this.kills       = 0;
     this.alive       = 0;
@@ -85,7 +84,6 @@ export class GameState {
     this.player      = new Player(WORLD_W / 2, WORLD_H / 2);
     this.camera      = new Camera(this.screenW, this.screenH);
 
-    // Always a fresh instance — never reuse
     this.playerStats = new PlayerStats();
     this.playerStats.applyToPlayer(this.player);
   }
@@ -98,6 +96,7 @@ export class GameState {
     this.enemies     = [];
     this.projectiles = [];
     this.goldDrops   = [];
+    this.particles   = []; // [🧱 BRICK 1: Room Reset]
     this.kills       = 0;
     this.alive       = 0;
     this.lastSpawn   = 0;

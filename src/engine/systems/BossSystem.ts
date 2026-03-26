@@ -6,6 +6,7 @@ import { RoomState }                 from "../RoomManager";
 import { GameState }                 from "../GameState";
 import { BOSS_WORLD_W, BOSS_WORLD_H } from "../Camera";
 import { GoldDrop }                  from "../GoldDrop";
+import { spawnBurst }                from "../Particle"; // [🧱 BRICK 5: Import]
 
 // ============================================================
 // [🧱 BLOCK: Gold Drop Helper]
@@ -39,6 +40,7 @@ export class BossSystem {
     state.enemies     = [];
     state.projectiles = [];
     state.goldDrops   = [];
+    state.particles   = []; // Ensure clean particles for boss room
     state.kills       = 0;
     state.door        = null;
 
@@ -55,6 +57,7 @@ export class BossSystem {
   reset(state: GameState) {
     state.boss      = null;
     state.goldDrops = [];
+    state.particles = [];
   }
 
   update(
@@ -71,7 +74,6 @@ export class BossSystem {
     boss.update(player, worldW, worldH);
 
     // ── Boss contact damage ─────────────────────────────────
-    // [🧱 BRICK 6: Contact Damage Replacement]
     if (boss.isCollidingWithPlayer(player) && player.iFrames <= 0) {
       const final = Math.round(boss.contactDamage * (1 - ps.damageReduction));
       player.takeHit(final);
@@ -79,7 +81,6 @@ export class BossSystem {
     }
 
     // ── Boss slam AoE damage ────────────────────────────────
-    // [🧱 BRICK 6: Slam Damage Replacement]
     if (boss.isSlamHittingPlayer(player) && player.iFrames <= 0) {
       const final = Math.round(boss.slamDamage * (1 - ps.damageReduction));
       player.takeHit(final);
@@ -127,20 +128,29 @@ export class BossSystem {
     state.goldDrops = state.goldDrops.filter((d) => !d.collected);
 
     // ── Boss death ──────────────────────────────────────────
+    // [🧱 BRICK 6: Boss Death Burst]
     if (boss.isDead) {
-      spawnBossGold(
-        state,
-        boss.x + boss.width  / 2,
-        boss.y + boss.height / 2
-      );
+      const bx = boss.x + boss.width  / 2;
+      const by = boss.y + boss.height / 2;
+      spawnBossGold(state, bx, by);
+      
+      // Big burst for boss — 12 particles, larger size/speed
+      state.particles.push(...spawnBurst(bx, by, "#dc2626", 12, 1.8));
+      
       return { event: 'victory', goldCollected };
     }
 
     return { event: null, goldCollected };
   }
 
+  // [🧱 BRICK 7: Update + Draw Particles]
   draw(state: GameState, ctx: CanvasRenderingContext2D, camera: Camera) {
     state.boss?.draw(ctx, camera);
     state.goldDrops.forEach((drop) => drop.draw(ctx, camera));
+
+    // Update + draw particles
+    state.particles.forEach((p) => p.update());
+    state.particles = state.particles.filter((p) => !p.isDone);
+    state.particles.forEach((p) => p.draw(ctx, camera));
   }
 }

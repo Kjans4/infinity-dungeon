@@ -7,6 +7,7 @@ import { RoomState } from "../RoomManager";
 import { GameState } from "../GameState";
 import { GoldSystem, GOLD_DROPS } from "./GoldSystem";
 import { GoldDrop }  from "../GoldDrop";
+import { spawnBurst } from "../Particle"; // [🧱 BRICK 2: Import]
 
 // ============================================================
 // [🧱 BLOCK: HordeSystem Config]
@@ -99,7 +100,6 @@ export class HordeSystem {
         enemy.pendingProjectile = null;
       }
 
-      // [🧱 BRICK 5: Melee Hit Replacement]
       if (enemy.isMeleeHittingPlayer(player) && player.iFrames <= 0) {
         const rawDmg   = enemy instanceof Shooter ? 8 : 15;
         const finalDmg = Math.round(rawDmg * (1 - ps.damageReduction));
@@ -161,6 +161,14 @@ export class HordeSystem {
           type
         );
 
+        // [🧱 BRICK 3: Spawn kill particles]
+        state.particles.push(...spawnBurst(
+          enemy.x + enemy.width / 2,
+          enemy.y + enemy.height / 2,
+          enemy.color,
+          6
+        ));
+
         ps.charms.forEach((charm) => {
           charm.onKill?.(player, ps.modifiers);
         });
@@ -188,7 +196,6 @@ export class HordeSystem {
     // ── Projectile Update ───────────────────────────────────
     state.projectiles.forEach((proj) => {
       proj.update();
-      // [🧱 BRICK 5: Projectile Hit Replacement]
       if (proj.isHittingPlayer(player) && player.iFrames <= 0) {
         const finalDmg = Math.round(proj.damage * (1 - ps.damageReduction));
         player.takeHit(finalDmg);
@@ -222,10 +229,16 @@ export class HordeSystem {
     });
   }
 
+  // [🧱 BRICK 4: Update + draw particles]
   draw(state: GameState, ctx: CanvasRenderingContext2D, camera: Camera) {
     state.door?.draw(ctx, camera);
     state.enemies.forEach((e)     => e.draw(ctx, camera));
     state.projectiles.forEach((p) => p.draw(ctx, camera));
     this.goldSystem.draw(state, ctx, camera);
+
+    // Update + draw particles
+    state.particles.forEach((p) => p.update());
+    state.particles = state.particles.filter((p) => !p.isDone);
+    state.particles.forEach((p) => p.draw(ctx, camera));
   }
 }
