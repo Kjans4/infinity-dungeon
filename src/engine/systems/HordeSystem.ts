@@ -68,8 +68,6 @@ export class HordeSystem {
 
   // ============================================================
   // [🧱 BLOCK: Update]
-  // Returns 'door' if player entered the door this frame,
-  // and the gold collected this frame.
   // ============================================================
   update(
     state:  GameState,
@@ -101,21 +99,22 @@ export class HordeSystem {
         enemy.pendingProjectile = null;
       }
 
-      if (enemy.isMeleeHittingPlayer(player)) {
-        const rawDmg  = enemy instanceof Shooter ? 8 : 15;
+      // [UPDATE]: Added i-frame check and 0.6s i-frame grant on hit
+      if (enemy.isMeleeHittingPlayer(player) && player.iFrames <= 0) {
+        const rawDmg   = enemy instanceof Shooter ? 8 : 15;
         const finalDmg = Math.round(rawDmg * (1 - ps.damageReduction));
-        player.hp     = Math.max(0, player.hp - finalDmg);
+        player.hp      = Math.max(0, player.hp - finalDmg);
+        player.iFrames = 600; // 0.6s of invincibility
       }
     });
 
     // ── Player Attack vs Enemies ────────────────────────────
     if (player.isAttacking) {
-      const range  = player.attackType === "light" ? 35 : 55;
+      const range   = player.attackType === "light" ? 35 : 55;
       const radius = player.attackType === "light" ? 15 : 25;
       const baseDmg = player.attackType === "light" ? 10 : 25;
       const damage  = baseDmg + ps.atkBonus;
 
-      // Last Stand charm — below 25% HP bonus
       const lastStand = ps.hasCharm('last_stand') && player.hp / (player.maxHp ?? 100) < 0.25;
       const finalDmg  = damage + (lastStand ? 15 : 0);
 
@@ -129,7 +128,6 @@ export class HordeSystem {
         if ((cx - nx) ** 2 + (cy - ny) ** 2 < radius * radius) {
           enemy.takeDamage(finalDmg);
 
-          // Executioner shockwave on heavy kill
           if (
             enemy.isDead &&
             player.attackType === 'heavy' &&
@@ -144,14 +142,13 @@ export class HordeSystem {
     // ── Kill Tracking + Gold Drops ──────────────────────────
     const before     = state.enemies.length;
     const deadEnemies = state.enemies.filter((e) => e.isDead);
-    state.enemies    = state.enemies.filter((e) => !e.isDead);
+    state.enemies     = state.enemies.filter((e) => !e.isDead);
     const justKilled = before - state.enemies.length;
 
     if (justKilled > 0) {
       state.kills += justKilled;
       state.alive -= justKilled;
 
-      // Spawn gold + trigger onKill charms
       deadEnemies.forEach((enemy) => {
         const type = enemy instanceof Shooter ? 'shooter' : 'grunt';
         this.goldSystem.spawnFromEnemy(
@@ -161,12 +158,10 @@ export class HordeSystem {
           type
         );
 
-        // Charm onKill hooks
         ps.charms.forEach((charm) => {
           charm.onKill?.(player, ps.modifiers);
         });
 
-        // Heal on kill — clamp to maxHp
         if (ps.healOnKill > 0) {
           player.hp = Math.min(player.maxHp!, player.hp + ps.healOnKill);
         }
@@ -183,23 +178,25 @@ export class HordeSystem {
       const spawnCount = Math.min(WAVE_SIZE, killsLeft);
       const newWave    = spawnWave(spawnCount, worldW, worldH, rs.roomInCycle, rs.floor);
       state.enemies.push(...newWave);
-      state.alive     = spawnCount;
+      state.alive      = spawnCount;
       state.lastSpawn = Date.now();
     }
 
     // ── Projectile Update ───────────────────────────────────
     state.projectiles.forEach((proj) => {
       proj.update();
-      if (proj.isHittingPlayer(player)) {
+      // [UPDATE]: Added i-frame check and 0.4s i-frame grant on hit
+      if (proj.isHittingPlayer(player) && player.iFrames <= 0) {
         const rawDmg   = proj.damage;
         const finalDmg = Math.round(rawDmg * (1 - ps.damageReduction));
         player.hp      = Math.max(0, player.hp - finalDmg);
+        player.iFrames = 400; // 0.4s of invincibility
         proj.isDone    = true;
       }
     });
     state.projectiles = state.projectiles.filter((p) => !p.isDone);
 
-    // ── Stamina Regen (apply charm rate) ───────────────────
+    // ── Stamina Regen ──────────────────────────────────────
     if (player.stamina < player.maxStamina) {
       player.stamina = Math.min(
         player.maxStamina,
@@ -213,14 +210,7 @@ export class HordeSystem {
     return { event: null, goldCollected };
   }
 
-  // ============================================================
-  // [🧱 BRICK: Executioner Shockwave]
-  // ============================================================
-  private triggerShockwave(
-    state: GameState,
-    cx: number, cy: number,
-    damage: number
-  ) {
+  private triggerShockwave(state: GameState, cx: number, cy: number, damage: number) {
     const radius = 100;
     state.enemies.forEach((enemy) => {
       if (enemy.isDead) return;
@@ -231,9 +221,6 @@ export class HordeSystem {
     });
   }
 
-  // ============================================================
-  // [🧱 BLOCK: Draw]
-  // ============================================================
   draw(state: GameState, ctx: CanvasRenderingContext2D, camera: Camera) {
     state.door?.draw(ctx, camera);
     state.enemies.forEach((e)     => e.draw(ctx, camera));
