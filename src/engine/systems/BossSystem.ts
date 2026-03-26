@@ -71,20 +71,18 @@ export class BossSystem {
     boss.update(player, worldW, worldH);
 
     // ── Boss contact damage ─────────────────────────────────
+    // [🧱 BRICK 6: Contact Damage Replacement]
     if (boss.isCollidingWithPlayer(player) && player.iFrames <= 0) {
-      const raw       = boss.contactDamage;
-      const final     = Math.round(raw * (1 - ps.damageReduction));
-      player.hp       = Math.max(0, player.hp - final);
+      const final = Math.round(boss.contactDamage * (1 - ps.damageReduction));
+      player.takeHit(final);
       boss.damageCooldown = 800; 
-      player.iFrames = 800; // Grant 0.8s invincibility
     }
 
     // ── Boss slam AoE damage ────────────────────────────────
+    // [🧱 BRICK 6: Slam Damage Replacement]
     if (boss.isSlamHittingPlayer(player) && player.iFrames <= 0) {
-      const raw   = boss.slamDamage;
-      const final = Math.round(raw * (1 - ps.damageReduction));
-      player.hp   = Math.max(0, player.hp - final);
-      player.iFrames = 600; // Grant 0.6s invincibility
+      const final = Math.round(boss.slamDamage * (1 - ps.damageReduction));
+      player.takeHit(final);
     }
 
     // ── Player attack vs boss ───────────────────────────────
@@ -97,8 +95,6 @@ export class BossSystem {
       const lastStand = ps.hasCharm('last_stand') && player.hp / (player.maxHp ?? 100) < 0.25;
       const finalDmg   = damage + (lastStand ? 15 : 0);
 
-      // Use locked facing for heavy so the hitbox matches where
-      // the player was aiming when they pressed K
       const dir = (player.attackType === 'heavy' && player.lockedFacing)
         ? player.lockedFacing
         : player.facing;

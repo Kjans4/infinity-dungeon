@@ -23,6 +23,8 @@ export class Player {
   isDashing:        boolean                    = false;
   isAttacking:      boolean                    = false;
   isHeavyAttacking: boolean                    = false; // ← locks movement
+  isHit:            boolean                    = false; // [NEW]
+  hitFlashTimer:    number                     = 0;     // [NEW]
   attackType:       'light' | 'heavy' | null   = null;
   attackTimer:      number                     = 0;
   heavyCooldown:    number                     = 0;
@@ -113,13 +115,19 @@ export class Player {
 
     // Tick cooldowns
     if (this.heavyCooldown > 0) this.heavyCooldown -= 16;
+    
+    // Tick i-frames and hit flash
     if (this.iFrames > 0)       this.iFrames       -= 16;
+    if (this.hitFlashTimer > 0) {
+      this.hitFlashTimer -= 16;
+      if (this.hitFlashTimer <= 0) this.isHit = false;
+    }
   }
 
   draw(ctx: CanvasRenderingContext2D, camera: Camera) {
-    // Visual Feedback: Flicker the player when in i-frames
-    if (this.iFrames > 0 && Math.floor(Date.now() / 50) % 2 === 0) {
-       return; // Skip drawing this frame to create "blink" effect
+    // Visual Feedback: Flicker the player when in i-frames (but not during initial white flash)
+    if (!this.isHit && this.iFrames > 0 && Math.floor(Date.now() / 50) % 2 === 0) {
+       return; 
     }
 
     const sx = camera.toScreenX(this.x);
@@ -134,8 +142,6 @@ export class Player {
       const range   = this.attackType === 'light' ? 35 : 55;
       const size    = this.attackType === 'light' ? 15 : 25;
       
-      // Use locked facing for heavy so the hitbox matches where
-      // the player was aiming when they pressed K
       const dir     = (this.attackType === 'heavy' && this.lockedFacing)  ? this.lockedFacing  : this.facing;
       const attackX = (sx + this.width  / 2) + dir.x * range;
       const attackY = (sy + this.height / 2) + dir.y * range;
@@ -146,18 +152,20 @@ export class Player {
     }
 
     // [🧱 BLOCK: Render Player] ----------------------------------
-    ctx.fillStyle = this.isDashing ? "#38bdf8" : "#f87171";
+    // Flash white on hit, blue on dash, red normally
+    ctx.fillStyle = this.isHit 
+      ? "#ffffff" 
+      : this.isDashing 
+        ? "#38bdf8" 
+        : "#f87171";
     ctx.fillRect(sx, sy, this.width, this.height);
 
     // [🧱 BLOCK: Render UI Bars] ---------------------------------
-    // Health Bar Background
     ctx.fillStyle = "#1e293b";
     ctx.fillRect(sx, sy - 15, this.width, 4);
-    // Health Bar (Red)
     ctx.fillStyle = "#ef4444";
     ctx.fillRect(sx, sy - 15, (this.hp / this.maxHp) * this.width, 4);
 
-    // Stamina Bar (Yellow)
     ctx.fillStyle = "#fbbf24";
     ctx.fillRect(sx, sy - 8, (this.stamina / this.maxStamina) * this.width, 4);
   }
@@ -172,5 +180,15 @@ export class Player {
     const lungeForce = type === 'light' ? 6 : 10;
     this.vx += this.facing.x * lungeForce;
     this.vy += this.facing.y * lungeForce;
+  }
+
+  // [🧱 BLOCK: Take Hit] -------------------------------------------
+  takeHit(amount: number) {
+    if (this.iFrames > 0) return; // Already invincible
+    this.hp           = Math.max(0, this.hp - amount);
+    this.isHit        = true;
+    // Variable flash duration — bigger hits flash longer
+    this.hitFlashTimer = amount >= 25 ? 300 : 150;
+    this.iFrames       = amount >= 25 ? 800 : 600;
   }
 }
