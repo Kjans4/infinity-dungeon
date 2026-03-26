@@ -107,3 +107,6 @@ src/
 └── hooks/
     └── useGameLoop.ts    # requestAnimationFrame loop
 ```
+
+
+Testing
