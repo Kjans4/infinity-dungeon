@@ -15,6 +15,7 @@ import { useGameLoop }        from "@/hooks/useGameLoop";
 import HUD                    from "@/components/HUD";
 import Menu                   from "@/components/Menu";
 import Shop                   from "@/components/Shop";
+import Minimap                from "@/components/Minimap";
 import GameOverOverlay        from "@/components/overlays/GameOverOverlay";
 import VictoryOverlay         from "@/components/overlays/VictoryOverlay";
 import PauseOverlay           from "@/components/overlays/PauseOverlay";
@@ -264,6 +265,13 @@ export default function GameCanvas() {
           kills={hud.kills}     killThreshold={hordeRef.current.killThreshold}
           room={hud.room}       floor={hud.floor}
           gold={gold}
+        />
+      )}
+
+      {!showMenu && !isGameOver && (
+        <Minimap
+          state={stateRef.current}
+          isBoss={roomRef.current.phase === 'boss'}
         />
       )}
 
