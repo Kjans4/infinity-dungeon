@@ -2,22 +2,23 @@
 
 import React, { useRef, useEffect, useState, useCallback } from "react";
 import { InputHandler }  from "@/engine/Input";
-import { GameState }     from "@/engine/GameState";
-import { HordeSystem }   from "@/engine/systems/HordeSystem";
-import { BossSystem }    from "@/engine/systems/BossSystem";
-import { RenderSystem }  from "@/engine/systems/RenderSystem";
+import { GameState }      from "@/engine/GameState";
+import { HordeSystem }    from "@/engine/systems/HordeSystem";
+import { BossSystem }     from "@/engine/systems/BossSystem";
+import { RenderSystem }   from "@/engine/systems/RenderSystem";
 import { WORLD_W, WORLD_H, BOSS_WORLD_W, BOSS_WORLD_H } from "@/engine/Camera";
 import {
   RoomState, initialRoomState, advanceRoom,
   nextFloor, enterBossPhase,
 } from "@/engine/RoomManager";
-import { useGameLoop }       from "@/hooks/useGameLoop";
-import HUD                   from "@/components/HUD";
-import Menu                  from "@/components/Menu";
-import Shop                  from "@/components/Shop";
-import GameOverOverlay         from "@/components/overlays/GameOverOverlay";
-import VictoryOverlay          from "@/components/overlays/VictoryOverlay";
+import { useGameLoop }        from "@/hooks/useGameLoop";
+import HUD                    from "@/components/HUD";
+import Menu                   from "@/components/Menu";
+import Shop                   from "@/components/Shop";
+import GameOverOverlay        from "@/components/overlays/GameOverOverlay";
+import VictoryOverlay         from "@/components/overlays/VictoryOverlay";
 import PauseOverlay           from "@/components/overlays/PauseOverlay";
+import WaveClearAnnouncement from "@/components/overlays/WaveClearAnnouncement";
 
 // ============================================================
 // [🧱 BLOCK: Constants]
@@ -46,7 +47,20 @@ export default function GameCanvas() {
   const [isGameOver,  setIsGameOver]  = useState(false);
   const [isVictory,   setIsVictory]   = useState(false);
   const [showShop,    setShowShop]    = useState(false);
-  const [isPaused,    setIsPaused]    = useState(false); // Brick 2: State
+  const [isPaused,    setIsPaused]    = useState(false); 
+
+  const [announcement, setAnnouncement] = useState<{
+    show:     boolean;
+    message:  string;
+    subtext?: string;
+    color?:   string;
+  }>({ show: false, message: "" });
+
+  const announce = useCallback((message: string, subtext?: string, color?: string) => {
+    setAnnouncement({ show: true, message, subtext, color });
+    setTimeout(() => setAnnouncement({ show: false, message: "" }), 2500);
+  }, []);
+
   const [gold,        setGold]        = useState(0);
   const [hud, setHud] = useState<HUDState>({
     hp: MAX_HP, stamina: MAX_STAMINA,
@@ -63,10 +77,8 @@ export default function GameCanvas() {
     canvas.width  = w;
     canvas.height = h;
 
-    // Brick 3: ESC Listener logic
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.code === "Escape") {
-        // Prevent pausing if the menu or shop is open
         setIsPaused((prev) => !prev);
       }
     };
@@ -102,7 +114,7 @@ export default function GameCanvas() {
     return () => {
       clearInterval(hudSync);
       window.removeEventListener("resize", onResize);
-      window.removeEventListener("keydown", onKeyDown); // Clean up!
+      window.removeEventListener("keydown", onKeyDown);
     };
   }, []);
 
@@ -142,11 +154,13 @@ export default function GameCanvas() {
     roomRef.current = rs;
     if (rs.phase === 'shop') {
       stateRef.current!.playerStats.generateShopOptions();
-      setShowShop(true);
+      announce("WAVE COMPLETE", "Entering the shop...", "#facc15");
+      setTimeout(() => setShowShop(true), 1200);
     } else {
       hordeRef.current.setup(stateRef.current!, rs, WORLD_W, WORLD_H);
+      announce("NEXT ROOM", `Room ${rs.roomDisplay}`, "#38bdf8");
     }
-  }, []);
+  }, [announce]);
 
   const handleShopContinue = useCallback(() => {
     roomRef.current = enterBossPhase(roomRef.current);
@@ -178,7 +192,6 @@ export default function GameCanvas() {
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
 
-    // Brick 4a: Pause Guard
     if (showMenu || showShop || isVictory || isGameOver || isPaused) return;
 
     const rs     = roomRef.current;
@@ -202,7 +215,17 @@ export default function GameCanvas() {
       const { event, goldCollected } = hordeRef.current.update(state, player, rs, worldW, worldH);
       if (player.hp < prevHp) renderRef.current.shake('light');
       if (goldCollected > 0) state.gold += goldCollected;
+      
       if (event === 'door') { handleDoorEnter(); return; }
+
+      // Announce when door first opens
+      if (
+        state.door?.isActive &&
+        state.kills >= hordeRef.current.killThreshold &&
+        !announcement.show
+      ) {
+        announce("ROOM CLEAR", "Gate is open — head north");
+      }
       hordeRef.current.draw(state, ctx, state.camera);
     }
 
@@ -214,9 +237,11 @@ export default function GameCanvas() {
         renderRef.current.shake(dmgTaken >= 25 ? 'heavy' : 'medium');
       }
       if (goldCollected > 0) state.gold += goldCollected;
+      
       if (event === 'victory') {
+        announce("BOSS SLAIN", "Victory — floor cleared!", "#4ade80");
         roomRef.current = { ...rs, phase: 'victory' };
-        setIsVictory(true);
+        setTimeout(() => setIsVictory(true), 2000);
         return;
       }
       bossRef.current.draw(state, ctx, state.camera);
@@ -257,7 +282,6 @@ export default function GameCanvas() {
       {isVictory  && <VictoryOverlay floor={hud.floor} onContinue={handleVictoryContinue} />}
       {isGameOver && !showMenu && <GameOverOverlay floor={hud.floor} room={hud.room} onRetry={handleRestart} />}
       
-      {/* Brick 4b: Pause Overlay JSX */}
       {isPaused && !showMenu && !isGameOver && (
         <PauseOverlay
           floor={hud.floor}
@@ -271,6 +295,13 @@ export default function GameCanvas() {
       )}
 
       {showMenu && <Menu onStart={handleStart} />}
+
+      <WaveClearAnnouncement
+        show={announcement.show}
+        message={announcement.message}
+        subtext={announcement.subtext}
+        color={announcement.color}
+      />
     </div>
   );
 }
