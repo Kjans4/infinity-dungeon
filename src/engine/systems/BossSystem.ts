@@ -9,9 +9,6 @@ import { GoldDrop }                  from "../GoldDrop";
 
 // ============================================================
 // [🧱 BLOCK: Gold Drop Helper]
-// Inlined here to avoid the GoldSystem import issue.
-// BossSystem only needs to spawn gold — not manage the full
-// collection/update loop (that lives in HordeSystem).
 // ============================================================
 const BOSS_GOLD = { min: 80, max: 120 };
 
@@ -21,7 +18,6 @@ function randInt(min: number, max: number): number {
 
 function spawnBossGold(state: GameState, x: number, y: number) {
   const amount = randInt(BOSS_GOLD.min, BOSS_GOLD.max);
-  // Scatter a few coins around the boss death position
   for (let i = 0; i < 5; i++) {
     const ox = (Math.random() - 0.5) * 60;
     const oy = (Math.random() - 0.5) * 60;
@@ -31,21 +27,9 @@ function spawnBossGold(state: GameState, x: number, y: number) {
 
 // ============================================================
 // [🧱 BLOCK: BossSystem Class]
-// Owns all boss-phase logic:
-//   - Boss setup (spawn, player position)
-//   - Boss update (state machine runs inside Boss.ts)
-//   - Player attack vs boss
-//   - Contact + slam damage to player
-//   - Gold drops + collection
-//   - Death detection
 // ============================================================
 export class BossSystem {
 
-  // ============================================================
-  // [🧱 BLOCK: Setup]
-  // Called after shop is dismissed.
-  // phase must already be 'boss' before this runs.
-  // ============================================================
   setup(state: GameState, rs: RoomState) {
     state.player.x  = BOSS_WORLD_W / 2;
     state.player.y  = BOSS_WORLD_H - 100;
@@ -65,24 +49,14 @@ export class BossSystem {
     );
 
     state.camera.update(state.player, BOSS_WORLD_W, BOSS_WORLD_H);
-
-    // Re-apply stats so charm/stat bonuses carry into boss room
     state.playerStats.applyToPlayer(state.player);
   }
 
-  // ============================================================
-  // [🧱 BLOCK: Reset]
-  // ============================================================
   reset(state: GameState) {
     state.boss      = null;
     state.goldDrops = [];
   }
 
-  // ============================================================
-  // [🧱 BLOCK: Update]
-  // Returns 'victory' when boss is defeated, null otherwise.
-  // Also returns gold collected this frame.
-  // ============================================================
   update(
     state:  GameState,
     player: Player,
@@ -97,18 +71,22 @@ export class BossSystem {
     boss.update(player, worldW, worldH);
 
     // ── Boss contact damage ─────────────────────────────────
-    if (boss.isCollidingWithPlayer(player)) {
-      const raw      = boss.contactDamage;
-      const final    = Math.round(raw * (1 - ps.damageReduction));
-      player.hp      = Math.max(0, player.hp - final);
-      boss.damageCooldown = 800;
+    // [UPDATE]: Added player.iFrames check and 0.8s grant
+    if (boss.isCollidingWithPlayer(player) && player.iFrames <= 0) {
+      const raw       = boss.contactDamage;
+      const final     = Math.round(raw * (1 - ps.damageReduction));
+      player.hp       = Math.max(0, player.hp - final);
+      boss.damageCooldown = 800; 
+      player.iFrames = 800; // Grant 0.8s invincibility
     }
 
     // ── Boss slam AoE damage ────────────────────────────────
-    if (boss.isSlamHittingPlayer(player)) {
+    // [UPDATE]: Added player.iFrames check and 0.6s grant
+    if (boss.isSlamHittingPlayer(player) && player.iFrames <= 0) {
       const raw   = boss.slamDamage;
       const final = Math.round(raw * (1 - ps.damageReduction));
       player.hp   = Math.max(0, player.hp - final);
+      player.iFrames = 600; // Grant 0.6s invincibility
     }
 
     // ── Player attack vs boss ───────────────────────────────
@@ -161,13 +139,8 @@ export class BossSystem {
     return { event: null, goldCollected };
   }
 
-  // ============================================================
-  // [🧱 BLOCK: Draw]
-  // ============================================================
   draw(state: GameState, ctx: CanvasRenderingContext2D, camera: Camera) {
     state.boss?.draw(ctx, camera);
-
-    // Draw any lingering gold drops
     state.goldDrops.forEach((drop) => drop.draw(ctx, camera));
   }
 }

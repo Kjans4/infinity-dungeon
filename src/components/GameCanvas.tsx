@@ -62,6 +62,10 @@ export default function GameCanvas() {
     canvas.width  = w;
     canvas.height = h;
 
+    // Prime the save/restore stack that RenderSystem.clear() expects
+    const ctx = canvas.getContext("2d");
+    if (ctx) ctx.save();
+
     stateRef.current = new GameState(w, h);
     inputRef.current = new InputHandler();
 
@@ -206,8 +210,13 @@ export default function GameCanvas() {
 
     // 5. Systems
     if (!isBoss) {
-      const { event, goldCollected } = hordeRef.current.update(state, player, rs, worldW, worldH);
+const prevHp = player.hp;
+const { event, goldCollected } = hordeRef.current.update(state, player, rs, worldW, worldH);
 
+// Shake when player takes damage
+if (player.hp < prevHp) {
+  renderRef.current.shake('light');
+}
       if (goldCollected > 0) {
         state.gold += goldCollected;
       }
@@ -217,8 +226,16 @@ export default function GameCanvas() {
     }
 
     if (isBoss) {
-      const { event, goldCollected } = bossRef.current.update(state, player, worldW, worldH);
+const prevHpBoss = player.hp;
+const { event, goldCollected } = bossRef.current.update(state, player, worldW, worldH);
 
+// Heavier shake for boss hits
+if (player.hp < prevHpBoss) {
+  const rs2 = roomRef.current;
+  // Slam does more damage — use heavy shake, otherwise medium
+  const dmgTaken = prevHpBoss - player.hp;
+  renderRef.current.shake(dmgTaken >= 25 ? 'heavy' : 'medium');
+}
       if (goldCollected > 0) {
         state.gold += goldCollected;
       }

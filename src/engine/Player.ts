@@ -15,6 +15,7 @@ export class Player {
 
   // Stats
   hp: number = 100;
+  maxHp: number = 100; // Fixed: initialized to 100
   maxStamina: number = 100;
   stamina: number = 100;
 
@@ -23,6 +24,8 @@ export class Player {
   isAttacking: boolean = false;
   attackType: 'light' | 'heavy' | null = null;
   attackTimer: number = 0;
+  heavyCooldown: number = 0;
+  iFrames: number = 0; // [NEW] Invincibility frames after taking damage
   facing: { x: number; y: number } = { x: 0, y: 1 };
 
   constructor(x: number, y: number) {
@@ -59,10 +62,16 @@ export class Player {
     if (!this.isAttacking && !this.isDashing) {
       if (input.movement.light && this.stamina >= 10) {
         this.performAttack('light', 10, 150);
-      } else if (input.movement.heavy && this.stamina >= 25) {
+      } else if (input.movement.heavy && this.stamina >= 25 && this.heavyCooldown <= 0) {
         this.performAttack('heavy', 25, 400);
+        this.heavyCooldown = 1200; // 1.2s cooldown between heavy attacks
       }
     }
+
+    // [🧱 BLOCK: Physics Solver & Timers] --------------------------
+    // Tick cooldowns and i-frames
+    if (this.heavyCooldown > 0) this.heavyCooldown -= 16;
+    if (this.iFrames > 0) this.iFrames -= 16; // [NEW] Tick i-frames down
 
     if (this.isAttacking) {
       this.attackTimer -= 16;
@@ -72,7 +81,6 @@ export class Player {
       }
     }
 
-    // [🧱 BLOCK: Physics Solver] -----------------------------------
     this.vx *= this.friction;
     this.vy *= this.friction;
 
@@ -93,12 +101,12 @@ export class Player {
     }
   }
 
-  // ============================================================
-  // [🧱 BLOCK: Draw — Camera Aware]
-  // All positions offset by camera so they render correctly
-  // on the canvas relative to the scrolling world.
-  // ============================================================
   draw(ctx: CanvasRenderingContext2D, camera: Camera) {
+    // [NEW] Visual Feedback: Flicker the player when in i-frames
+    if (this.iFrames > 0 && Math.floor(Date.now() / 50) % 2 === 0) {
+       return; // Skip drawing this frame to create "blink" effect
+    }
+
     const sx = camera.toScreenX(this.x);
     const sy = camera.toScreenY(this.y);
 
@@ -123,10 +131,16 @@ export class Player {
     ctx.fillRect(sx, sy, this.width, this.height);
 
     // [🧱 BLOCK: Render UI Bars] ---------------------------------
+    // Health Bar Background
     ctx.fillStyle = "#1e293b";
-    ctx.fillRect(sx, sy - 10, this.width, 4);
+    ctx.fillRect(sx, sy - 15, this.width, 4);
+    // Health Bar (Red)
+    ctx.fillStyle = "#ef4444";
+    ctx.fillRect(sx, sy - 15, (this.hp / this.maxHp) * this.width, 4);
+
+    // Stamina Bar (Yellow)
     ctx.fillStyle = "#fbbf24";
-    ctx.fillRect(sx, sy - 10, (this.stamina / this.maxStamina) * this.width, 4);
+    ctx.fillRect(sx, sy - 8, (this.stamina / this.maxStamina) * this.width, 4);
   }
 
   // [🧱 BLOCK: Attack Helper] --------------------------------------
