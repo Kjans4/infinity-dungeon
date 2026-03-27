@@ -6,7 +6,7 @@ import { GoldDrop }    from "./GoldDrop";
 import { PlayerStats } from "./PlayerStats";
 import { Grunt, Shooter, Boss, Projectile } from "./enemy";
 import { Particle }    from "./Particle"; // [🧱 BRICK 1: Import]
-import { Weapon } from "./items/Weapon";
+import { Weapon }      from "./items/Weapon";
 
 // ============================================================
 // [🧱 BLOCK: GameState Class]
@@ -62,6 +62,9 @@ export class GameState {
     this.alive     = 0;
     this.lastSpawn = 0;
 
+    // 🧱 Initial Weapon Setup
+    this.player.equippedWeapon = new Weapon('sword');
+
     // Apply default stats immediately
     this.playerStats.applyToPlayer(this.player);
   }
@@ -85,6 +88,9 @@ export class GameState {
     this.player      = new Player(WORLD_W / 2, WORLD_H / 2);
     this.camera      = new Camera(this.screenW, this.screenH);
 
+    // 🧱 Re-initialize weapon on reset
+    this.player.equippedWeapon = new Weapon('sword');
+
     this.playerStats = new PlayerStats();
     this.playerStats.applyToPlayer(this.player);
   }
@@ -103,6 +109,9 @@ export class GameState {
     this.lastSpawn   = 0;
     this.door        = null;
     this.boss        = null;
+
+    // Maintain stats and current weapon state between rooms
+    this.playerStats.applyToPlayer(this.player);
   }
 
   // ============================================================
