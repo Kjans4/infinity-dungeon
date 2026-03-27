@@ -6,6 +6,7 @@ import { GoldDrop }    from "./GoldDrop";
 import { PlayerStats } from "./PlayerStats";
 import { Grunt, Shooter, Boss, Projectile } from "./enemy";
 import { Particle }    from "./Particle"; // [🧱 BRICK 1: Import]
+import { Weapon } from "./items/Weapon";
 
 // ============================================================
 // [🧱 BLOCK: GameState Class]

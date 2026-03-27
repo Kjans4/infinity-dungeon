@@ -7,7 +7,10 @@ import { RoomState } from "../RoomManager";
 import { GameState } from "../GameState";
 import { GoldSystem, GOLD_DROPS } from "./GoldSystem";
 import { GoldDrop }  from "../GoldDrop";
-import { spawnBurst } from "../Particle"; // [🧱 BRICK 2: Import]
+import { spawnBurst } from "../Particle"; 
+
+// 🧱 Brick 7 — Additional Imports
+import { WeaponSystem } from "./WeaponSystem";
 
 // ============================================================
 // [🧱 BLOCK: HordeSystem Config]
@@ -22,6 +25,8 @@ const WAVE_SIZE      = 6;
 export class HordeSystem {
   readonly killThreshold = KILL_THRESHOLD;
   private goldSystem     = new GoldSystem();
+  // 🧱 Brick 8 — Add weaponSystem field
+  private weaponSystem   = new WeaponSystem();
 
   // ============================================================
   // [🧱 BLOCK: Setup]
@@ -107,37 +112,27 @@ export class HordeSystem {
       }
     });
 
-    // ── Player Attack vs Enemies ────────────────────────────
-    if (player.isAttacking) {
-      const range   = player.attackType === "light" ? 35 : 55;
-      const radius = player.attackType === "light" ? 15 : 25;
-      const baseDmg = player.attackType === "light" ? 10 : 25;
-      const damage  = baseDmg + ps.atkBonus;
+    // 🧱 Brick 9 — Replace old player attack block
+    // ── Process weapon input ─────────────────────────────────
+    this.weaponSystem.processInput(player);
 
-      const lastStand = ps.hasCharm('last_stand') && player.hp / (player.maxHp ?? 100) < 0.25;
-      const finalDmg  = damage + (lastStand ? 15 : 0);
+    // ── Resolve weapon hits vs enemies ──────────────────────
+    const hitEnemies = this.weaponSystem.resolveHits(
+      player,
+      state.enemies,
+      ps.atkBonus
+    );
 
-      const dir = (player.attackType === 'heavy' && player.lockedFacing)
-        ? player.lockedFacing
-        : player.facing;
-
-      const cx = (player.x + player.width  / 2) + dir.x * range;
-      const cy = (player.y + player.height / 2) + dir.y * range;
-
-      state.enemies.forEach((enemy) => {
-        if (enemy.isDead) return;
-        const nx = Math.max(enemy.x, Math.min(cx, enemy.x + enemy.width));
-        const ny = Math.max(enemy.y, Math.min(cy, enemy.y + enemy.height));
-        if ((cx - nx) ** 2 + (cy - ny) ** 2 < radius * radius) {
-          enemy.takeDamage(finalDmg);
-
-          if (
-            enemy.isDead &&
-            player.attackType === 'heavy' &&
-            ps.hasCharm('executioner')
-          ) {
-            this.triggerShockwave(state, enemy.x + enemy.width / 2, enemy.y + enemy.height / 2, 25);
-          }
+    // Executioner shockwave on heavy kill
+    if (player.attackMode === 'heavy' && ps.hasCharm('executioner')) {
+      hitEnemies.forEach((enemy) => {
+        if (enemy.isDead) {
+          this.triggerShockwave(
+            state,
+            enemy.x + enemy.width  / 2,
+            enemy.y + enemy.height / 2,
+            25
+          );
         }
       });
     }
@@ -161,7 +156,6 @@ export class HordeSystem {
           type
         );
 
-        // [🧱 BRICK 3: Spawn kill particles]
         state.particles.push(...spawnBurst(
           enemy.x + enemy.width / 2,
           enemy.y + enemy.height / 2,
@@ -229,8 +223,8 @@ export class HordeSystem {
     });
   }
 
-  // [🧱 BRICK 4: Update + draw particles]
-  draw(state: GameState, ctx: CanvasRenderingContext2D, camera: Camera) {
+  // 🧱 Brick 10 — Update draw signature and add weapon draw call
+  draw(state: GameState, ctx: CanvasRenderingContext2D, camera: Camera, player: Player) {
     state.door?.draw(ctx, camera);
     state.enemies.forEach((e)     => e.draw(ctx, camera));
     state.projectiles.forEach((p) => p.draw(ctx, camera));
@@ -240,5 +234,8 @@ export class HordeSystem {
     state.particles.forEach((p) => p.update());
     state.particles = state.particles.filter((p) => !p.isDone);
     state.particles.forEach((p) => p.draw(ctx, camera));
+
+    // Draw weapon attack visual (after particles so it overlays)
+    this.weaponSystem.draw(ctx, player, camera);
   }
 }

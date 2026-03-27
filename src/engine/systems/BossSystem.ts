@@ -6,7 +6,10 @@ import { RoomState }                 from "../RoomManager";
 import { GameState }                 from "../GameState";
 import { BOSS_WORLD_W, BOSS_WORLD_H } from "../Camera";
 import { GoldDrop }                  from "../GoldDrop";
-import { spawnBurst }                from "../Particle"; // [🧱 BRICK 5: Import]
+import { spawnBurst }                from "../Particle"; 
+
+// 🧱 Brick 11 — Additional Import
+import { WeaponSystem } from "./WeaponSystem";
 
 // ============================================================
 // [🧱 BLOCK: Gold Drop Helper]
@@ -30,6 +33,8 @@ function spawnBossGold(state: GameState, x: number, y: number) {
 // [🧱 BLOCK: BossSystem Class]
 // ============================================================
 export class BossSystem {
+  // 🧱 Brick 11 — Add weaponSystem field
+  private weaponSystem = new WeaponSystem();
 
   setup(state: GameState, rs: RoomState) {
     state.player.x  = BOSS_WORLD_W / 2;
@@ -86,29 +91,12 @@ export class BossSystem {
       player.takeHit(final);
     }
 
-    // ── Player attack vs boss ───────────────────────────────
-    if (player.isAttacking) {
-      const range   = player.attackType === "light" ? 35 : 55;
-      const radius  = player.attackType === "light" ? 15 : 25;
-      const baseDmg = player.attackType === "light" ? 10 : 25;
-      const damage  = baseDmg + ps.atkBonus;
+    // 🧱 Brick 11 — Replace old player attack block
+    // ── Process weapon input ─────────────────────────────────
+    this.weaponSystem.processInput(player);
 
-      const lastStand = ps.hasCharm('last_stand') && player.hp / (player.maxHp ?? 100) < 0.25;
-      const finalDmg   = damage + (lastStand ? 15 : 0);
-
-      const dir = (player.attackType === 'heavy' && player.lockedFacing)
-        ? player.lockedFacing
-        : player.facing;
-
-      const cx = (player.x + player.width  / 2) + dir.x * range;
-      const cy = (player.y + player.height / 2) + dir.y * range;
-      const nx = Math.max(boss.x, Math.min(cx, boss.x + boss.width));
-      const ny = Math.max(boss.y, Math.min(cy, boss.y + boss.height));
-
-      if ((cx - nx) ** 2 + (cy - ny) ** 2 < radius * radius) {
-        boss.takeDamage(finalDmg);
-      }
-    }
+    // ── Resolve weapon hits vs boss ──────────────────────────
+    this.weaponSystem.resolveHitBoss(player, boss, ps.atkBonus);
 
     // ── Stamina regen ───────────────────────────────────────
     if (player.stamina < player.maxStamina) {
@@ -128,7 +116,6 @@ export class BossSystem {
     state.goldDrops = state.goldDrops.filter((d) => !d.collected);
 
     // ── Boss death ──────────────────────────────────────────
-    // [🧱 BRICK 6: Boss Death Burst]
     if (boss.isDead) {
       const bx = boss.x + boss.width  / 2;
       const by = boss.y + boss.height / 2;
@@ -143,8 +130,8 @@ export class BossSystem {
     return { event: null, goldCollected };
   }
 
-  // [🧱 BRICK 7: Update + Draw Particles]
-  draw(state: GameState, ctx: CanvasRenderingContext2D, camera: Camera) {
+  // 🧱 Brick 11 — Update draw signature and add weapon draw call
+  draw(state: GameState, ctx: CanvasRenderingContext2D, camera: Camera, player: Player) {
     state.boss?.draw(ctx, camera);
     state.goldDrops.forEach((drop) => drop.draw(ctx, camera));
 
@@ -152,5 +139,8 @@ export class BossSystem {
     state.particles.forEach((p) => p.update());
     state.particles = state.particles.filter((p) => !p.isDone);
     state.particles.forEach((p) => p.draw(ctx, camera));
+
+    // Draw weapon attack visual
+    this.weaponSystem.draw(ctx, player, camera);
   }
 }

@@ -1,3 +1,4 @@
+// src/components/GameCanvas.tsx
 "use client";
 
 import React, { useRef, useEffect, useState, useCallback } from "react";
@@ -227,7 +228,8 @@ export default function GameCanvas() {
       ) {
         announce("ROOM CLEAR", "Gate is open — head north");
       }
-      hordeRef.current.draw(state, ctx, state.camera);
+      // 🧱 Updated draw call to include player reference
+      hordeRef.current.draw(state, ctx, state.camera, player);
     }
 
     if (isBoss) {
@@ -245,7 +247,8 @@ export default function GameCanvas() {
         setTimeout(() => setIsVictory(true), 2000);
         return;
       }
-      bossRef.current.draw(state, ctx, state.camera);
+      // 🧱 Updated draw call to include player reference
+      bossRef.current.draw(state, ctx, state.camera, player);
     }
 
     player.draw(ctx, state.camera);
