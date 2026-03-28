@@ -1,12 +1,11 @@
 // src/engine/items/Weapon.ts
 import { WeaponDef, WeaponType, AttackDef, HitboxShape } from "./types";
 import { getWeapon } from "./WeaponRegistry";
-import { Camera } from "../Camera";
 
 // ============================================================
 // [🧱 BLOCK: Weapon Class]
 // Holds the active weapon state and exposes:
-//   - draw()      → renders the attack visual on canvas
+//   - draw()    → renders the attack visual on canvas
 //   - hitTest()   → checks if a world point is inside hitbox
 // ============================================================
 export class Weapon {
@@ -26,7 +25,7 @@ export class Weapon {
 
   // ============================================================
   // [🧱 BLOCK: Draw Attack Visual]
-  // Called from Player.draw() when isAttacking is true.
+  // Called from WeaponSystem.draw() when isAttacking is true.
   // px/py = player center in SCREEN coords
   // facing = normalized direction vector
   // ============================================================

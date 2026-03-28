@@ -5,7 +5,7 @@ import { Door }        from "./Door";
 import { GoldDrop }    from "./GoldDrop";
 import { PlayerStats } from "./PlayerStats";
 import { Grunt, Shooter, Boss, Projectile } from "./enemy";
-import { Particle }    from "./Particle"; // [🧱 BRICK 1: Import]
+import { Particle }    from "./Particle"; 
 import { Weapon }      from "./items/Weapon";
 
 // ============================================================
@@ -21,7 +21,7 @@ export class GameState {
   door:        Door | null;
   projectiles: Projectile[];
   goldDrops:   GoldDrop[];
-  particles:   Particle[] = []; // [🧱 BRICK 1: Field]
+  particles:   Particle[];
 
   // ── Economy ────────────────────────────────────────────────
   gold:        number;
@@ -51,7 +51,7 @@ export class GameState {
     this.door        = null;
     this.projectiles = [];
     this.goldDrops   = [];
-    this.particles   = []; // [🧱 BRICK 1: Constructor Init]
+    this.particles   = [];
 
     // Economy
     this.gold        = 0;
@@ -79,7 +79,7 @@ export class GameState {
     this.door        = null;
     this.projectiles = [];
     this.goldDrops   = [];
-    this.particles   = []; // [🧱 BRICK 1: Reset]
+    this.particles   = [];
     this.gold        = 0;
     this.kills       = 0;
     this.alive       = 0;
@@ -103,7 +103,7 @@ export class GameState {
     this.enemies     = [];
     this.projectiles = [];
     this.goldDrops   = [];
-    this.particles   = []; // [🧱 BRICK 1: Room Reset]
+    this.particles   = [];
     this.kills       = 0;
     this.alive       = 0;
     this.lastSpawn   = 0;

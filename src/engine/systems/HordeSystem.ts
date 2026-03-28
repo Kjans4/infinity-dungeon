@@ -5,8 +5,7 @@ import { Door }      from "../Door";
 import { Grunt, Shooter, spawnWave } from "../enemy";
 import { RoomState } from "../RoomManager";
 import { GameState } from "../GameState";
-import { GoldSystem, GOLD_DROPS } from "./GoldSystem";
-import { GoldDrop }  from "../GoldDrop";
+import { GoldSystem } from "./GoldSystem";
 import { spawnBurst } from "../Particle"; 
 
 // 🧱 Brick 7 — Additional Imports
@@ -43,6 +42,7 @@ export class HordeSystem {
     state.lastSpawn   = 0;
     state.projectiles = [];
     state.goldDrops   = [];
+    state.particles   = []; // Clean room-start particles
     state.boss        = null;
 
     state.enemies = spawnWave(
@@ -66,6 +66,7 @@ export class HordeSystem {
     state.enemies     = [];
     state.projectiles = [];
     state.goldDrops   = [];
+    state.particles   = [];
     state.door        = null;
     state.kills       = 0;
     state.alive       = 0;
@@ -117,11 +118,24 @@ export class HordeSystem {
     this.weaponSystem.processInput(player);
 
     // ── Resolve weapon hits vs enemies ──────────────────────
+    // Casting state.enemies to ensure TypeScript matches the resolveHits signature
     const hitEnemies = this.weaponSystem.resolveHits(
       player,
-      state.enemies,
+      state.enemies as (Grunt | Shooter)[],
       ps.atkBonus
     );
+
+    // If enemies were hit, provide feedback (particles/sounds)
+    if (hitEnemies.length > 0) {
+      hitEnemies.forEach(enemy => {
+         state.particles.push(...spawnBurst(
+          enemy.x + enemy.width / 2,
+          enemy.y + enemy.height / 2,
+          "#ffffff", // White flash on hit
+          3
+        ));
+      });
+    }
 
     // Executioner shockwave on heavy kill
     if (player.attackMode === 'heavy' && ps.hasCharm('executioner')) {
@@ -160,7 +174,7 @@ export class HordeSystem {
           enemy.x + enemy.width / 2,
           enemy.y + enemy.height / 2,
           enemy.color,
-          6
+          8
         ));
 
         ps.charms.forEach((charm) => {

@@ -58,6 +58,13 @@ export default function GameCanvas() {
     color?:   string;
   }>({ show: false, message: "" });
 
+  const announcementRef = useRef(false);
+
+  // Keep ref in sync with state
+  useEffect(() => {
+    announcementRef.current = announcement.show;
+  }, [announcement.show]);
+
   const announce = useCallback((message: string, subtext?: string, color?: string) => {
     setAnnouncement({ show: true, message, subtext, color });
     setTimeout(() => setAnnouncement({ show: false, message: "" }), 2500);
@@ -224,7 +231,7 @@ export default function GameCanvas() {
       if (
         state.door?.isActive &&
         state.kills >= hordeRef.current.killThreshold &&
-        !announcement.show
+        !announcementRef.current
       ) {
         announce("ROOM CLEAR", "Gate is open — head north");
       }
