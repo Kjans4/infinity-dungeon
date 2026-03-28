@@ -11,22 +11,22 @@ export type AttackMode = 'light' | 'heavy';
 // Each weapon uses a different collision shape.
 // ============================================================
 export type HitboxShape =
-  | { kind: 'arc';  range: number; arcAngle: number }   // Sword
-  | { kind: 'circle'; radius: number }                   // Axe
-  | { kind: 'rect'; length: number; width: number }      // Spear
+  | { kind: 'arc';    range: number; arcAngle: number }  // Sword — fan sweep
+  | { kind: 'circle'; radius: number }                   // Axe   — full circle
+  | { kind: 'rect';   length: number; width: number }    // Spear — thin rectangle
 
 // ============================================================
 // [🧱 BLOCK: Attack Definition]
-// One entry per attack mode per weapon.
+// One entry per attack mode (light/heavy) per weapon.
 // ============================================================
 export interface AttackDef {
-  damage:    number;
-  duration:  number;  // ms — how long hitbox is active
-  hitbox:    HitboxShape;
-  staminaCost: number;
-  cooldown:  number;  // ms — only used for heavy
-  color:     string;  // Visual color of the attack shape
-  haltsPlayer: boolean;
+  damage:       number;
+  duration:     number;   // ms — how long the hitbox is active
+  staminaCost:  number;
+  cooldown:     number;   // ms — only enforced on heavy
+  haltsPlayer:  boolean;
+  color:        string;   // Canvas fill color for the visual
+  hitbox:       HitboxShape;
 }
 
 // ============================================================
