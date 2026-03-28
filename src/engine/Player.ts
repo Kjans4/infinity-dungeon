@@ -9,8 +9,7 @@ export class Player {
   x: number; y: number;
   width:  number = 32;
   height: number = 32;
-  vx: number = 0;
-  vy: number = 0;
+  vx: number = 0; vy: number = 0;
 
   // Physics
   accel:    number = 0.8;
@@ -36,28 +35,25 @@ export class Player {
   facing:           { x: number; y: number } = { x: 0, y: 1 };
   lockedFacing:     { x: number; y: number } | null = null;
 
-  // Weapon system
-  equippedWeapon: Weapon | null       = null;
+  // Weapon — initialized in constructor to avoid Turbopack issues
+  equippedWeapon: Weapon;
   lastInput:      InputHandler | null = null;
 
   constructor(x: number, y: number) {
     this.x = x;
     this.y = y;
-    // Initialize weapon inside constructor to avoid Turbopack
-    // module resolution timing issues with field initializers
-    this.equippedWeapon = new Weapon('sword');
+    // Default bare fists — no weapon equipped
+    this.equippedWeapon = new Weapon('fists');
   }
 
   // ============================================================
   // [🧱 BLOCK: Update]
   // ============================================================
   update(input: InputHandler) {
-    // Store for WeaponSystem.processInput()
     this.lastInput = input;
 
-    // [🧱 BRICK: Movement]
-    let inputX = 0;
-    let inputY = 0;
+    // Movement
+    let inputX = 0; let inputY = 0;
     if (input.movement.up)    inputY -= 1;
     if (input.movement.down)  inputY += 1;
     if (input.movement.left)  inputX -= 1;
@@ -65,9 +61,8 @@ export class Player {
 
     if (!this.isHeavyAttacking) {
       if (inputX !== 0 || inputY !== 0) {
-        const len = Math.sqrt(inputX * inputX + inputY * inputY);
-        inputX /= len;
-        inputY /= len;
+        const len   = Math.sqrt(inputX * inputX + inputY * inputY);
+        inputX /= len; inputY /= len;
         this.vx += inputX * this.accel;
         this.vy += inputY * this.accel;
         this.facing = { x: inputX, y: inputY };
@@ -77,7 +72,7 @@ export class Player {
       this.vy *= 0.5;
     }
 
-    // [🧱 BRICK: Dash]
+    // Dash
     if (input.movement.dash && this.stamina >= 30 && !this.isDashing && !this.isAttacking) {
       this.stamina  -= 30;
       this.isDashing = true;
@@ -86,7 +81,7 @@ export class Player {
       setTimeout(() => { this.isDashing = false; }, 200);
     }
 
-    // [🧱 BRICK: Attack Timer]
+    // Attack timer
     if (this.isAttacking) {
       this.attackTimer -= 16;
       if (this.attackTimer <= 0) {
@@ -97,7 +92,7 @@ export class Player {
       }
     }
 
-    // [🧱 BRICK: Physics]
+    // Physics
     this.vx *= this.friction;
     this.vy *= this.friction;
     const speed    = Math.sqrt(this.vx * this.vx + this.vy * this.vy);
@@ -109,11 +104,11 @@ export class Player {
     this.x += this.vx;
     this.y += this.vy;
 
-    // [🧱 BRICK: Resources]
+    // Resources
     if (this.stamina < this.maxStamina) this.stamina += 0.4;
-    if (this.heavyCooldown  > 0) this.heavyCooldown  -= 16;
-    if (this.iFrames        > 0) this.iFrames        -= 16;
-    if (this.hitFlashTimer  > 0) {
+    if (this.heavyCooldown > 0) this.heavyCooldown  -= 16;
+    if (this.iFrames       > 0) this.iFrames        -= 16;
+    if (this.hitFlashTimer > 0) {
       this.hitFlashTimer -= 16;
       if (this.hitFlashTimer <= 0) this.isHit = false;
     }
@@ -121,7 +116,7 @@ export class Player {
 
   // ============================================================
   // [🧱 BLOCK: Start Weapon Attack]
-  // Called by WeaponSystem.processInput() — never call directly.
+  // Called by WeaponSystem.processInput() only.
   // ============================================================
   startWeaponAttack(mode: 'light' | 'heavy', atk: AttackDef): void {
     this.stamina      -= atk.staminaCost;
@@ -155,7 +150,7 @@ export class Player {
   // [🧱 BLOCK: Draw]
   // ============================================================
   draw(ctx: CanvasRenderingContext2D, camera: Camera): void {
-    // Flicker during i-frames (not during hit flash)
+    // Flicker during i-frames
     if (!this.isHit && this.iFrames > 0 && Math.floor(Date.now() / 50) % 2 === 0) {
       return;
     }
@@ -163,7 +158,7 @@ export class Player {
     const sx = camera.toScreenX(this.x);
     const sy = camera.toScreenY(this.y);
 
-    // Player body
+    // Body
     ctx.fillStyle = this.isHit
       ? "#ffffff"
       : this.isDashing

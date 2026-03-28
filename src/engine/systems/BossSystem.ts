@@ -9,9 +9,6 @@ import { GoldDrop }                   from "../GoldDrop";
 import { spawnBurst }                 from "../Particle";
 import { WeaponSystem }               from "./WeaponSystem";
 
-// ============================================================
-// [🧱 BLOCK: Boss Gold Helper]
-// ============================================================
 const BOSS_GOLD = { min: 80, max: 120 };
 
 function randInt(min: number, max: number): number {
@@ -27,15 +24,9 @@ function spawnBossGold(state: GameState, x: number, y: number) {
   }
 }
 
-// ============================================================
-// [🧱 BLOCK: BossSystem Class]
-// ============================================================
 export class BossSystem {
   private weaponSystem = new WeaponSystem();
 
-  // ============================================================
-  // [🧱 BLOCK: Setup]
-  // ============================================================
   setup(state: GameState, rs: RoomState) {
     state.player.x  = BOSS_WORLD_W / 2;
     state.player.y  = BOSS_WORLD_H - 100;
@@ -54,18 +45,12 @@ export class BossSystem {
     state.playerStats.applyToPlayer(state.player);
   }
 
-  // ============================================================
-  // [🧱 BLOCK: Reset]
-  // ============================================================
   reset(state: GameState) {
     state.boss      = null;
     state.goldDrops = [];
     state.particles = [];
   }
 
-  // ============================================================
-  // [🧱 BLOCK: Update]
-  // ============================================================
   update(
     state:  GameState,
     player: Player,
@@ -76,35 +61,31 @@ export class BossSystem {
     if (!boss) return { event: null, goldCollected: 0 };
 
     const ps = state.playerStats;
-
     boss.update(player, worldW, worldH);
 
-    // ── Boss contact damage ──────────────────────────────────
+    // Boss contact damage
     if (boss.isCollidingWithPlayer(player) && player.iFrames <= 0) {
       const final = Math.round(boss.contactDamage * (1 - ps.damageReduction));
       player.takeHit(final);
       boss.damageCooldown = 800;
     }
 
-    // ── Boss slam AoE damage ────────────────────────────────
+    // Boss slam AoE
     if (boss.isSlamHittingPlayer(player) && player.iFrames <= 0) {
       const final = Math.round(boss.slamDamage * (1 - ps.damageReduction));
       player.takeHit(final);
     }
 
-    // ── Weapon: process input then resolve hit vs boss ───────
+    // Weapon input + hit vs boss
     this.weaponSystem.processInput(player);
     this.weaponSystem.resolveHitBoss(player, boss, ps.atkBonus);
 
-    // ── Stamina regen ────────────────────────────────────────
+    // Stamina regen
     if (player.stamina < player.maxStamina) {
-      player.stamina = Math.min(
-        player.maxStamina,
-        player.stamina + ps.staminaRegenRate
-      );
+      player.stamina = Math.min(player.maxStamina, player.stamina + ps.staminaRegenRate);
     }
 
-    // ── Gold collection ──────────────────────────────────────
+    // Gold collection
     let goldCollected = 0;
     state.goldDrops.forEach((drop) => {
       const was = drop.collected;
@@ -113,7 +94,7 @@ export class BossSystem {
     });
     state.goldDrops = state.goldDrops.filter((d) => !d.collected);
 
-    // ── Boss death ───────────────────────────────────────────
+    // Boss death
     if (boss.isDead) {
       const bx = boss.x + boss.width  / 2;
       const by = boss.y + boss.height / 2;
@@ -125,18 +106,12 @@ export class BossSystem {
     return { event: null, goldCollected };
   }
 
-  // ============================================================
-  // [🧱 BLOCK: Draw]
-  // ============================================================
   draw(state: GameState, ctx: CanvasRenderingContext2D, camera: Camera, player: Player) {
     state.boss?.draw(ctx, camera);
     state.goldDrops.forEach((drop) => drop.draw(ctx, camera));
-
-    state.particles.forEach((p) => p.update());
+    state.particles.forEach((p)   => p.update());
     state.particles = state.particles.filter((p) => !p.isDone);
-    state.particles.forEach((p) => p.draw(ctx, camera));
-
-    // Draw weapon attack visual
+    state.particles.forEach((p)   => p.draw(ctx, camera));
     this.weaponSystem.draw(ctx, player, camera);
   }
 }

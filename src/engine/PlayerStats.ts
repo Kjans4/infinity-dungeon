@@ -1,10 +1,10 @@
 // src/engine/PlayerStats.ts
-
-import { Player } from "./Player";
-import {
-  Charm, PlayerStatModifiers,
-  defaultModifiers, getRandomCharms,
-} from "./CharmRegistry";
+import { Player }        from "./Player";
+import { Charm, CHARM_POOL, PlayerStatModifiers, defaultModifiers, getRandomCharms } from "./CharmRegistry";
+import { WeaponItem }    from "./items/types";
+import { Weapon }        from "./items/Weapon";
+import { getCharmById }  from "./CharmRegistry";
+import { ShopItem, getRandomShopItems } from "./items/ItemPool";
 
 // ============================================================
 // [🧱 BLOCK: Stat Definitions]
@@ -19,53 +19,51 @@ export interface StatDef {
 }
 
 export const STAT_DEFS: StatDef[] = [
-  { key: 'str', label: 'STR', icon: '⚔️',  description: '+3 attack damage per level'      },
-  { key: 'vit', label: 'VIT', icon: '❤️',  description: '+10 max HP per level'            },
-  { key: 'agi', label: 'AGI', icon: '💨',  description: '+0.3 move speed per level'       },
-  { key: 'end', label: 'END', icon: '⚡',  description: '+5 max stamina per level'        },
+  { key: 'str', label: 'STR', icon: '⚔️',  description: '+3 attack damage per level'   },
+  { key: 'vit', label: 'VIT', icon: '❤️',  description: '+10 max HP per level'          },
+  { key: 'agi', label: 'AGI', icon: '💨',  description: '+0.3 move speed per level'     },
+  { key: 'end', label: 'END', icon: '⚡',  description: '+5 max stamina per level'      },
 ];
 
-// Cost tiers based on current level
 export function statCost(currentLevel: number): number {
-  if (currentLevel < 3)  return 30;
-  if (currentLevel < 6)  return 60;
+  if (currentLevel < 3) return 30;
+  if (currentLevel < 6) return 60;
   return 100;
 }
 
-// Max level allowed per floor
 export function statCap(floor: number): number {
   return Math.min(10, floor * 3);
 }
 
 // ============================================================
 // [🧱 BLOCK: PlayerStats Class]
-// Owns stat levels, charm slots, and computes final player
-// values by combining base stats + stat points + charm mods.
 // ============================================================
 export class PlayerStats {
-  // Stat levels (0–10)
+  // Stat levels
   str: number = 0;
   vit: number = 0;
   agi: number = 0;
   end: number = 0;
 
-  // Charm slots (max 5)
-  charms:     Charm[]              = [];
-  maxCharms:  number               = 5;
-  modifiers:  PlayerStatModifiers  = defaultModifiers();
+  // Charms
+  charms:    Charm[]             = [];
+  maxCharms: number              = 5;
+  modifiers: PlayerStatModifiers = defaultModifiers();
 
-  // Shop state
-  shopOptions:  Charm[]  = [];   // 3 random charms shown
-  rerollCost:   number   = 20;
+  // Equipped weapon item (null = bare fists)
+  equippedWeaponItem: WeaponItem | null = null;
+
+  // Shop state — now mixed items
+  shopOptions:  ShopItem[] = [];
+  rerollCost:   number     = 20;
 
   // ============================================================
   // [🧱 BLOCK: Stat Allocation]
   // ============================================================
   canUpgrade(key: StatKey, gold: number, floor: number): boolean {
-    const cap  = statCap(floor);
-    const level = this[key];
-    if (level >= cap) return false;
-    return gold >= statCost(level);
+    const cap = statCap(floor);
+    if (this[key] >= cap) return false;
+    return gold >= statCost(this[key]);
   }
 
   upgradeStat(key: StatKey, gold: number, floor: number): number {
@@ -93,14 +91,13 @@ export class PlayerStats {
   }
 
   sellCharm(charmId: string, gold: number, player: Player): number {
-    const idx   = this.charms.findIndex((c) => c.id === charmId);
+    const idx = this.charms.findIndex((c) => c.id === charmId);
     if (idx === -1) return gold;
     const charm = this.charms[idx];
     charm.onRemove(player, this.modifiers);
     this.charms.splice(idx, 1);
     this.applyToPlayer(player);
-    const refund = Math.ceil(charm.cost * 0.5);
-    return gold + refund;
+    return gold + Math.ceil(charm.cost * 0.5);
   }
 
   hasCharm(id: string): boolean {
@@ -108,40 +105,86 @@ export class PlayerStats {
   }
 
   // ============================================================
-  // [🧱 BLOCK: Shop Options]
+  // [🧱 BLOCK: Weapon Equip / Unequip]
+  // ============================================================
+  canBuyWeapon(item: WeaponItem, gold: number): boolean {
+    return gold >= item.cost;
+  }
+
+  equipWeapon(item: WeaponItem, gold: number, player: Player): number {
+    if (!this.canBuyWeapon(item, gold)) return gold;
+
+    // Remove old weapon passive if any
+    if (this.equippedWeaponItem) {
+      this.removeWeaponPassive(this.equippedWeaponItem, player);
+    }
+
+    // Apply new weapon
+    this.equippedWeaponItem = item;
+    this.applyWeaponPassive(item, player);
+
+    // Update player's equipped weapon attack shape
+    player.equippedWeapon = new Weapon(item.weaponType);
+
+    this.applyToPlayer(player);
+    return gold - item.cost;
+  }
+
+  unequipWeapon(gold: number, player: Player): number {
+    if (!this.equippedWeaponItem) return gold;
+
+    // Refund 50%
+    const refund = Math.ceil(this.equippedWeaponItem.cost * 0.5);
+
+    this.removeWeaponPassive(this.equippedWeaponItem, player);
+    this.equippedWeaponItem = null;
+
+    // Back to bare fists
+    player.equippedWeapon = new Weapon('fists');
+
+    this.applyToPlayer(player);
+    return gold + refund;
+  }
+
+  private applyWeaponPassive(item: WeaponItem, player: Player) {
+    const charm = getCharmById(item.passiveId);
+    if (charm) charm.onEquip(player, this.modifiers);
+  }
+
+  private removeWeaponPassive(item: WeaponItem, player: Player) {
+    const charm = getCharmById(item.passiveId);
+    if (charm) charm.onRemove(player, this.modifiers);
+  }
+
+  // ============================================================
+  // [🧱 BLOCK: Shop Options — Mixed Pool]
   // ============================================================
   generateShopOptions() {
-    const ownedIds  = this.charms.map((c) => c.id);
-    this.shopOptions = getRandomCharms(ownedIds, 3);
+    const ownedCharmIds = this.charms.map((c) => c.id);
+    const ownedWeaponId = this.equippedWeaponItem?.id ?? null;
+    this.shopOptions    = getRandomShopItems(ownedCharmIds, ownedWeaponId, 3);
   }
 
   reroll(gold: number): number {
     if (gold < this.rerollCost) return gold;
-    const ownedIds   = this.charms.map((c) => c.id);
-    this.shopOptions = getRandomCharms(ownedIds, 3);
+    const ownedCharmIds = this.charms.map((c) => c.id);
+    const ownedWeaponId = this.equippedWeaponItem?.id ?? null;
+    this.shopOptions    = getRandomShopItems(ownedCharmIds, ownedWeaponId, 3);
     return gold - this.rerollCost;
   }
 
   // ============================================================
   // [🧱 BLOCK: Apply Stats to Player]
-  // Call after any stat or charm change to sync Player values.
   // ============================================================
   applyToPlayer(player: Player) {
-    // Max HP
-    const newMaxHp    = 100 + (this.vit * 10) + this.modifiers.bonusMaxHp;
-    player.maxHp      = Math.max(1, newMaxHp);
+    player.maxHp      = Math.max(1, 100 + (this.vit * 10) + this.modifiers.bonusMaxHp);
     player.hp         = Math.min(player.hp, player.maxHp);
-
-    // Max Stamina
     player.maxStamina = 100 + (this.end * 5) + this.modifiers.bonusMaxStamina;
-
-    // Move Speed
     player.maxSpeed   = 5 + (this.agi * 0.3) + this.modifiers.bonusSpeed;
   }
 
   // ============================================================
-  // [🧱 BLOCK: Computed Stat Getters]
-  // Used by HordeSystem/BossSystem for attack calculations.
+  // [🧱 BLOCK: Computed Getters]
   // ============================================================
   get atkBonus(): number {
     return (this.str * 3) + this.modifiers.bonusAtk;
@@ -156,7 +199,7 @@ export class PlayerStats {
   }
 
   get damageReduction(): number {
-    return Math.min(0.75, this.modifiers.damageReduction); // Cap at 75%
+    return Math.min(0.75, this.modifiers.damageReduction);
   }
 
   get healOnKill(): number {
@@ -165,16 +208,22 @@ export class PlayerStats {
 
   // ============================================================
   // [🧱 BLOCK: Reset]
-  // Called on full game restart — wipes everything.
   // ============================================================
   reset(player: Player) {
-    this.str      = 0;
-    this.vit      = 0;
-    this.agi      = 0;
-    this.end      = 0;
-    this.charms   = [];
-    this.modifiers = defaultModifiers();
-    this.shopOptions = [];
+    // Remove weapon passive if any
+    if (this.equippedWeaponItem) {
+      this.removeWeaponPassive(this.equippedWeaponItem, player);
+    }
+    // Remove all charm passives
+    this.charms.forEach((c) => c.onRemove(player, this.modifiers));
+
+    this.str = 0; this.vit = 0; this.agi = 0; this.end = 0;
+    this.charms              = [];
+    this.modifiers           = defaultModifiers();
+    this.shopOptions         = [];
+    this.equippedWeaponItem  = null;
+
+    player.equippedWeapon = new Weapon('fists');
     this.applyToPlayer(player);
   }
 }
