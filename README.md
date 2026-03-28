@@ -108,5 +108,4 @@ src/
     └── useGameLoop.ts    # requestAnimationFrame loop
 ```
 
-
 Testing

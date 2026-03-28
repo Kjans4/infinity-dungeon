@@ -3,10 +3,9 @@ import { Player }      from "./Player";
 import { Camera, WORLD_W, WORLD_H } from "./Camera";
 import { Door }        from "./Door";
 import { GoldDrop }    from "./GoldDrop";
+import { Particle }    from "./Particle";
 import { PlayerStats } from "./PlayerStats";
 import { Grunt, Shooter, Boss, Projectile } from "./enemy";
-import { Particle }    from "./Particle"; 
-import { Weapon }      from "./items/Weapon";
 
 // ============================================================
 // [🧱 BLOCK: GameState Class]
@@ -38,12 +37,13 @@ export class GameState {
 
   // ============================================================
   // [🧱 BLOCK: Constructor]
+  // All fields initialized explicitly in constructor —
+  // avoids Turbopack module resolution timing issues.
   // ============================================================
   constructor(screenW: number, screenH: number) {
     this.screenW = screenW;
     this.screenH = screenH;
 
-    // Entities
     this.player      = new Player(WORLD_W / 2, WORLD_H / 2);
     this.camera      = new Camera(screenW, screenH);
     this.enemies     = [];
@@ -53,25 +53,18 @@ export class GameState {
     this.goldDrops   = [];
     this.particles   = [];
 
-    // Economy
     this.gold        = 0;
     this.playerStats = new PlayerStats();
 
-    // Horde counters
     this.kills     = 0;
     this.alive     = 0;
     this.lastSpawn = 0;
 
-    // 🧱 Initial Weapon Setup
-    this.player.equippedWeapon = new Weapon('sword');
-
-    // Apply default stats immediately
     this.playerStats.applyToPlayer(this.player);
   }
 
   // ============================================================
   // [🧱 BLOCK: Full Reset]
-  // Wipes everything on game restart.
   // ============================================================
   reset() {
     this.enemies     = [];
@@ -87,17 +80,13 @@ export class GameState {
 
     this.player      = new Player(WORLD_W / 2, WORLD_H / 2);
     this.camera      = new Camera(this.screenW, this.screenH);
-
-    // 🧱 Re-initialize weapon on reset
-    this.player.equippedWeapon = new Weapon('sword');
-
     this.playerStats = new PlayerStats();
     this.playerStats.applyToPlayer(this.player);
   }
 
   // ============================================================
   // [🧱 BLOCK: Room Reset]
-  // Wipes room entities but keeps gold, stats and charms.
+  // Keeps gold, stats, charms — wipes room entities.
   // ============================================================
   resetRoom() {
     this.enemies     = [];
@@ -109,9 +98,6 @@ export class GameState {
     this.lastSpawn   = 0;
     this.door        = null;
     this.boss        = null;
-
-    // Maintain stats and current weapon state between rooms
-    this.playerStats.applyToPlayer(this.player);
   }
 
   // ============================================================
