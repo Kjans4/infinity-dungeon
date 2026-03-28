@@ -7,12 +7,8 @@ import { Particle }    from "./Particle";
 import { PlayerStats } from "./PlayerStats";
 import { Grunt, Shooter, Boss, Projectile } from "./enemy";
 
-// ============================================================
-// [🧱 BLOCK: GameState Class]
-// Single source of truth for all engine state.
-// ============================================================
 export class GameState {
-  // ── Entities ───────────────────────────────────────────────
+  // Entities
   player:      Player;
   camera:      Camera;
   enemies:     (Grunt | Shooter)[];
@@ -22,24 +18,19 @@ export class GameState {
   goldDrops:   GoldDrop[];
   particles:   Particle[];
 
-  // ── Economy ────────────────────────────────────────────────
+  // Economy
   gold:        number;
   playerStats: PlayerStats;
 
-  // ── Horde Tracking ─────────────────────────────────────────
+  // Horde tracking
   kills:     number;
   alive:     number;
   lastSpawn: number;
 
-  // ── Screen Size ────────────────────────────────────────────
+  // Screen
   screenW: number;
   screenH: number;
 
-  // ============================================================
-  // [🧱 BLOCK: Constructor]
-  // All fields initialized explicitly in constructor —
-  // avoids Turbopack module resolution timing issues.
-  // ============================================================
   constructor(screenW: number, screenH: number) {
     this.screenW = screenW;
     this.screenH = screenH;
@@ -63,9 +54,6 @@ export class GameState {
     this.playerStats.applyToPlayer(this.player);
   }
 
-  // ============================================================
-  // [🧱 BLOCK: Full Reset]
-  // ============================================================
   reset() {
     this.enemies     = [];
     this.boss        = null;
@@ -84,10 +72,6 @@ export class GameState {
     this.playerStats.applyToPlayer(this.player);
   }
 
-  // ============================================================
-  // [🧱 BLOCK: Room Reset]
-  // Keeps gold, stats, charms — wipes room entities.
-  // ============================================================
   resetRoom() {
     this.enemies     = [];
     this.projectiles = [];
@@ -100,9 +84,6 @@ export class GameState {
     this.boss        = null;
   }
 
-  // ============================================================
-  // [🧱 BLOCK: Resize]
-  // ============================================================
   resize(w: number, h: number) {
     this.screenW        = w;
     this.screenH        = h;

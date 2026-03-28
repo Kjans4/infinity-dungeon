@@ -236,7 +236,7 @@ export default function GameCanvas() {
         announce("ROOM CLEAR", "Gate is open — head north");
       }
       // 🧱 Updated draw call to include player reference
-      hordeRef.current.draw(state, ctx, state.camera, player);
+      hordeRef.current.draw(state, ctx, state.camera, state.player);
     }
 
     if (isBoss) {
@@ -255,7 +255,7 @@ export default function GameCanvas() {
         return;
       }
       // 🧱 Updated draw call to include player reference
-      bossRef.current.draw(state, ctx, state.camera, player);
+      bossRef.current.draw(state, ctx, state.camera, state.player);
     }
 
     player.draw(ctx, state.camera);

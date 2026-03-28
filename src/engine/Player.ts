@@ -1,16 +1,18 @@
 // src/engine/Player.ts
 import { InputHandler } from "./Input";
 import { Camera }       from "./Camera";
+import { Weapon }       from "./items/Weapon";
+import { AttackDef }    from "./items/types";
 
 export class Player {
-  // [🧱 BLOCK: Properties] -----------------------------------------
+  // [🧱 BLOCK: Properties]
   x: number; y: number;
   width:  number = 32;
   height: number = 32;
   vx: number = 0;
   vy: number = 0;
 
-  // Physics Constants
+  // Physics
   accel:    number = 0.8;
   friction: number = 0.85;
   maxSpeed: number = 5;
@@ -21,7 +23,7 @@ export class Player {
   maxStamina: number = 100;
   stamina:    number = 100;
 
-  // States
+  // Combat state
   isDashing:        boolean                  = false;
   isAttacking:      boolean                  = false;
   isHeavyAttacking: boolean                  = false;
@@ -34,41 +36,48 @@ export class Player {
   facing:           { x: number; y: number } = { x: 0, y: 1 };
   lockedFacing:     { x: number; y: number } | null = null;
 
+  // Weapon system
+  equippedWeapon: Weapon | null       = null;
+  lastInput:      InputHandler | null = null;
+
   constructor(x: number, y: number) {
     this.x = x;
     this.y = y;
+    // Initialize weapon inside constructor to avoid Turbopack
+    // module resolution timing issues with field initializers
+    this.equippedWeapon = new Weapon('sword');
   }
 
   // ============================================================
   // [🧱 BLOCK: Update]
   // ============================================================
   update(input: InputHandler) {
+    // Store for WeaponSystem.processInput()
+    this.lastInput = input;
 
-    // [🧱 BLOCK: Movement Logic] -----------------------------------
-    let inputX = 0; let inputY = 0;
+    // [🧱 BRICK: Movement]
+    let inputX = 0;
+    let inputY = 0;
     if (input.movement.up)    inputY -= 1;
     if (input.movement.down)  inputY += 1;
     if (input.movement.left)  inputX -= 1;
     if (input.movement.right) inputX += 1;
 
-    // Halt movement during heavy attack
     if (!this.isHeavyAttacking) {
       if (inputX !== 0 || inputY !== 0) {
-        const length = Math.sqrt(inputX * inputX + inputY * inputY);
-        inputX /= length; inputY /= length;
-
+        const len = Math.sqrt(inputX * inputX + inputY * inputY);
+        inputX /= len;
+        inputY /= len;
         this.vx += inputX * this.accel;
         this.vy += inputY * this.accel;
-
         this.facing = { x: inputX, y: inputY };
       }
     } else {
-      // Bleed velocity to zero fast during heavy
       this.vx *= 0.5;
       this.vy *= 0.5;
     }
 
-    // [🧱 BLOCK: Dash] ---------------------------------------------
+    // [🧱 BRICK: Dash]
     if (input.movement.dash && this.stamina >= 30 && !this.isDashing && !this.isAttacking) {
       this.stamina  -= 30;
       this.isDashing = true;
@@ -77,19 +86,7 @@ export class Player {
       setTimeout(() => { this.isDashing = false; }, 200);
     }
 
-    // [🧱 BLOCK: Attacks] ------------------------------------------
-    if (!this.isAttacking && !this.isDashing) {
-      if (input.movement.light && this.stamina >= 10) {
-        this.performAttack('light', 10, 150);
-      } else if (input.movement.heavy && this.stamina >= 25 && this.heavyCooldown <= 0) {
-        this.lockedFacing     = { ...this.facing };
-        this.performAttack('heavy', 25, 400);
-        this.heavyCooldown    = 1200;
-        this.isHeavyAttacking = true;
-      }
-    }
-
-    // [🧱 BLOCK: Attack Timer] -------------------------------------
+    // [🧱 BRICK: Attack Timer]
     if (this.isAttacking) {
       this.attackTimer -= 16;
       if (this.attackTimer <= 0) {
@@ -100,27 +97,20 @@ export class Player {
       }
     }
 
-    // [🧱 BLOCK: Physics Solver] -----------------------------------
+    // [🧱 BRICK: Physics]
     this.vx *= this.friction;
     this.vy *= this.friction;
-
-    const currentSpeed = Math.sqrt(this.vx * this.vx + this.vy * this.vy);
-    const topSpeed     = this.isDashing ? 20 : this.maxSpeed;
-
-    if (currentSpeed > topSpeed) {
-      this.vx = (this.vx / currentSpeed) * topSpeed;
-      this.vy = (this.vy / currentSpeed) * topSpeed;
+    const speed    = Math.sqrt(this.vx * this.vx + this.vy * this.vy);
+    const topSpeed = this.isDashing ? 20 : this.maxSpeed;
+    if (speed > topSpeed) {
+      this.vx = (this.vx / speed) * topSpeed;
+      this.vy = (this.vy / speed) * topSpeed;
     }
-
     this.x += this.vx;
     this.y += this.vy;
 
-    // [🧱 BLOCK: Resources] ----------------------------------------
-    if (this.stamina < this.maxStamina) {
-      this.stamina += 0.4;
-    }
-
-    // Tick cooldowns
+    // [🧱 BRICK: Resources]
+    if (this.stamina < this.maxStamina) this.stamina += 0.4;
     if (this.heavyCooldown  > 0) this.heavyCooldown  -= 16;
     if (this.iFrames        > 0) this.iFrames        -= 16;
     if (this.hitFlashTimer  > 0) {
@@ -130,10 +120,42 @@ export class Player {
   }
 
   // ============================================================
+  // [🧱 BLOCK: Start Weapon Attack]
+  // Called by WeaponSystem.processInput() — never call directly.
+  // ============================================================
+  startWeaponAttack(mode: 'light' | 'heavy', atk: AttackDef): void {
+    this.stamina      -= atk.staminaCost;
+    this.isAttacking   = true;
+    this.attackType    = mode;
+    this.attackTimer   = atk.duration;
+
+    if (mode === 'heavy') {
+      this.heavyCooldown    = atk.cooldown;
+      this.isHeavyAttacking = true;
+      this.lockedFacing     = { ...this.facing };
+    }
+    if (mode === 'light') {
+      this.vx += this.facing.x * 6;
+      this.vy += this.facing.y * 6;
+    }
+  }
+
+  // ============================================================
+  // [🧱 BLOCK: Take Hit]
+  // ============================================================
+  takeHit(amount: number): void {
+    if (this.iFrames > 0) return;
+    this.hp            = Math.max(0, this.hp - amount);
+    this.isHit         = true;
+    this.hitFlashTimer = amount >= 25 ? 300 : 150;
+    this.iFrames       = amount >= 25 ? 800 : 600;
+  }
+
+  // ============================================================
   // [🧱 BLOCK: Draw]
   // ============================================================
-  draw(ctx: CanvasRenderingContext2D, camera: Camera) {
-    // Flicker during i-frames (but not during hit flash)
+  draw(ctx: CanvasRenderingContext2D, camera: Camera): void {
+    // Flicker during i-frames (not during hit flash)
     if (!this.isHit && this.iFrames > 0 && Math.floor(Date.now() / 50) % 2 === 0) {
       return;
     }
@@ -141,23 +163,7 @@ export class Player {
     const sx = camera.toScreenX(this.x);
     const sy = camera.toScreenY(this.y);
 
-    // [🧱 BLOCK: Render Attack Visuals] ---------------------------
-    if (this.isAttacking) {
-      const dir   = this.lockedFacing ?? this.facing;
-      const range  = this.attackType === 'light' ? 35 : 55;
-      const size   = this.attackType === 'light' ? 15 : 25;
-      const attackX = (sx + this.width  / 2) + dir.x * range;
-      const attackY = (sy + this.height / 2) + dir.y * range;
-
-      ctx.fillStyle = this.attackType === 'light'
-        ? "rgba(255, 255, 255, 0.6)"
-        : "rgba(251, 191, 36, 0.7)";
-      ctx.beginPath();
-      ctx.arc(attackX, attackY, size, 0, Math.PI * 2);
-      ctx.fill();
-    }
-
-    // [🧱 BLOCK: Render Player] -----------------------------------
+    // Player body
     ctx.fillStyle = this.isHit
       ? "#ffffff"
       : this.isDashing
@@ -165,7 +171,6 @@ export class Player {
         : "#f87171";
     ctx.fillRect(sx, sy, this.width, this.height);
 
-    // [🧱 BLOCK: Render UI Bars] ----------------------------------
     // HP bar
     ctx.fillStyle = "#1e293b";
     ctx.fillRect(sx, sy - 15, this.width, 4);
@@ -177,32 +182,5 @@ export class Player {
     ctx.fillRect(sx, sy - 9, this.width, 4);
     ctx.fillStyle = "#fbbf24";
     ctx.fillRect(sx, sy - 9, (this.stamina / this.maxStamina) * this.width, 4);
-  }
-
-  // ============================================================
-  // [🧱 BLOCK: performAttack Helper]
-  // ============================================================
-  performAttack(type: 'light' | 'heavy', cost: number, duration: number) {
-    this.stamina    -= cost;
-    this.isAttacking = true;
-    this.attackType  = type;
-    this.attackTimer = duration;
-
-    // Light lunge
-    if (type === 'light') {
-      this.vx += this.facing.x * 6;
-      this.vy += this.facing.y * 6;
-    }
-  }
-
-  // ============================================================
-  // [🧱 BLOCK: Take Hit]
-  // ============================================================
-  takeHit(amount: number) {
-    if (this.iFrames > 0) return;
-    this.hp            = Math.max(0, this.hp - amount);
-    this.isHit         = true;
-    this.hitFlashTimer = amount >= 25 ? 300 : 150;
-    this.iFrames       = amount >= 25 ? 800 : 600;
   }
 }

@@ -6,21 +6,17 @@ import { Grunt, Shooter, spawnWave } from "../enemy";
 import { RoomState } from "../RoomManager";
 import { GameState } from "../GameState";
 import { GoldSystem } from "./GoldSystem";
+import { WeaponSystem } from "./WeaponSystem";
 import { spawnBurst } from "../Particle";
 
-// ============================================================
-// [🧱 BLOCK: Config]
-// ============================================================
 const KILL_THRESHOLD = 20;
 const INITIAL_WAVE   = 8;
 const WAVE_SIZE      = 6;
 
-// ============================================================
-// [🧱 BLOCK: HordeSystem Class]
-// ============================================================
 export class HordeSystem {
   readonly killThreshold = KILL_THRESHOLD;
   private goldSystem     = new GoldSystem();
+  private weaponSystem   = new WeaponSystem();
 
   // ============================================================
   // [🧱 BLOCK: Setup]
@@ -76,7 +72,6 @@ export class HordeSystem {
     worldW: number,
     worldH: number
   ): { event: 'door' | null; goldCollected: number } {
-
     const ps = state.playerStats;
 
     // ── Door ────────────────────────────────────────────────
@@ -106,43 +101,28 @@ export class HordeSystem {
       }
     });
 
-    // ── Player Attack vs Enemies ────────────────────────────
-    if (player.isAttacking) {
-      const dir    = player.lockedFacing ?? player.facing;
-      const range  = player.attackType === "light" ? 35 : 55;
-      const radius = player.attackType === "light" ? 15 : 25;
-      const baseDmg = player.attackType === "light" ? 10 : 25;
-      const damage  = baseDmg + ps.atkBonus;
+    // ── Weapon: process input then resolve hits ──────────────
+    this.weaponSystem.processInput(player);
 
-      // Last Stand charm bonus
-      const lastStand = ps.hasCharm('last_stand') &&
-        player.hp / (player.maxHp ?? 100) < 0.25;
-      const finalDmg  = damage + (lastStand ? 15 : 0);
+    const hitEnemies = this.weaponSystem.resolveHits(
+      player, state.enemies, ps.atkBonus
+    );
 
-      const cx = (player.x + player.width  / 2) + dir.x * range;
-      const cy = (player.y + player.height / 2) + dir.y * range;
-
-      state.enemies.forEach((enemy) => {
-        if (enemy.isDead) return;
-        const nx = Math.max(enemy.x, Math.min(cx, enemy.x + enemy.width));
-        const ny = Math.max(enemy.y, Math.min(cy, enemy.y + enemy.height));
-        if ((cx - nx) ** 2 + (cy - ny) ** 2 < radius * radius) {
-          enemy.takeDamage(finalDmg);
-
-          // Executioner shockwave on heavy kill
-          if (enemy.isDead && player.attackType === 'heavy' && ps.hasCharm('executioner')) {
-            this.triggerShockwave(
-              state,
-              enemy.x + enemy.width  / 2,
-              enemy.y + enemy.height / 2,
-              25
-            );
-          }
+    // Executioner charm shockwave on heavy kill
+    if (player.attackType === 'heavy' && ps.hasCharm('executioner')) {
+      hitEnemies.forEach((enemy) => {
+        if (enemy.isDead) {
+          this.triggerShockwave(
+            state,
+            enemy.x + enemy.width  / 2,
+            enemy.y + enemy.height / 2,
+            25
+          );
         }
       });
     }
 
-    // ── Kill Tracking + Gold + Particles ───────────────────
+    // ── Kill Tracking + Gold + Particles ────────────────────
     const before      = state.enemies.length;
     const deadEnemies = state.enemies.filter((e) => e.isDead);
     state.enemies     = state.enemies.filter((e) => !e.isDead);
@@ -155,7 +135,6 @@ export class HordeSystem {
       deadEnemies.forEach((enemy) => {
         const type = enemy instanceof Shooter ? 'shooter' : 'grunt';
 
-        // Gold drop
         this.goldSystem.spawnFromEnemy(
           state,
           enemy.x + enemy.width  / 2,
@@ -163,7 +142,6 @@ export class HordeSystem {
           type
         );
 
-        // Kill particles
         state.particles.push(...spawnBurst(
           enemy.x + enemy.width  / 2,
           enemy.y + enemy.height / 2,
@@ -171,33 +149,27 @@ export class HordeSystem {
           6
         ));
 
-        // Charm onKill hooks
         ps.charms.forEach((charm) => {
           charm.onKill?.(player, ps.modifiers);
         });
 
-        // Heal on kill
         if (ps.healOnKill > 0) {
           player.hp = Math.min(player.maxHp, player.hp + ps.healOnKill);
         }
       });
     }
 
-    // ── Wave Respawn ────────────────────────────────────────
+    // ── Wave Respawn ─────────────────────────────────────────
     const killsLeft = KILL_THRESHOLD - state.kills;
-    if (
-      killsLeft > 0 &&
-      state.alive === 0 &&
-      Date.now() - state.lastSpawn > 1000
-    ) {
+    if (killsLeft > 0 && state.alive === 0 && Date.now() - state.lastSpawn > 1000) {
       const spawnCount = Math.min(WAVE_SIZE, killsLeft);
       const newWave    = spawnWave(spawnCount, worldW, worldH, rs.roomInCycle, rs.floor);
       state.enemies.push(...newWave);
-      state.alive      = spawnCount;
-      state.lastSpawn  = Date.now();
+      state.alive     = spawnCount;
+      state.lastSpawn = Date.now();
     }
 
-    // ── Projectiles ─────────────────────────────────────────
+    // ── Projectiles ──────────────────────────────────────────
     state.projectiles.forEach((proj) => {
       proj.update();
       if (proj.isHittingPlayer(player) && player.iFrames <= 0) {
@@ -208,7 +180,7 @@ export class HordeSystem {
     });
     state.projectiles = state.projectiles.filter((p) => !p.isDone);
 
-    // ── Stamina Regen ───────────────────────────────────────
+    // ── Stamina Regen ────────────────────────────────────────
     if (player.stamina < player.maxStamina) {
       player.stamina = Math.min(
         player.maxStamina,
@@ -216,18 +188,13 @@ export class HordeSystem {
       );
     }
 
-    // ── Gold Collection ─────────────────────────────────────
+    // ── Gold Collection ──────────────────────────────────────
     const goldCollected = this.goldSystem.update(state, player);
 
     return { event: null, goldCollected };
   }
 
-  // ============================================================
-  // [🧱 BRICK: Executioner Shockwave]
-  // ============================================================
-  private triggerShockwave(
-    state: GameState, cx: number, cy: number, damage: number
-  ) {
+  private triggerShockwave(state: GameState, cx: number, cy: number, damage: number) {
     const radius = 100;
     state.enemies.forEach((enemy) => {
       if (enemy.isDead) return;
@@ -241,15 +208,17 @@ export class HordeSystem {
   // ============================================================
   // [🧱 BLOCK: Draw]
   // ============================================================
-  draw(state: GameState, ctx: CanvasRenderingContext2D, camera: Camera) {
+  draw(state: GameState, ctx: CanvasRenderingContext2D, camera: Camera, player: Player) {
     state.door?.draw(ctx, camera);
     state.enemies.forEach((e)     => e.draw(ctx, camera));
     state.projectiles.forEach((p) => p.draw(ctx, camera));
     this.goldSystem.draw(state, ctx, camera);
 
-    // Particles
     state.particles.forEach((p) => p.update());
     state.particles = state.particles.filter((p) => !p.isDone);
     state.particles.forEach((p) => p.draw(ctx, camera));
+
+    // Draw weapon attack visual
+    this.weaponSystem.draw(ctx, player, camera);
   }
 }
