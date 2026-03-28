@@ -1,12 +1,15 @@
 // src/engine/items/Weapon.ts
-import { WeaponDef, WeaponType, AttackDef, HitboxShape } from "./types";
+import { WeaponDef, WeaponType, AttackDef } from "./types";
 import { getWeapon } from "./WeaponRegistry";
 
 // ============================================================
 // [🧱 BLOCK: Weapon Class]
-// Holds the active weapon state and exposes:
-//   - draw()    → renders the attack visual on canvas
-//   - hitTest()   → checks if a world point is inside hitbox
+// Holds the active weapon definition and exposes two methods:
+//   drawAttack() — renders the hitbox shape on canvas
+//   hitTest()    — checks if a world point is inside hitbox
+//
+// No Camera import needed — callers pass screen coords to
+// drawAttack() and world coords to hitTest() directly.
 // ============================================================
 export class Weapon {
   def: WeaponDef;
@@ -25,9 +28,9 @@ export class Weapon {
 
   // ============================================================
   // [🧱 BLOCK: Draw Attack Visual]
-  // Called from WeaponSystem.draw() when isAttacking is true.
-  // px/py = player center in SCREEN coords
-  // facing = normalized direction vector
+  // px/py   = player CENTER in SCREEN coords (already offset)
+  // facing  = normalized direction vector
+  // mode    = which attack was triggered
   // ============================================================
   drawAttack(
     ctx:    CanvasRenderingContext2D,
@@ -45,11 +48,10 @@ export class Weapon {
 
     switch (shape.kind) {
 
-      // ── Sword — fan arc ────────────────────────────────────
+      // ── Sword — fan arc ──────────────────────────────────
       case 'arc': {
         const angle     = Math.atan2(facing.y, facing.x);
         const halfAngle = shape.arcAngle / 2;
-
         ctx.beginPath();
         ctx.moveTo(px, py);
         ctx.arc(px, py, shape.range, angle - halfAngle, angle + halfAngle);
@@ -58,7 +60,7 @@ export class Weapon {
         break;
       }
 
-      // ── Axe — full circle ──────────────────────────────────
+      // ── Axe — full circle ─────────────────────────────────
       case 'circle': {
         ctx.beginPath();
         ctx.arc(px, py, shape.radius, 0, Math.PI * 2);
@@ -66,22 +68,14 @@ export class Weapon {
         break;
       }
 
-      // ── Spear — rotated rectangle ──────────────────────────
+      // ── Spear — rotated rectangle ─────────────────────────
       case 'rect': {
         const angle = Math.atan2(facing.y, facing.x);
-
         ctx.save();
         ctx.translate(px, py);
         ctx.rotate(angle);
-
-        // Draw rect starting from player center extending forward
-        ctx.fillRect(
-          0,                        // Start at player center
-          -shape.width / 2,         // Centered vertically
-          shape.length,             // Extends forward
-          shape.width
-        );
-
+        // Starts at player center, extends forward by length
+        ctx.fillRect(0, -shape.width / 2, shape.length, shape.width);
         ctx.restore();
         break;
       }
@@ -90,47 +84,50 @@ export class Weapon {
 
   // ============================================================
   // [🧱 BLOCK: Hit Test]
-  // Returns true if a world-space point (ex, ey) — typically
-  // an enemy center — falls inside the attack hitbox.
-  //
-  // px/py    = player center in WORLD coords
-  // facing   = normalized direction
-  // mode     = 'light' | 'heavy'
-  // ex/ey    = enemy center in WORLD coords
-  // eW/eH    = enemy width/height (for rect overlap)
+  // All coords are WORLD space.
+  // px/py  = player CENTER
+  // facing = normalized direction
+  // ex/ey  = enemy CENTER
+  // eW/eH  = enemy size (used to add overlap tolerance)
   // ============================================================
   hitTest(
-    px: number, py: number,
+    px:     number,
+    py:     number,
     facing: { x: number; y: number },
     mode:   'light' | 'heavy',
-    ex: number, ey: number,
-    eW: number, eH: number
+    ex:     number,
+    ey:     number,
+    eW:     number,
+    eH:     number
   ): boolean {
-    const atk   = this.getAttack(mode);
-    const shape = atk.hitbox;
+    const shape = this.getAttack(mode).hitbox;
 
     switch (shape.kind) {
 
-      // ── Sword — point-in-arc ───────────────────────────────
+      // ── Sword arc — angle + distance check ───────────────
       case 'arc': {
         const dx   = ex - px;
         const dy   = ey - py;
         const dist = Math.sqrt(dx * dx + dy * dy);
 
-        if (dist > shape.range) return false;
+        // Enemy edge must be within range
+        if (dist > shape.range + Math.max(eW, eH) / 2) return false;
+
+        // Very close enemies always hit regardless of angle
+        if (dist < 20) return true;
 
         const facingAngle = Math.atan2(facing.y, facing.x);
         const enemyAngle  = Math.atan2(dy, dx);
         let   diff        = enemyAngle - facingAngle;
 
-        // Normalize angle difference to [-π, π]
+        // Normalize to [-π, π]
         while (diff >  Math.PI) diff -= Math.PI * 2;
         while (diff < -Math.PI) diff += Math.PI * 2;
 
         return Math.abs(diff) <= shape.arcAngle / 2;
       }
 
-      // ── Axe — circle vs enemy center ──────────────────────
+      // ── Axe circle — distance from player ────────────────
       case 'circle': {
         const dx   = ex - px;
         const dy   = ey - py;
@@ -138,28 +135,25 @@ export class Weapon {
         return dist < shape.radius + Math.max(eW, eH) / 2;
       }
 
-      // ── Spear — rotated rect vs enemy rect ─────────────────
+      // ── Spear rect — rotated AABB ─────────────────────────
       case 'rect': {
         const angle = Math.atan2(facing.y, facing.x);
         const cos   = Math.cos(-angle);
         const sin   = Math.sin(-angle);
 
         // Transform enemy center into spear's local space
-        const ldx  = ex - px;
-        const ldy  = ey - py;
-        const lx   = ldx * cos - ldy * sin;
-        const ly   = ldx * sin + ldy * cos;
+        const dx = ex - px;
+        const dy = ey - py;
+        const lx = dx * cos - dy * sin;
+        const ly = dx * sin + dy * cos;
 
-        // Check overlap in local space
-        const halfW = shape.width  / 2 + eW / 2;
-        const halfL = shape.length / 2 + eH / 2;
-
-        // Spear starts at player center (0) and extends to shape.length
-        const spearCenterX = shape.length / 2;
+        // Spear runs from x=0 to x=length, centered on y=0
+        const halfW = shape.width  / 2 + Math.max(eW, eH) / 2;
 
         return (
-          Math.abs(lx - spearCenterX) < halfL &&
-          Math.abs(ly)                 < halfW
+          lx >= -(eW / 2) &&
+          lx <= shape.length + eW / 2 &&
+          Math.abs(ly) < halfW
         );
       }
     }

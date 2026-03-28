@@ -3,18 +3,20 @@ import { WeaponDef, WeaponType } from "./types";
 
 // ============================================================
 // [🧱 BLOCK: Weapon Definitions]
-// Add new weapons here — everything else derives from this.
+// All weapon stats live here — nothing else needs to change
+// when tuning numbers or adding a new weapon type.
 // ============================================================
 export const WEAPON_REGISTRY: Record<WeaponType, WeaponDef> = {
 
   // ── Sword ─────────────────────────────────────────────────
+  // Fan arc in front of player. Fast light, wide heavy.
   sword: {
     type: 'sword',
     name: 'Sword',
     icon: '⚔️',
     light: {
       damage:      12,
-      duration:    120,
+      duration:    150,
       staminaCost: 10,
       cooldown:    0,
       haltsPlayer: false,
@@ -22,7 +24,7 @@ export const WEAPON_REGISTRY: Record<WeaponType, WeaponDef> = {
       hitbox: {
         kind:     'arc',
         range:    55,
-        arcAngle: Math.PI * 0.5,  // 90° fan
+        arcAngle: Math.PI * 0.5,   // 90° sweep
       },
     },
     heavy: {
@@ -35,12 +37,13 @@ export const WEAPON_REGISTRY: Record<WeaponType, WeaponDef> = {
       hitbox: {
         kind:     'arc',
         range:    65,
-        arcAngle: Math.PI,        // 180° wide slash
+        arcAngle: Math.PI,         // 180° wide slash
       },
     },
   },
 
   // ── Axe ───────────────────────────────────────────────────
+  // Circle centered on player. Hits all directions.
   axe: {
     type: 'axe',
     name: 'Axe',
@@ -72,6 +75,7 @@ export const WEAPON_REGISTRY: Record<WeaponType, WeaponDef> = {
   },
 
   // ── Spear ─────────────────────────────────────────────────
+  // Narrow rectangle projected forward. Long reach.
   spear: {
     type: 'spear',
     name: 'Spear',
@@ -105,6 +109,9 @@ export const WEAPON_REGISTRY: Record<WeaponType, WeaponDef> = {
   },
 };
 
+// ============================================================
+// [🧱 BLOCK: Getter]
+// ============================================================
 export function getWeapon(type: WeaponType): WeaponDef {
   return WEAPON_REGISTRY[type];
 }
