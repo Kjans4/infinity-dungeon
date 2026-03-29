@@ -1,10 +1,9 @@
-// src/components/Inventory.tsx
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { PlayerStats } from "@/engine/PlayerStats";
 import { Player }      from "@/engine/Player";
-import { Charm }       from "@/engine/CharmRegistry";
+import { Charm }        from "@/engine/CharmRegistry";
 import { WeaponItem }  from "@/engine/items/types";
 
 // ============================================================
@@ -54,7 +53,6 @@ function SmallBtn({
 
 // ============================================================
 // [🧱 BLOCK: Weapon Slot]
-// Shows equipped weapon with Unequip+Sell button.
 // ============================================================
 function WeaponSlot({
   item, onUnequip,
@@ -96,7 +94,6 @@ function WeaponSlot({
         ⚔ Weapon Slot — Equipped
       </p>
 
-      {/* Weapon info */}
       <div style={{ display:"flex", alignItems:"center", gap:12 }}>
         <span style={{ fontSize:32 }}>{item.icon}</span>
         <div style={{ flex:1 }}>
@@ -114,7 +111,6 @@ function WeaponSlot({
         </div>
       </div>
 
-      {/* Attack stats */}
       <div style={{ display:"flex", gap:8 }}>
         {[
           { label:"Light", dmg: item.weaponType === 'sword' ? 12 : item.weaponType === 'axe' ? 15 : 10,
@@ -139,7 +135,6 @@ function WeaponSlot({
         ))}
       </div>
 
-      {/* Unequip / Sell */}
       {!confirm ? (
         <SmallBtn
           label={`Unequip & Sell (+${refund}g)`}
@@ -206,13 +201,23 @@ function CharmRow({ charm, onSell }: { charm: Charm; onSell: () => void }) {
 
 // ============================================================
 // [🧱 BLOCK: Inventory Main]
-// Game is paused while this is open (handled in GameCanvas).
 // ============================================================
 export default function Inventory({
   playerStats, player, gold, onGoldChange, onClose,
 }: InventoryProps) {
   const [, forceUpdate] = useState(0);
   const refresh = () => forceUpdate((n) => n + 1);
+
+  // ── Keyboard Close Logic ──────────────────────────────────
+  // This ensures that if the user holds 'I' to close, it triggers properly
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.code === "Escape") onClose();
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [onClose]);
 
   const handleUnequipWeapon = () => {
     const ng = playerStats.unequipWeapon(gold, player);
@@ -228,34 +233,35 @@ export default function Inventory({
 
   return (
     <div style={{
-      position:       "fixed", inset: 0, zIndex: 55,
+      position:       "fixed", inset: 0, zIndex: 100, // Higher Z-index
       display:        "flex", alignItems: "center", justifyContent: "center",
-      background:     "rgba(0,0,0,0.82)",
-      backdropFilter: "blur(8px)",
+      background:     "rgba(0,0,0,0.85)",
+      backdropFilter: "blur(10px)",
       fontFamily:     "'Courier New', monospace",
     }}>
       <div style={{
         width:     "min(620px, 95%)",
         maxHeight: "88vh", overflowY: "auto",
         display:   "flex", flexDirection: "column", gap: 14,
-        background:"rgba(10,15,30,0.97)",
-        border:    "1px solid rgba(255,255,255,0.07)",
+        background:"rgba(10,15,30,0.98)",
+        border:    "2px solid rgba(56,189,248,0.2)", // Subtle glow border
         borderRadius: 12, padding: 24,
+        boxShadow: "0 20px 50px rgba(0,0,0,0.5)",
       }}>
 
         {/* Header */}
         <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start" }}>
           <div>
-            <p style={{ fontSize:9, color:"#334155", letterSpacing:"0.25em",
+            <p style={{ fontSize:9, color:"#475569", letterSpacing:"0.25em",
               textTransform:"uppercase", marginBottom:4 }}>
-              Game Paused · Hold I to close
+              Game Paused · Hold I or press ESC to close
             </p>
             <p style={{ fontSize:22, fontWeight:900, color:"#f1f5f9" }}>
               INVENTORY
             </p>
           </div>
           <div style={{ textAlign:"right" }}>
-            <p style={{ fontSize:9, color:"#475569", marginBottom:2 }}>Gold</p>
+            <p style={{ fontSize:9, color:"#475569", marginBottom:2 }}>Gold Balance</p>
             <p style={{ fontSize:18, fontWeight:900, color:"#facc15" }}>💰 {gold}g</p>
           </div>
         </div>
@@ -296,8 +302,12 @@ export default function Inventory({
           </div>
         </div>
 
-        {/* Tip */}
-        <p style={{ fontSize:8, color:"#1e293b", textAlign:"center", letterSpacing:"0.1em" }}>
+        {/* Footer Close Button (Optional but helpful for accessibility) */}
+        <div style={{ marginTop: 10, textAlign: 'center' }}>
+            <SmallBtn label="Back to Game" onClick={onClose} color="#38bdf8" />
+        </div>
+
+        <p style={{ fontSize:8, color:"#334155", textAlign:"center", letterSpacing:"0.1em", marginTop: 10 }}>
           BUY WEAPONS &amp; CHARMS IN THE SHOP · HOLD I TO CLOSE
         </p>
 
