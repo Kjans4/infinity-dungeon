@@ -1,0 +1,187 @@
+/* ============================================================
+   HUD — src/styles/hud.css
+   All styles for the HUD component (HUD.tsx)
+   ============================================================ */
+
+/* ── Shared font ── */
+.hud-root,
+.hud-root * {
+  font-family: 'Courier New', monospace;
+}
+
+/* ============================================================
+   [🧱 BLOCK: HUD Root]
+   Main pill container fixed at bottom-center of viewport.
+   ============================================================ */
+.hud-root {
+  position: fixed;
+  bottom: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 20;
+  pointer-events: none;
+
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 16px;
+  padding: 10px 20px;
+
+  background: rgba(10, 15, 30, 0.55);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 12px;
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.4);
+  white-space: nowrap;
+}
+
+/* ============================================================
+   [🧱 BLOCK: Divider]
+   Thin vertical rule separating pill sections.
+   ============================================================ */
+.hud-divider {
+  width: 1px;
+  align-self: stretch;
+  background: rgba(255, 255, 255, 0.07);
+  margin: 0 4px;
+}
+
+/* ============================================================
+   [🧱 BLOCK: Thin Bar]
+   ============================================================ */
+.hud-bars-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.hud-bar-wrapper {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 120px;
+}
+
+.hud-bar-header {
+  display: flex;
+  justify-content: space-between;
+}
+
+.hud-label {
+  font-size: 9px;
+  color: rgba(148, 163, 184, 0.8);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.hud-value {
+  font-size: 9px;
+  color: rgba(148, 163, 184, 0.6);
+}
+
+.hud-bar-track {
+  width: 100%;
+  height: 5px;
+  background: rgba(30, 41, 59, 0.8);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.hud-bar-fill {
+  height: 100%;
+  border-radius: 3px;
+  transition: width 0.1s linear;
+  /* background and box-shadow are set inline (dynamic per-bar color) */
+}
+
+/* ============================================================
+   [🧱 BLOCK: Room / Floor]
+   ============================================================ */
+.hud-room-group {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+
+.hud-floor-label {
+  font-size: 8px;
+  color: rgba(100, 116, 139, 0.8);
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}
+
+.hud-room-number {
+  font-size: 18px;
+  font-weight: 900;
+  line-height: 1;
+  color: #f1f5f9;
+  letter-spacing: 0.04em;
+}
+
+/* ============================================================
+   [🧱 BLOCK: Gold]
+   ============================================================ */
+.hud-gold-group {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+
+.hud-gold-label {
+  font-size: 8px;
+  color: rgba(100, 116, 139, 0.8);
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}
+
+.hud-gold-value {
+  font-size: 14px;
+  font-weight: 900;
+  color: #facc15;
+}
+
+/* ============================================================
+   [🧱 BLOCK: Kill Ring]
+   ============================================================ */
+.hud-kill-ring-wrapper {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+}
+
+.hud-kill-ring-dial {
+  position: relative;
+  width: 40px;
+  height: 40px;
+}
+
+.hud-kill-ring-svg {
+  position: absolute;
+  inset: 0;
+  transform: rotate(-90deg);
+}
+
+.hud-kill-ring-count {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.hud-kill-ring-number {
+  font-size: 10px;
+  font-weight: 900;
+  /* color set inline (dynamic: green when done, white otherwise) */
+}
+
+.hud-kill-ring-label {
+  font-size: 8px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  /* color and text-shadow set inline (dynamic: green when done) */
+}
