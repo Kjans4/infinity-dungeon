@@ -2,16 +2,40 @@
 import { WeaponDef, WeaponType, AttackDef } from "./types";
 import { getWeaponDef } from "./WeaponRegistry";
 
+// ============================================================
+// [🧱 BLOCK: Bare Fists Fallback]
+// Used when no weapon is equipped.
+// Matches the old circle hitbox behaviour.
+// ============================================================
+const BARE_FISTS: WeaponDef = {
+  type: 'sword', name: 'Fists', icon: '👊',
+  light: {
+    damage: 10, duration: 150, staminaCost: 10,
+    cooldown: 0, haltsPlayer: false,
+    color: "rgba(255,255,255,0.5)",
+    hitbox: { kind: 'circle', radius: 15 },
+  },
+  heavy: {
+    damage: 25, duration: 400, staminaCost: 25,
+    cooldown: 1200, haltsPlayer: true,
+    color: "rgba(251,191,36,0.6)",
+    hitbox: { kind: 'circle', radius: 25 },
+  },
+};
+
+// ============================================================
+// [🧱 BLOCK: Weapon Class]
+// ============================================================
 export class Weapon {
   def: WeaponDef;
 
-  constructor(type: WeaponType = 'sword') {
-    this.def = getWeaponDef(type);
+  constructor(type: WeaponType | 'fists' = 'fists') {
+    this.def = type === 'fists' ? BARE_FISTS : getWeaponDef(type);
   }
 
-  get type(): WeaponType { return this.def.type; }
-  get name(): string     { return this.def.name; }
-  get icon(): string     { return this.def.icon; }
+  get type(): WeaponType   { return this.def.type; }
+  get name(): string       { return this.def.name; }
+  get icon(): string       { return this.def.icon; }
 
   getAttack(mode: 'light' | 'heavy'): AttackDef {
     return mode === 'light' ? this.def.light : this.def.heavy;
@@ -19,7 +43,7 @@ export class Weapon {
 
   // ============================================================
   // [🧱 BLOCK: Draw Attack Visual]
-  // px/py = player CENTER in SCREEN coords (pre-converted)
+  // px/py = player CENTER in SCREEN coords
   // ============================================================
   drawAttack(
     ctx:    CanvasRenderingContext2D,
@@ -67,17 +91,13 @@ export class Weapon {
   // ============================================================
   // [🧱 BLOCK: Hit Test]
   // All coords are WORLD space.
-  // px/py = player CENTER, ex/ey = enemy CENTER
   // ============================================================
   hitTest(
-    px:     number,
-    py:     number,
+    px: number, py: number,
     facing: { x: number; y: number },
     mode:   'light' | 'heavy',
-    ex:     number,
-    ey:     number,
-    eW:     number,
-    eH:     number
+    ex: number, ey: number,
+    eW: number, eH: number
   ): boolean {
     const shape = this.getAttack(mode).hitbox;
 

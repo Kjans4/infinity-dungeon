@@ -9,8 +9,6 @@ export class WeaponSystem {
 
   // ============================================================
   // [🧱 BLOCK: Process Input]
-  // Reads player.lastInput. Calls player.startWeaponAttack()
-  // if conditions are met.
   // ============================================================
   processInput(player: Player): void {
     if (player.isAttacking || player.isDashing) return;
