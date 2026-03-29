@@ -1,0 +1,200 @@
+/* ============================================================
+   Menu — src/styles/menu.css
+   All styles for the Menu component (Menu.tsx)
+   ============================================================ */
+
+/* ============================================================
+   [🧱 BLOCK: Animated Background Canvas]
+   ============================================================ */
+.menu-bg-canvas {
+  position: absolute;
+  inset: 0;
+  display: block;
+}
+
+/* ============================================================
+   [🧱 BLOCK: Menu Root]
+   ============================================================ */
+.menu-root {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  font-family: 'Courier New', monospace;
+}
+
+/* ============================================================
+   [🧱 BLOCK: Content Layer]
+   Fade + slide up on mount via --visible modifier.
+   ============================================================ */
+.menu-content {
+  position: relative;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0;
+  opacity: 0;
+  transform: translateY(16px);
+  transition: opacity 0.6s ease, transform 0.6s ease;
+}
+
+.menu-content--visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* ============================================================
+   [🧱 BLOCK: Eyebrow]
+   ============================================================ */
+.menu-eyebrow {
+  font-size: 10px;
+  letter-spacing: 0.4em;
+  color: rgba(239, 68, 68, 0.7);
+  text-transform: uppercase;
+  margin-bottom: 16px;
+  opacity: 0;
+  transition: opacity 0.6s ease 0.1s;
+}
+
+.menu-eyebrow--visible {
+  opacity: 1;
+}
+
+/* ============================================================
+   [🧱 BLOCK: Title]
+   Two <h1> tags stacked — white "INFINITY", red "DUNGEON".
+   ============================================================ */
+.menu-title {
+  font-size: clamp(8vw, 96px, 96vw);
+  font-weight: 900;
+  letter-spacing: -0.02em;
+  line-height: 0.9;
+  margin: 0;
+  opacity: 0;
+}
+
+.menu-title--white {
+  margin-bottom: 6px;
+  color: #f1f5f9;
+  text-shadow:
+    0 0 80px rgba(239, 68, 68, 0.3),
+    0 2px 4px rgba(0, 0, 0, 0.8);
+  transition: opacity 0.6s ease 0.15s;
+}
+
+.menu-title--red {
+  margin-bottom: 32px;
+  color: #ef4444;
+  text-shadow: 0 0 60px rgba(239, 68, 68, 0.6);
+  transition: opacity 0.6s ease 0.2s;
+}
+
+.menu-title--visible-1,
+.menu-title--visible-2 {
+  opacity: 1;
+}
+
+/* ============================================================
+   [🧱 BLOCK: Tagline]
+   ============================================================ */
+.menu-tagline {
+  font-size: 11px;
+  letter-spacing: 0.2em;
+  color: rgba(100, 116, 139, 0.9);
+  text-transform: uppercase;
+  margin-bottom: 48px;
+  opacity: 0;
+  transition: opacity 0.6s ease 0.25s;
+}
+
+.menu-tagline--visible {
+  opacity: 1;
+}
+
+/* ============================================================
+   [🧱 BLOCK: RAID Button]
+   ============================================================ */
+.menu-raid-btn {
+  font-family: 'Courier New', monospace;
+  font-size: 18px;
+  font-weight: 900;
+  letter-spacing: 0.35em;
+  text-transform: uppercase;
+  color: #ef4444;
+  background-color: transparent;
+  border: 2px solid #ef4444;
+  padding: 16px 56px;
+  border-radius: 4px;
+  cursor: pointer;
+  margin-bottom: 48px;
+  transition: all 0.15s ease;
+  box-shadow: 0 0 20px rgba(239, 68, 68, 0.15);
+  opacity: 0;
+}
+
+.menu-raid-btn--visible {
+  opacity: 1;
+}
+
+.menu-raid-btn--hovered {
+  color: #0f172a;
+  background-color: #ef4444;
+  box-shadow: 0 0 40px rgba(239, 68, 68, 0.5);
+}
+
+/* ============================================================
+   [🧱 BLOCK: Controls Reference]
+   ============================================================ */
+.menu-controls {
+  display: flex;
+  gap: 24px;
+  opacity: 0;
+  transition: opacity 0.6s ease 0.35s;
+}
+
+.menu-controls--visible {
+  opacity: 0.5;
+}
+
+.menu-control-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+.menu-control-key {
+  font-size: 10px;
+  font-weight: 700;
+  color: #f1f5f9;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 4px;
+  padding: 3px 8px;
+  letter-spacing: 0.05em;
+}
+
+.menu-control-desc {
+  font-size: 9px;
+  color: rgba(100, 116, 139, 0.8);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+/* ============================================================
+   [🧱 BLOCK: Version Tag]
+   ============================================================ */
+.menu-version {
+  position: absolute;
+  bottom: 16px;
+  right: 20px;
+  z-index: 10;
+  font-size: 9px;
+  color: rgba(71, 85, 105, 0.6);
+  letter-spacing: 0.15em;
+  font-family: 'Courier New', monospace;
+}
