@@ -1,14 +1,13 @@
-// src/components/Inventory.tsx
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { PlayerStats } from "@/engine/PlayerStats";
 import { Player }      from "@/engine/Player";
-import { Charm }       from "@/engine/CharmRegistry";
+import { Charm }        from "@/engine/CharmRegistry";
 import { WeaponItem }  from "@/engine/items/types";
 
 // ============================================================
-// [🧱 BLOCK: Inventory Props]
+// [🧱 BLOCK: Props]
 // ============================================================
 interface InventoryProps {
   playerStats: PlayerStats;
@@ -19,115 +18,151 @@ interface InventoryProps {
 }
 
 // ============================================================
+// [🧱 BLOCK: Small Button]
+// ============================================================
+function SmallBtn({
+  label, onClick, color = "#64748b", danger = false,
+}: {
+  label: string; onClick: () => void; color?: string; danger?: boolean;
+}) {
+  const [hov, setHov] = useState(false);
+  const bg = danger
+    ? (hov ? "#ef4444" : "transparent")
+    : (hov ? color     : "transparent");
+  const fg = hov ? "#0f172a" : color;
+
+  return (
+    <button
+      onClick={onClick}
+      onMouseEnter={() => setHov(true)}
+      onMouseLeave={() => setHov(false)}
+      style={{
+        fontFamily:    "'Courier New', monospace",
+        fontSize:      9, fontWeight: 700,
+        letterSpacing: "0.1em", textTransform: "uppercase",
+        color:         fg, background: bg,
+        border:        `1px solid ${danger ? "#ef4444" : color}`,
+        padding:       "4px 10px", borderRadius: 4,
+        cursor:        "pointer", transition: "all 0.1s",
+      }}
+    >
+      {label}
+    </button>
+  );
+}
+
+// ============================================================
 // [🧱 BLOCK: Weapon Slot]
 // ============================================================
-function WeaponSlot({ item, onSell }: {
-  item:   WeaponItem | null;
-  onSell: () => void;
+function WeaponSlot({
+  item, onUnequip,
+}: {
+  item:      WeaponItem | null;
+  onUnequip: () => void;
 }) {
   const [confirm, setConfirm] = useState(false);
+
+  if (!item) {
+    return (
+      <div style={{
+        background:   "rgba(56,189,248,0.03)",
+        border:       "1px dashed rgba(56,189,248,0.15)",
+        borderRadius: 10, padding: 16,
+      }}>
+        <p style={{ fontSize:9, color:"#38bdf8", letterSpacing:"0.2em",
+          textTransform:"uppercase", marginBottom:8 }}>
+          ⚔ Weapon Slot
+        </p>
+        <p style={{ fontSize:11, color:"#334155" }}>
+          👊 Bare Fists — buy a weapon in the shop
+        </p>
+      </div>
+    );
+  }
+
+  const refund = Math.ceil(item.cost * 0.5);
 
   return (
     <div style={{
       background:   "rgba(56,189,248,0.05)",
-      border:       `1px solid ${item ? "rgba(56,189,248,0.25)" : "rgba(255,255,255,0.06)"}`,
+      border:       "1px solid rgba(56,189,248,0.25)",
       borderRadius: 10, padding: 16,
+      display:      "flex", flexDirection: "column", gap: 10,
     }}>
       <p style={{ fontSize:9, color:"#38bdf8", letterSpacing:"0.2em",
-        textTransform:"uppercase", marginBottom:10 }}>
-        ⚔ Weapon Slot
+        textTransform:"uppercase" }}>
+        ⚔ Weapon Slot — Equipped
       </p>
 
-      {item ? (
-        <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
-          <div style={{ display:"flex", alignItems:"center", gap:10 }}>
-            <span style={{ fontSize:28 }}>{item.icon}</span>
-            <div style={{ flex:1 }}>
-              <p style={{ fontSize:13, fontWeight:700, color:"#f1f5f9", marginBottom:2 }}>
-                {item.name}
-              </p>
-              <p style={{ fontSize:9, color:"#38bdf8", letterSpacing:"0.1em", textTransform:"uppercase" }}>
-                {item.weaponType}
-              </p>
-            </div>
-          </div>
-
-          {/* Passive */}
-          <div style={{ background:"rgba(255,255,255,0.03)", borderRadius:6, padding:"8px 10px" }}>
-            <p style={{ fontSize:9, color:"#64748b", letterSpacing:"0.1em",
-              textTransform:"uppercase", marginBottom:4 }}>
-              Passive
-            </p>
-            <p style={{ fontSize:11, color:"#f1f5f9" }}>{item.description}</p>
-            {item.tradeOff && (
-              <p style={{ fontSize:10, color:"#ef4444", marginTop:4 }}>⚠ {item.tradeOff}</p>
-            )}
-          </div>
-
-          {/* Attack stats */}
-          <div style={{ display:"flex", gap:8 }}>
-            {(['light', 'heavy'] as const).map((mode) => (
-              <div key={mode} style={{ flex:1, background:"rgba(255,255,255,0.02)",
-                borderRadius:6, padding:"6px 10px" }}>
-                <p style={{ fontSize:8, color:"#475569", letterSpacing:"0.1em",
-                  textTransform:"uppercase", marginBottom:4 }}>
-                  {mode}
-                </p>
-                <p style={{ fontSize:10, color:"#f1f5f9" }}>
-                  {mode === 'light' ? '12' : '28'} dmg
-                </p>
-              </div>
-            ))}
-          </div>
-
-          {/* Sell */}
-          {!confirm ? (
-            <button onClick={() => setConfirm(true)} style={{
-              fontFamily:"'Courier New', monospace", fontSize:10, fontWeight:700,
-              letterSpacing:"0.15em", textTransform:"uppercase",
-              color:"#64748b", background:"transparent",
-              border:"1px solid #1e293b", padding:"8px 0",
-              borderRadius:4, cursor:"pointer", width:"100%",
-            }}
-            onMouseEnter={(e) => { e.currentTarget.style.color="#ef4444"; e.currentTarget.style.borderColor="#ef4444"; }}
-            onMouseLeave={(e) => { e.currentTarget.style.color="#64748b"; e.currentTarget.style.borderColor="#1e293b"; }}
-            >
-              Unequip / Sell (+{Math.ceil(item.cost * 0.5)}g)
-            </button>
-          ) : (
-            <div style={{ display:"flex", gap:8 }}>
-              <button onClick={() => { setConfirm(false); onSell(); }} style={{
-                fontFamily:"'Courier New', monospace", fontSize:10, fontWeight:700,
-                letterSpacing:"0.1em", textTransform:"uppercase",
-                color:"#0f172a", background:"#ef4444",
-                border:"none", padding:"8px 0", borderRadius:4,
-                cursor:"pointer", flex:1,
-              }}>
-                Confirm Sell
-              </button>
-              <button onClick={() => setConfirm(false)} style={{
-                fontFamily:"'Courier New', monospace", fontSize:10, fontWeight:700,
-                letterSpacing:"0.1em", textTransform:"uppercase",
-                color:"#64748b", background:"transparent",
-                border:"1px solid #1e293b", padding:"8px 0",
-                borderRadius:4, cursor:"pointer", flex:1,
-              }}>
-                Cancel
-              </button>
-            </div>
+      <div style={{ display:"flex", alignItems:"center", gap:12 }}>
+        <span style={{ fontSize:32 }}>{item.icon}</span>
+        <div style={{ flex:1 }}>
+          <p style={{ fontSize:14, fontWeight:700, color:"#f1f5f9", marginBottom:2 }}>
+            {item.name}
+          </p>
+          <p style={{ fontSize:9, color:"#38bdf8", letterSpacing:"0.1em",
+            textTransform:"uppercase", marginBottom:4 }}>
+            {item.weaponType}
+          </p>
+          <p style={{ fontSize:10, color:"#94a3b8" }}>{item.description}</p>
+          {item.tradeOff && (
+            <p style={{ fontSize:9, color:"#ef4444", marginTop:2 }}>⚠ {item.tradeOff}</p>
           )}
         </div>
+      </div>
+
+      <div style={{ display:"flex", gap:8 }}>
+        {[
+          { label:"Light", dmg: item.weaponType === 'sword' ? 12 : item.weaponType === 'axe' ? 15 : 10,
+            stam: item.weaponType === 'sword' ? 10 : item.weaponType === 'axe' ? 12 : 8 },
+          { label:"Heavy", dmg: item.weaponType === 'sword' ? 28 : item.weaponType === 'axe' ? 40 : 35,
+            stam: item.weaponType === 'sword' ? 25 : item.weaponType === 'axe' ? 30 : 22 },
+        ].map((atk) => (
+          <div key={atk.label} style={{
+            flex:1, background:"rgba(255,255,255,0.03)",
+            border:"1px solid rgba(255,255,255,0.06)",
+            borderRadius:6, padding:"6px 10px",
+          }}>
+            <p style={{ fontSize:8, color:"#475569", letterSpacing:"0.1em",
+              textTransform:"uppercase", marginBottom:4 }}>
+              {atk.label}
+            </p>
+            <p style={{ fontSize:11, color:"#f1f5f9", marginBottom:2 }}>
+              {atk.dmg} dmg
+            </p>
+            <p style={{ fontSize:9, color:"#64748b" }}>{atk.stam} stamina</p>
+          </div>
+        ))}
+      </div>
+
+      {!confirm ? (
+        <SmallBtn
+          label={`Unequip & Sell (+${refund}g)`}
+          onClick={() => setConfirm(true)}
+          danger
+        />
       ) : (
-        <p style={{ fontSize:11, color:"#334155" }}>👊 Bare Fists — no weapon equipped</p>
+        <div style={{ display:"flex", gap:8 }}>
+          <SmallBtn
+            label="Confirm Sell"
+            onClick={() => { setConfirm(false); onUnequip(); }}
+            danger
+          />
+          <SmallBtn
+            label="Cancel"
+            onClick={() => setConfirm(false)}
+            color="#64748b"
+          />
+        </div>
       )}
     </div>
   );
 }
 
 // ============================================================
-// [🧱 BLOCK: Charm Slot]
+// [🧱 BLOCK: Charm Row]
 // ============================================================
-function CharmSlot({ charm, onSell }: { charm: Charm; onSell: () => void }) {
+function CharmRow({ charm, onSell }: { charm: Charm; onSell: () => void }) {
   const [confirm, setConfirm] = useState(false);
   const refund = Math.ceil(charm.cost * 0.5);
 
@@ -148,34 +183,16 @@ function CharmSlot({ charm, onSell }: { charm: Charm; onSell: () => void }) {
           <p style={{ fontSize:9, color:"#ef4444" }}>⚠ {charm.tradeOff}</p>
         )}
       </div>
-
       {!confirm ? (
-        <button onClick={() => setConfirm(true)} style={{
-          fontFamily:"'Courier New', monospace", fontSize:9, fontWeight:700,
-          letterSpacing:"0.1em", textTransform:"uppercase",
-          color:"#475569", background:"transparent",
-          border:"1px solid #1e293b", padding:"4px 10px",
-          borderRadius:4, cursor:"pointer",
-        }}>
-          Sell
-        </button>
+        <SmallBtn label="Sell" onClick={() => setConfirm(true)} danger />
       ) : (
         <div style={{ display:"flex", gap:4 }}>
-          <button onClick={() => { setConfirm(false); onSell(); }} style={{
-            fontFamily:"'Courier New', monospace", fontSize:9, fontWeight:700,
-            color:"#0f172a", background:"#ef4444", border:"none",
-            padding:"4px 8px", borderRadius:4, cursor:"pointer",
-          }}>
-            +{refund}g
-          </button>
-          <button onClick={() => setConfirm(false)} style={{
-            fontFamily:"'Courier New', monospace", fontSize:9,
-            color:"#64748b", background:"transparent",
-            border:"1px solid #1e293b", padding:"4px 8px",
-            borderRadius:4, cursor:"pointer",
-          }}>
-            ✕
-          </button>
+          <SmallBtn
+            label={`+${refund}g`}
+            onClick={() => { setConfirm(false); onSell(); }}
+            danger
+          />
+          <SmallBtn label="✕" onClick={() => setConfirm(false)} color="#475569" />
         </div>
       )}
     </div>
@@ -191,7 +208,18 @@ export default function Inventory({
   const [, forceUpdate] = useState(0);
   const refresh = () => forceUpdate((n) => n + 1);
 
-  const handleSellWeapon = () => {
+  // ── Keyboard Close Logic ──────────────────────────────────
+  // This ensures that if the user holds 'I' to close, it triggers properly
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.code === "Escape") onClose();
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [onClose]);
+
+  const handleUnequipWeapon = () => {
     const ng = playerStats.unequipWeapon(gold, player);
     onGoldChange(ng);
     refresh();
@@ -205,62 +233,68 @@ export default function Inventory({
 
   return (
     <div style={{
-      position:"fixed", inset:0, zIndex:55,
-      display:"flex", alignItems:"center", justifyContent:"center",
-      background:"rgba(0,0,0,0.80)",
-      backdropFilter:"blur(6px)",
-      fontFamily:"'Courier New', monospace",
+      position:       "fixed", inset: 0, zIndex: 100, // Higher Z-index
+      display:        "flex", alignItems: "center", justifyContent: "center",
+      background:     "rgba(0,0,0,0.85)",
+      backdropFilter: "blur(10px)",
+      fontFamily:     "'Courier New', monospace",
     }}>
       <div style={{
-        width:"min(640px, 95%)", maxHeight:"90vh", overflowY:"auto",
-        display:"flex", flexDirection:"column", gap:16,
-        background:"rgba(10,15,30,0.95)",
-        border:"1px solid rgba(255,255,255,0.07)",
-        borderRadius:12, padding:24,
+        width:     "min(620px, 95%)",
+        maxHeight: "88vh", overflowY: "auto",
+        display:   "flex", flexDirection: "column", gap: 14,
+        background:"rgba(10,15,30,0.98)",
+        border:    "2px solid rgba(56,189,248,0.2)", // Subtle glow border
+        borderRadius: 12, padding: 24,
+        boxShadow: "0 20px 50px rgba(0,0,0,0.5)",
       }}>
 
         {/* Header */}
-        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center" }}>
+        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start" }}>
           <div>
-            <p style={{ fontSize:9, color:"#475569", letterSpacing:"0.3em",
+            <p style={{ fontSize:9, color:"#475569", letterSpacing:"0.25em",
               textTransform:"uppercase", marginBottom:4 }}>
-              Press I to close
+              Game Paused · Hold I or press ESC to close
             </p>
-            <p style={{ fontSize:24, fontWeight:900, color:"#f1f5f9" }}>
+            <p style={{ fontSize:22, fontWeight:900, color:"#f1f5f9" }}>
               INVENTORY
             </p>
           </div>
           <div style={{ textAlign:"right" }}>
-            <p style={{ fontSize:9, color:"#475569", marginBottom:2 }}>Gold</p>
-            <p style={{ fontSize:20, fontWeight:900, color:"#facc15" }}>💰 {gold}g</p>
+            <p style={{ fontSize:9, color:"#475569", marginBottom:2 }}>Gold Balance</p>
+            <p style={{ fontSize:18, fontWeight:900, color:"#facc15" }}>💰 {gold}g</p>
           </div>
         </div>
 
         {/* Weapon slot */}
         <WeaponSlot
           item={playerStats.equippedWeaponItem}
-          onSell={handleSellWeapon}
+          onUnequip={handleUnequipWeapon}
         />
 
         {/* Charm slots */}
-        <div style={{ background:"rgba(255,255,255,0.02)",
-          border:"1px solid rgba(255,255,255,0.06)", borderRadius:10, padding:16 }}>
-          <p style={{ fontSize:10, color:"#64748b", letterSpacing:"0.15em",
+        <div style={{
+          background:   "rgba(255,255,255,0.02)",
+          border:       "1px solid rgba(255,255,255,0.06)",
+          borderRadius: 10, padding: 16,
+        }}>
+          <p style={{ fontSize:9, color:"#64748b", letterSpacing:"0.15em",
             textTransform:"uppercase", marginBottom:12 }}>
             Charms ({playerStats.charms.length}/{playerStats.maxCharms})
           </p>
 
-          {/* Empty slots */}
           <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
             {playerStats.charms.map((charm) => (
-              <CharmSlot key={charm.id} charm={charm}
-                onSell={() => handleSellCharm(charm.id)} />
+              <CharmRow
+                key={charm.id} charm={charm}
+                onSell={() => handleSellCharm(charm.id)}
+              />
             ))}
             {Array.from({ length: playerStats.maxCharms - playerStats.charms.length }).map((_, i) => (
               <div key={`empty-${i}`} style={{
-                border:"1px dashed rgba(255,255,255,0.06)",
-                borderRadius:8, padding:"10px 12px",
-                color:"#1e293b", fontSize:11,
+                border: "1px dashed rgba(255,255,255,0.05)",
+                borderRadius: 8, padding: "10px 12px",
+                color: "#1e293b", fontSize: 11,
               }}>
                 — Empty slot
               </div>
@@ -268,21 +302,15 @@ export default function Inventory({
           </div>
         </div>
 
-        {/* Close */}
-        <div style={{ display:"flex", justifyContent:"center" }}>
-          <button onClick={onClose} style={{
-            fontFamily:"'Courier New', monospace", fontSize:12,
-            fontWeight:700, letterSpacing:"0.2em", textTransform:"uppercase",
-            color:"#f1f5f9", background:"transparent",
-            border:"1px solid rgba(255,255,255,0.1)", padding:"10px 32px",
-            borderRadius:4, cursor:"pointer",
-          }}
-          onMouseEnter={(e) => { e.currentTarget.style.background="rgba(255,255,255,0.06)"; }}
-          onMouseLeave={(e) => { e.currentTarget.style.background="transparent"; }}
-          >
-            Close [I]
-          </button>
+        {/* Footer Close Button (Optional but helpful for accessibility) */}
+        <div style={{ marginTop: 10, textAlign: 'center' }}>
+            <SmallBtn label="Back to Game" onClick={onClose} color="#38bdf8" />
         </div>
+
+        <p style={{ fontSize:8, color:"#334155", textAlign:"center", letterSpacing:"0.1em", marginTop: 10 }}>
+          BUY WEAPONS &amp; CHARMS IN THE SHOP · HOLD I TO CLOSE
+        </p>
+
       </div>
     </div>
   );

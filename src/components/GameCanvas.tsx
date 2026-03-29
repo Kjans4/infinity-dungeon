@@ -1,4 +1,3 @@
-// src/components/GameCanvas.tsx
 "use client";
 
 import React, { useRef, useEffect, useState, useCallback } from "react";
@@ -12,19 +11,23 @@ import {
   RoomState, initialRoomState, advanceRoom,
   nextFloor, enterBossPhase,
 } from "@/engine/RoomManager";
-import { useGameLoop }           from "@/hooks/useGameLoop";
-import HUD                       from "@/components/HUD";
-import Menu                      from "@/components/Menu";
-import Shop                      from "@/components/Shop";
-import Minimap                   from "@/components/Minimap";
-import Inventory                 from "@/components/Inventory";
-import GameOverOverlay            from "@/components/overlays/GameOverOverlay";
-import VictoryOverlay            from "@/components/overlays/VictoryOverlay";
-import PauseOverlay              from "@/components/overlays/PauseOverlay";
-import WaveClearAnnouncement     from "@/components/overlays/WaveClearAnnouncement";
+import { useGameLoop }        from "@/hooks/useGameLoop";
+import HUD                    from "@/components/HUD";
+import Menu                   from "@/components/Menu";
+import Shop                   from "@/components/Shop";
+import Minimap                from "@/components/Minimap";
+import Inventory              from "@/components/Inventory";
+import GameOverOverlay         from "@/components/overlays/GameOverOverlay";
+import VictoryOverlay         from "@/components/overlays/VictoryOverlay";
+import PauseOverlay           from "@/components/overlays/PauseOverlay";
+import WaveClearAnnouncement  from "@/components/overlays/WaveClearAnnouncement";
 
-const MAX_HP      = 100;
-const MAX_STAMINA = 100;
+// ============================================================
+// [🧱 BLOCK: Constants]
+// ============================================================
+const MAX_HP           = 100;
+const MAX_STAMINA      = 100;
+const INVENTORY_HOLD_MS = 500; 
 
 interface HUDState {
   hp: number; stamina: number;
@@ -34,6 +37,7 @@ interface HUDState {
 export default function GameCanvas() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
+  // ── Systems ────────────────────────────────────────────────
   const stateRef  = useRef<GameState | null>(null);
   const inputRef  = useRef<InputHandler | null>(null);
   const hordeRef  = useRef(new HordeSystem());
@@ -41,6 +45,13 @@ export default function GameCanvas() {
   const renderRef = useRef(new RenderSystem());
   const roomRef   = useRef<RoomState>(initialRoomState());
 
+  // ── Tracking Refs ──────────────────────────────────────────
+  const iHoldTimer   = useRef<ReturnType<typeof setTimeout> | null>(null);
+  
+  // CRITICAL: We use these refs to prevent stale closures in the Event Listener
+  const uiActiveRef = useRef({ menu: true, shop: false, gameOver: false, inventory: false });
+
+  // ── React State ────────────────────────────────────────────
   const [showMenu,      setShowMenu]      = useState(true);
   const [isGameOver,    setIsGameOver]    = useState(false);
   const [isVictory,     setIsVictory]     = useState(false);
@@ -57,7 +68,17 @@ export default function GameCanvas() {
   }>({ show: false, message: "" });
 
   const announcementRef = useRef(false);
-  useEffect(() => { announcementRef.current = announcement.show; }, [announcement.show]);
+
+  // Keep the UI tracking ref in sync with state
+  useEffect(() => {
+    uiActiveRef.current = { 
+        menu: showMenu, 
+        shop: showShop, 
+        gameOver: isGameOver, 
+        inventory: showInventory 
+    };
+    announcementRef.current = announcement.show;
+  }, [showMenu, showShop, isGameOver, showInventory, announcement.show]);
 
   const announce = useCallback((message: string, subtext?: string, color?: string) => {
     setAnnouncement({ show: true, message, subtext, color });
@@ -65,12 +86,12 @@ export default function GameCanvas() {
   }, []);
 
   // ============================================================
-  // [🧱 BLOCK: Init]
+  // [🧱 BLOCK: Init & Input]
   // ============================================================
   useEffect(() => {
-    const canvas  = canvasRef.current!;
-    const w       = window.innerWidth;
-    const h       = window.innerHeight;
+    const canvas = canvasRef.current!;
+    const w      = window.innerWidth;
+    const h      = window.innerHeight;
     canvas.width  = w;
     canvas.height = h;
 
@@ -81,16 +102,45 @@ export default function GameCanvas() {
     inputRef.current = new InputHandler();
 
     const onKeyDown = (e: KeyboardEvent) => {
+      // ESC — toggle pause
       if (e.code === "Escape") {
-        // Don't toggle pause if other overlays are open
+        setShowInventory(false);
         setIsPaused((prev) => !prev);
+        return;
       }
-      if (e.code === "KeyI") {
-        // Only open inventory during gameplay
-        setShowInventory((prev) => !prev);
+
+      // I — Long Press logic
+      if (e.code === "KeyI" && !e.repeat) {
+        const ui = uiActiveRef.current;
+        
+        // Blocking conditions: Don't open if in Menu, Shop, or Game Over
+        if (ui.menu || ui.shop || ui.gameOver) return;
+
+        // Clear existing timer just in case
+        if (iHoldTimer.current) clearTimeout(iHoldTimer.current);
+
+        iHoldTimer.current = setTimeout(() => {
+            setShowInventory((prev) => {
+                const next = !prev;
+                setIsPaused(next); // Pause if opening, unpause if closing
+                return next;
+            });
+            iHoldTimer.current = null;
+        }, INVENTORY_HOLD_MS);
       }
     };
+
+    const onKeyUp = (e: KeyboardEvent) => {
+      if (e.code === "KeyI") {
+        if (iHoldTimer.current) {
+          clearTimeout(iHoldTimer.current);
+          iHoldTimer.current = null;
+        }
+      }
+    };
+
     window.addEventListener("keydown", onKeyDown);
+    window.addEventListener("keyup",   onKeyUp);
 
     const onResize = () => {
       canvas.width  = window.innerWidth;
@@ -115,8 +165,10 @@ export default function GameCanvas() {
 
     return () => {
       clearInterval(hudSync);
-      window.removeEventListener("resize", onResize);
+      window.removeEventListener("resize",  onResize);
       window.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("keyup",   onKeyUp);
+      if (iHoldTimer.current) clearTimeout(iHoldTimer.current);
     };
   }, []);
 
@@ -182,6 +234,11 @@ export default function GameCanvas() {
     setGold(newGold);
   }, []);
 
+  const handleInventoryClose = useCallback(() => {
+    setShowInventory(false);
+    setIsPaused(false);
+  }, []);
+
   // ============================================================
   // [🧱 BLOCK: Game Loop]
   // ============================================================
@@ -193,7 +250,6 @@ export default function GameCanvas() {
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
 
-    // Pause during any overlay
     if (showMenu || showShop || isVictory || isGameOver || isPaused || showInventory) return;
 
     const rs     = roomRef.current;
@@ -214,18 +270,15 @@ export default function GameCanvas() {
 
     if (!isBoss) {
       const prevHp = player.hp;
-      const { event, goldCollected } = hordeRef.current.update(state, player, rs, worldW, worldH);
+      const { event, goldCollected } = hordeRef.current.update(
+        state, player, rs, worldW, worldH
+      );
       if (player.hp < prevHp) renderRef.current.shake('light');
       if (goldCollected > 0)  state.gold += goldCollected;
-
       if (event === 'door') { handleDoorEnter(); return; }
-
-      if (state.door?.isActive &&
-          state.kills >= hordeRef.current.killThreshold &&
-          !announcementRef.current) {
+      if (state.door?.isActive && state.kills >= hordeRef.current.killThreshold && !announcementRef.current) {
         announce("ROOM CLEAR", "Gate is open — head north");
       }
-
       hordeRef.current.draw(state, ctx, state.camera, player);
     }
 
@@ -236,34 +289,27 @@ export default function GameCanvas() {
         renderRef.current.shake((prevHp - player.hp) >= 25 ? 'heavy' : 'medium');
       }
       if (goldCollected > 0) state.gold += goldCollected;
-
       if (event === 'victory') {
         announce("BOSS SLAIN", "Victory — floor cleared!", "#4ade80");
         roomRef.current = { ...rs, phase: 'victory' };
         setTimeout(() => setIsVictory(true), 2000);
         return;
       }
-
       bossRef.current.draw(state, ctx, state.camera, player);
     }
 
     player.draw(ctx, state.camera);
   });
 
-  // ============================================================
-  // [🧱 BLOCK: JSX]
-  // ============================================================
   const state = stateRef.current;
 
   return (
     <div style={{ width:"100vw", height:"100vh", overflow:"hidden", background:"#0f172a" }}>
-
       <canvas ref={canvasRef} style={{ display:"block" }} />
 
-      {/* HUD */}
       {!showMenu && (
         <HUD
-          hp={hud.hp}           maxHp={MAX_HP}
+          hp={hud.hp}            maxHp={MAX_HP}
           stamina={hud.stamina} maxStamina={MAX_STAMINA}
           kills={hud.kills}     killThreshold={hordeRef.current.killThreshold}
           room={hud.room}       floor={hud.floor}
@@ -271,45 +317,28 @@ export default function GameCanvas() {
         />
       )}
 
-      {/* Minimap */}
       {!showMenu && !isGameOver && (
-        <Minimap
-          state={stateRef.current}
-          isBoss={roomRef.current.phase === 'boss'}
-        />
+        <Minimap state={stateRef.current} isBoss={roomRef.current.phase === 'boss'} />
       )}
 
-      {/* Shop */}
       {showShop && state && (
         <Shop
-          floor={roomRef.current.floor}
-          room={roomRef.current.roomDisplay}
-          gold={gold}
-          playerStats={state.playerStats}
-          player={state.player}
-          onGoldChange={handleGoldChange}
-          onContinue={handleShopContinue}
+          floor={roomRef.current.floor} room={roomRef.current.roomDisplay}
+          gold={gold} playerStats={state.playerStats} player={state.player}
+          onGoldChange={handleGoldChange} onContinue={handleShopContinue}
         />
       )}
 
-      {/* Inventory */}
-      {showInventory && !showMenu && !isGameOver && state && (
+      {showInventory && state && (
         <Inventory
-          playerStats={state.playerStats}
-          player={state.player}
-          gold={gold}
-          onGoldChange={handleGoldChange}
-          onClose={() => setShowInventory(false)}
+          playerStats={state.playerStats} player={state.player}
+          gold={gold} onGoldChange={handleGoldChange} onClose={handleInventoryClose}
         />
       )}
 
-      {/* Overlays */}
-      {isVictory && (
-        <VictoryOverlay floor={hud.floor} onContinue={handleVictoryContinue} />
-      )}
-      {isGameOver && !showMenu && (
-        <GameOverOverlay floor={hud.floor} room={hud.room} onRetry={handleRestart} />
-      )}
+      {isVictory && <VictoryOverlay floor={hud.floor} onContinue={handleVictoryContinue} />}
+      {isGameOver && !showMenu && <GameOverOverlay floor={hud.floor} room={hud.room} onRetry={handleRestart} />}
+      
       {isPaused && !showMenu && !isGameOver && !showInventory && (
         <PauseOverlay
           floor={hud.floor} room={hud.room}
@@ -318,17 +347,12 @@ export default function GameCanvas() {
         />
       )}
 
-      {/* Menu — always on top */}
       {showMenu && <Menu onStart={handleStart} />}
 
-      {/* Wave announcement */}
       <WaveClearAnnouncement
-        show={announcement.show}
-        message={announcement.message}
-        subtext={announcement.subtext}
-        color={announcement.color}
+        show={announcement.show} message={announcement.message}
+        subtext={announcement.subtext} color={announcement.color}
       />
-
     </div>
   );
 }
