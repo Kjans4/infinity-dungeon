@@ -12,19 +12,23 @@ import {
   RoomState, initialRoomState, advanceRoom,
   nextFloor, enterBossPhase,
 } from "@/engine/RoomManager";
-import { useGameLoop }           from "@/hooks/useGameLoop";
-import HUD                       from "@/components/HUD";
-import Menu                      from "@/components/Menu";
-import Shop                      from "@/components/Shop";
-import Minimap                   from "@/components/Minimap";
-import Inventory                 from "@/components/Inventory";
-import GameOverOverlay            from "@/components/overlays/GameOverOverlay";
-import VictoryOverlay            from "@/components/overlays/VictoryOverlay";
-import PauseOverlay              from "@/components/overlays/PauseOverlay";
-import WaveClearAnnouncement     from "@/components/overlays/WaveClearAnnouncement";
+import { useGameLoop }        from "@/hooks/useGameLoop";
+import HUD                    from "@/components/HUD";
+import Menu                   from "@/components/Menu";
+import Shop                   from "@/components/Shop";
+import Minimap                from "@/components/Minimap";
+import Inventory              from "@/components/Inventory";
+import GameOverOverlay         from "@/components/overlays/GameOverOverlay";
+import VictoryOverlay         from "@/components/overlays/VictoryOverlay";
+import PauseOverlay           from "@/components/overlays/PauseOverlay";
+import WaveClearAnnouncement  from "@/components/overlays/WaveClearAnnouncement";
 
-const MAX_HP      = 100;
-const MAX_STAMINA = 100;
+// ============================================================
+// [🧱 BLOCK: Constants]
+// ============================================================
+const MAX_HP           = 100;
+const MAX_STAMINA      = 100;
+const INVENTORY_HOLD_MS = 500; // ms to hold I before inventory opens
 
 interface HUDState {
   hp: number; stamina: number;
@@ -34,6 +38,7 @@ interface HUDState {
 export default function GameCanvas() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
+  // ── Systems ────────────────────────────────────────────────
   const stateRef  = useRef<GameState | null>(null);
   const inputRef  = useRef<InputHandler | null>(null);
   const hordeRef  = useRef(new HordeSystem());
@@ -41,6 +46,13 @@ export default function GameCanvas() {
   const renderRef = useRef(new RenderSystem());
   const roomRef   = useRef<RoomState>(initialRoomState());
 
+  // ── Long-press tracking refs ───────────────────────────────
+  // Using refs so they work inside event listeners without
+  // stale closure issues
+  const iKeyDownAt   = useRef<number | null>(null); // timestamp when I was pressed
+  const iHoldTimer   = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // ── React State ────────────────────────────────────────────
   const [showMenu,      setShowMenu]      = useState(true);
   const [isGameOver,    setIsGameOver]    = useState(false);
   const [isVictory,     setIsVictory]     = useState(false);
@@ -57,7 +69,9 @@ export default function GameCanvas() {
   }>({ show: false, message: "" });
 
   const announcementRef = useRef(false);
-  useEffect(() => { announcementRef.current = announcement.show; }, [announcement.show]);
+  useEffect(() => {
+    announcementRef.current = announcement.show;
+  }, [announcement.show]);
 
   const announce = useCallback((message: string, subtext?: string, color?: string) => {
     setAnnouncement({ show: true, message, subtext, color });
@@ -68,9 +82,9 @@ export default function GameCanvas() {
   // [🧱 BLOCK: Init]
   // ============================================================
   useEffect(() => {
-    const canvas  = canvasRef.current!;
-    const w       = window.innerWidth;
-    const h       = window.innerHeight;
+    const canvas = canvasRef.current!;
+    const w      = window.innerWidth;
+    const h      = window.innerHeight;
     canvas.width  = w;
     canvas.height = h;
 
@@ -80,18 +94,63 @@ export default function GameCanvas() {
     stateRef.current = new GameState(w, h);
     inputRef.current = new InputHandler();
 
+    // ── Keyboard Handlers ──────────────────────────────────
     const onKeyDown = (e: KeyboardEvent) => {
+
+      // ESC — toggle pause (only during active gameplay)
       if (e.code === "Escape") {
-        // Don't toggle pause if other overlays are open
+        setShowInventory(false); // close inventory if open
         setIsPaused((prev) => !prev);
+        return;
       }
-      if (e.code === "KeyI") {
-        // Only open inventory during gameplay
-        setShowInventory((prev) => !prev);
+
+      // I — start long-press timer to open/close inventory
+      if (e.code === "KeyI" && !e.repeat) {
+        iKeyDownAt.current = Date.now();
+
+        // Clear any existing timer
+        if (iHoldTimer.current) clearTimeout(iHoldTimer.current);
+
+        iHoldTimer.current = setTimeout(() => {
+          // Only toggle if not in menu/shop/gameover
+          setShowMenu((menu) => {
+            if (menu) return menu; // Don't open during menu
+            setShowShop((shop) => {
+              if (shop) return shop; // Don't open during shop
+              setIsGameOver((go) => {
+                if (go) return go; // Don't open during game over
+                // Toggle inventory and pause together
+                setShowInventory((prev) => {
+                  const next = !prev;
+                  setIsPaused(next); // Pause when opening, unpause when closing
+                  return next;
+                });
+                return go;
+              });
+              return shop;
+            });
+            return menu;
+          });
+          iKeyDownAt.current = null;
+        }, INVENTORY_HOLD_MS);
       }
     };
-    window.addEventListener("keydown", onKeyDown);
 
+    const onKeyUp = (e: KeyboardEvent) => {
+      // I released before hold threshold — cancel
+      if (e.code === "KeyI") {
+        if (iHoldTimer.current) {
+          clearTimeout(iHoldTimer.current);
+          iHoldTimer.current = null;
+        }
+        iKeyDownAt.current = null;
+      }
+    };
+
+    window.addEventListener("keydown", onKeyDown);
+    window.addEventListener("keyup",   onKeyUp);
+
+    // ── Resize ─────────────────────────────────────────────
     const onResize = () => {
       canvas.width  = window.innerWidth;
       canvas.height = window.innerHeight;
@@ -99,6 +158,7 @@ export default function GameCanvas() {
     };
     window.addEventListener("resize", onResize);
 
+    // ── HUD Sync ───────────────────────────────────────────
     const hudSync = setInterval(() => {
       const s = stateRef.current;
       const r = roomRef.current;
@@ -115,13 +175,15 @@ export default function GameCanvas() {
 
     return () => {
       clearInterval(hudSync);
-      window.removeEventListener("resize", onResize);
+      window.removeEventListener("resize",  onResize);
       window.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("keyup",   onKeyUp);
+      if (iHoldTimer.current) clearTimeout(iHoldTimer.current);
     };
   }, []);
 
   // ============================================================
-  // [🧱 BLOCK: Handlers]
+  // [🧱 BLOCK: Handle Start]
   // ============================================================
   const handleStart = useCallback(() => {
     const rs = initialRoomState();
@@ -136,6 +198,9 @@ export default function GameCanvas() {
     setShowMenu(false);
   }, []);
 
+  // ============================================================
+  // [🧱 BLOCK: Handle Restart]
+  // ============================================================
   const handleRestart = useCallback(() => {
     stateRef.current!.reset();
     hordeRef.current.reset(stateRef.current!);
@@ -149,6 +214,9 @@ export default function GameCanvas() {
     setShowMenu(true);
   }, []);
 
+  // ============================================================
+  // [🧱 BLOCK: Handle Door Enter]
+  // ============================================================
   const handleDoorEnter = useCallback(() => {
     const rs = advanceRoom(roomRef.current);
     roomRef.current = rs;
@@ -162,12 +230,18 @@ export default function GameCanvas() {
     }
   }, [announce]);
 
+  // ============================================================
+  // [🧱 BLOCK: Handle Shop Continue]
+  // ============================================================
   const handleShopContinue = useCallback(() => {
     roomRef.current = enterBossPhase(roomRef.current);
     setShowShop(false);
     bossRef.current.setup(stateRef.current!, roomRef.current);
   }, []);
 
+  // ============================================================
+  // [🧱 BLOCK: Handle Victory]
+  // ============================================================
   const handleVictoryContinue = useCallback(() => {
     const rs = nextFloor(roomRef.current);
     roomRef.current = rs;
@@ -177,13 +251,27 @@ export default function GameCanvas() {
     setShowShop(false);
   }, []);
 
+  // ============================================================
+  // [🧱 BLOCK: Handle Gold Change]
+  // ============================================================
   const handleGoldChange = useCallback((newGold: number) => {
     if (stateRef.current) stateRef.current.gold = newGold;
     setGold(newGold);
   }, []);
 
   // ============================================================
-  // [🧱 BLOCK: Game Loop]
+  // [🧱 BLOCK: Handle Inventory Close]
+  // Closing inventory also unpauses.
+  // ============================================================
+  const handleInventoryClose = useCallback(() => {
+    setShowInventory(false);
+    setIsPaused(false);
+  }, []);
+
+  // ============================================================
+  // [🧱 BLOCK: Game Loop — ~60fps]
+  // Paused during: menu, shop, victory, game over,
+  //                pause overlay, inventory (all pause game)
   // ============================================================
   useGameLoop((_dt: number) => {
     const canvas = canvasRef.current;
@@ -193,7 +281,7 @@ export default function GameCanvas() {
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
 
-    // Pause during any overlay
+    // ✅ Inventory pauses the game — enemies stop, player safe
     if (showMenu || showShop || isVictory || isGameOver || isPaused || showInventory) return;
 
     const rs     = roomRef.current;
@@ -214,15 +302,19 @@ export default function GameCanvas() {
 
     if (!isBoss) {
       const prevHp = player.hp;
-      const { event, goldCollected } = hordeRef.current.update(state, player, rs, worldW, worldH);
+      const { event, goldCollected } = hordeRef.current.update(
+        state, player, rs, worldW, worldH
+      );
       if (player.hp < prevHp) renderRef.current.shake('light');
       if (goldCollected > 0)  state.gold += goldCollected;
 
       if (event === 'door') { handleDoorEnter(); return; }
 
-      if (state.door?.isActive &&
-          state.kills >= hordeRef.current.killThreshold &&
-          !announcementRef.current) {
+      if (
+        state.door?.isActive &&
+        state.kills >= hordeRef.current.killThreshold &&
+        !announcementRef.current
+      ) {
         announce("ROOM CLEAR", "Gate is open — head north");
       }
 
@@ -231,7 +323,9 @@ export default function GameCanvas() {
 
     if (isBoss) {
       const prevHp = player.hp;
-      const { event, goldCollected } = bossRef.current.update(state, player, worldW, worldH);
+      const { event, goldCollected } = bossRef.current.update(
+        state, player, worldW, worldH
+      );
       if (player.hp < prevHp) {
         renderRef.current.shake((prevHp - player.hp) >= 25 ? 'heavy' : 'medium');
       }
@@ -292,24 +386,28 @@ export default function GameCanvas() {
         />
       )}
 
-      {/* Inventory */}
+      {/* Inventory — pauses game, opened by holding I */}
       {showInventory && !showMenu && !isGameOver && state && (
         <Inventory
           playerStats={state.playerStats}
           player={state.player}
           gold={gold}
           onGoldChange={handleGoldChange}
-          onClose={() => setShowInventory(false)}
+          onClose={handleInventoryClose}
         />
       )}
 
-      {/* Overlays */}
+      {/* Victory */}
       {isVictory && (
         <VictoryOverlay floor={hud.floor} onContinue={handleVictoryContinue} />
       )}
+
+      {/* Game Over */}
       {isGameOver && !showMenu && (
         <GameOverOverlay floor={hud.floor} room={hud.room} onRetry={handleRestart} />
       )}
+
+      {/* Pause — don't show if inventory is open (inventory IS the pause) */}
       {isPaused && !showMenu && !isGameOver && !showInventory && (
         <PauseOverlay
           floor={hud.floor} room={hud.room}
@@ -318,7 +416,7 @@ export default function GameCanvas() {
         />
       )}
 
-      {/* Menu — always on top */}
+      {/* Menu */}
       {showMenu && <Menu onStart={handleStart} />}
 
       {/* Wave announcement */}
