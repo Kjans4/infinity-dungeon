@@ -1,141 +1,134 @@
-// src/engine/items/Weapon.ts
-import { WeaponDef, WeaponType, AttackDef } from "./types";
-import { getWeaponDef } from "./WeaponRegistry";
+// src/engine/items/WeaponItemRegistry.ts
+import { WeaponItem } from "./types";
 
 // ============================================================
-// [🧱 BLOCK: Bare Fists Fallback]
-// Used when no weapon is equipped.
-// Matches the old circle hitbox behaviour.
+// [🧱 BLOCK: Named Weapon Pool]
+// Each weapon has a type (attack shape) + one charm passive.
+// passiveId maps to a charm ID in CharmRegistry.ts.
 // ============================================================
-const BARE_FISTS: WeaponDef = {
-  type: 'sword', name: 'Fists', icon: '👊',
-  light: {
-    damage: 10, duration: 150, staminaCost: 10,
-    cooldown: 0, haltsPlayer: false,
-    color: "rgba(255,255,255,0.5)",
-    hitbox: { kind: 'circle', radius: 15 },
+export const WEAPON_ITEM_POOL: WeaponItem[] = [
+
+  // ── Swords ─────────────────────────────────────────────────
+  {
+    kind:        'weapon',
+    id:          'bloodfang_sword',
+    name:        'Bloodfang Sword',
+    icon:        '🗡️',
+    weaponType:  'sword',
+    passiveId:   'blood_pact',
+    description: 'Kills heal 3 HP.',
+    cost:        80,
   },
-  heavy: {
-    damage: 25, duration: 400, staminaCost: 25,
-    cooldown: 1200, haltsPlayer: true,
-    color: "rgba(251,191,36,0.6)",
-    hitbox: { kind: 'circle', radius: 25 },
+  {
+    kind:        'weapon',
+    id:          'ironclad_sword',
+    name:        'Ironclad Sword',
+    icon:        '🗡️',
+    weaponType:  'sword',
+    passiveId:   'iron_skin',
+    description: 'Take 15% less damage.',
+    cost:        100,
   },
-};
+  {
+    kind:        'weapon',
+    id:          'berserker_blade',
+    name:        'Berserker Blade',
+    icon:        '🗡️',
+    weaponType:  'sword',
+    passiveId:   'berserker',
+    description: '+10 attack damage.',
+    tradeOff:    'Stamina regen -30%',
+    cost:        80,
+  },
+  {
+    kind:        'weapon',
+    id:          'overclock_sword',
+    name:        'Overclock Sword',
+    icon:        '🗡️',
+    weaponType:  'sword',
+    passiveId:   'overclock',
+    description: 'Stamina regen +50%.',
+    cost:        80,
+  },
+
+  // ── Axes ────────────────────────────────────────────────────
+  {
+    kind:        'weapon',
+    id:          'titans_axe',
+    name:        "Titan's Axe",
+    icon:        '🪓',
+    weaponType:  'axe',
+    passiveId:   'juggernaut',
+    description: '+30 max HP.',
+    tradeOff:    'Move speed -0.5',
+    cost:        100,
+  },
+  {
+    kind:        'weapon',
+    id:          'reapers_axe',
+    name:        "Reaper's Axe",
+    icon:        '🪓',
+    weaponType:  'axe',
+    passiveId:   'glass_cannon',
+    description: '+20 attack damage.',
+    tradeOff:    '-30 max HP',
+    cost:        60,
+  },
+  {
+    kind:        'weapon',
+    id:          'vampire_axe',
+    name:        'Vampire Axe',
+    icon:        '🪓',
+    weaponType:  'axe',
+    passiveId:   'vampire',
+    description: 'Kills heal 5 HP.',
+    tradeOff:    '-10 max HP',
+    cost:        90,
+  },
+
+  // ── Spears ─────────────────────────────────────────────────
+  {
+    kind:        'weapon',
+    id:          'swift_spear',
+    name:        'Swift Spear',
+    icon:        '🔱',
+    weaponType:  'spear',
+    passiveId:   'momentum',
+    description: 'Dash costs 20 stamina instead of 30.',
+    cost:        70,
+  },
+  {
+    kind:        'weapon',
+    id:          'thunder_spear',
+    name:        'Thunder Spear',
+    icon:        '🔱',
+    weaponType:  'spear',
+    passiveId:   'executioner',
+    description: 'Heavy kills release a shockwave.',
+    cost:        120,
+  },
+  {
+    kind:        'weapon',
+    id:          'last_rite_spear',
+    name:        'Last Rite Spear',
+    icon:        '🔱',
+    weaponType:  'spear',
+    passiveId:   'last_stand',
+    description: 'Below 25% HP: +15 attack damage.',
+    cost:        110,
+  },
+];
 
 // ============================================================
-// [🧱 BLOCK: Weapon Class]
+// [🧱 BLOCK: Helper]
 // ============================================================
-export class Weapon {
-  def: WeaponDef;
-
-  constructor(type: WeaponType | 'fists' = 'fists') {
-    this.def = type === 'fists' ? BARE_FISTS : getWeaponDef(type);
-  }
-
-  get type(): WeaponType   { return this.def.type; }
-  get name(): string       { return this.def.name; }
-  get icon(): string       { return this.def.icon; }
-
-  getAttack(mode: 'light' | 'heavy'): AttackDef {
-    return mode === 'light' ? this.def.light : this.def.heavy;
-  }
-
-  // ============================================================
-  // [🧱 BLOCK: Draw Attack Visual]
-  // px/py = player CENTER in SCREEN coords
-  // ============================================================
-  drawAttack(
-    ctx:    CanvasRenderingContext2D,
-    px:     number,
-    py:     number,
-    facing: { x: number; y: number },
-    mode:   'light' | 'heavy'
-  ): void {
-    const atk   = this.getAttack(mode);
-    const shape = atk.hitbox;
-
-    ctx.fillStyle   = atk.color;
-    ctx.strokeStyle = atk.color;
-    ctx.lineWidth   = 2;
-
-    switch (shape.kind) {
-      case 'arc': {
-        const angle     = Math.atan2(facing.y, facing.x);
-        const halfAngle = shape.arcAngle / 2;
-        ctx.beginPath();
-        ctx.moveTo(px, py);
-        ctx.arc(px, py, shape.range, angle - halfAngle, angle + halfAngle);
-        ctx.closePath();
-        ctx.fill();
-        break;
-      }
-      case 'circle': {
-        ctx.beginPath();
-        ctx.arc(px, py, shape.radius, 0, Math.PI * 2);
-        ctx.fill();
-        break;
-      }
-      case 'rect': {
-        const angle = Math.atan2(facing.y, facing.x);
-        ctx.save();
-        ctx.translate(px, py);
-        ctx.rotate(angle);
-        ctx.fillRect(0, -shape.width / 2, shape.length, shape.width);
-        ctx.restore();
-        break;
-      }
-    }
-  }
-
-  // ============================================================
-  // [🧱 BLOCK: Hit Test]
-  // All coords are WORLD space.
-  // ============================================================
-  hitTest(
-    px: number, py: number,
-    facing: { x: number; y: number },
-    mode:   'light' | 'heavy',
-    ex: number, ey: number,
-    eW: number, eH: number
-  ): boolean {
-    const shape = this.getAttack(mode).hitbox;
-
-    switch (shape.kind) {
-      case 'arc': {
-        const dx   = ex - px;
-        const dy   = ey - py;
-        const dist = Math.sqrt(dx * dx + dy * dy);
-        if (dist > shape.range + Math.max(eW, eH) / 2) return false;
-        if (dist < 20) return true;
-        const facingAngle = Math.atan2(facing.y, facing.x);
-        const enemyAngle  = Math.atan2(dy, dx);
-        let   diff        = enemyAngle - facingAngle;
-        while (diff >  Math.PI) diff -= Math.PI * 2;
-        while (diff < -Math.PI) diff += Math.PI * 2;
-        return Math.abs(diff) <= shape.arcAngle / 2;
-      }
-      case 'circle': {
-        const dx   = ex - px;
-        const dy   = ey - py;
-        const dist = Math.sqrt(dx * dx + dy * dy);
-        return dist < shape.radius + Math.max(eW, eH) / 2;
-      }
-      case 'rect': {
-        const angle = Math.atan2(facing.y, facing.x);
-        const cos   = Math.cos(-angle);
-        const sin   = Math.sin(-angle);
-        const dx    = ex - px;
-        const dy    = ey - py;
-        const lx    = dx * cos - dy * sin;
-        const ly    = dx * sin + dy * cos;
-        const halfW = shape.width / 2 + Math.max(eW, eH) / 2;
-        return (
-          lx >= -(eW / 2) &&
-          lx <= shape.length + eW / 2 &&
-          Math.abs(ly) < halfW
-        );
-      }
-    }
-  }
+export function getRandomWeaponItems(
+  excludeIds: string[],
+  count:      number = 3
+): WeaponItem[] {
+  const available = WEAPON_ITEM_POOL.filter(
+    (w: WeaponItem) => !excludeIds.includes(w.id)
+  );
+  const shuffled = [...available].sort(() => Math.random() - 0.5);
+  return shuffled.slice(0, count);
 }

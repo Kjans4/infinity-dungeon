@@ -26,13 +26,13 @@ export function getRandomShopItems(
 ): ShopItem[] {
   // Build available charms
   const availableCharms: ShopItem[] = CHARM_POOL
-    .filter((c) => !ownedCharmIds.includes(c.id))
-    .map((c) => ({ ...c, kind: 'charm' as const }));
+  .filter((c: Charm) => !ownedCharmIds.includes(c.id))
+  .map((c: Charm) => ({ ...c, kind: 'charm' as const }));
 
   // Build available weapons
   const availableWeapons: ShopItem[] = WEAPON_ITEM_POOL
-    .filter((w) => w.id !== ownedWeaponId)
-    .map((w) => ({ ...w, kind: 'weapon' as const }));
+  .filter((w: WeaponItem) => w.id !== ownedWeaponId)
+  .map((w: WeaponItem) => ({ ...w, kind: 'weapon' as const }));
 
   // Combine and shuffle
   const combined = [...availableCharms, ...availableWeapons]
