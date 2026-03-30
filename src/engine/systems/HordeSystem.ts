@@ -1,13 +1,13 @@
 // src/engine/systems/HordeSystem.ts
-import { Player }      from "../Player";
-import { Camera }      from "../Camera";
-import { Door }        from "../Door";
-import { Grunt, Shooter, spawnWave } from "../enemy";
-import { RoomState }   from "../RoomManager";
-import { GameState }   from "../GameState";
-import { GoldSystem }  from "./GoldSystem";
-import { WeaponSystem } from "./WeaponSystem";
-import { spawnBurst }  from "../Particle";
+import { Player }                    from "../Player";
+import { Camera }                    from "../Camera";
+import { Door }                      from "../Door";
+import { Grunt, Shooter, Tank, spawnWave } from "../enemy";
+import { RoomState }                 from "../RoomManager";
+import { GameState }                 from "../GameState";
+import { GoldSystem }                from "./GoldSystem";
+import { WeaponSystem }              from "./WeaponSystem";
+import { spawnBurst }                from "../Particle";
 
 const KILL_THRESHOLD = 20;
 const INITIAL_WAVE   = 8;
@@ -18,6 +18,9 @@ export class HordeSystem {
   private goldSystem     = new GoldSystem();
   private weaponSystem   = new WeaponSystem();
 
+  // ============================================================
+  // [🧱 BLOCK: Setup]
+  // ============================================================
   setup(state: GameState, rs: RoomState, worldW: number, worldH: number) {
     state.player.x  = worldW / 2;
     state.player.y  = worldH - 100;
@@ -45,6 +48,9 @@ export class HordeSystem {
     state.playerStats.applyToPlayer(state.player);
   }
 
+  // ============================================================
+  // [🧱 BLOCK: Reset]
+  // ============================================================
   reset(state: GameState) {
     state.enemies     = [];
     state.projectiles = [];
@@ -56,49 +62,84 @@ export class HordeSystem {
     state.lastSpawn   = 0;
   }
 
+  // ============================================================
+  // [🧱 BLOCK: Update]
+  // ============================================================
   update(
     state:  GameState,
     player: Player,
     rs:     RoomState,
     worldW: number,
     worldH: number
-  ): { event: 'door' | null; goldCollected: number } {
+  ): { event: "door" | null; goldCollected: number } {
     const ps = state.playerStats;
 
-    // Door
+    // ── Door ───────────────────────────────────────────────
     if (state.door) {
       state.door.update();
       if (state.kills >= KILL_THRESHOLD && !state.door.isActive) {
         state.door.activate();
       }
       if (state.door.isCollidingWithPlayer(player)) {
-        return { event: 'door', goldCollected: 0 };
+        return { event: "door", goldCollected: 0 };
       }
     }
 
-    // Enemy update + melee hits
+    // ── Enemy update + melee hits ──────────────────────────
     state.enemies.forEach((enemy) => {
       enemy.update(player, worldW, worldH);
-      if (enemy.pendingProjectile) {
+
+      if (enemy instanceof Shooter && enemy.pendingProjectile) {
         state.projectiles.push(enemy.pendingProjectile);
         enemy.pendingProjectile = null;
       }
+
       if (enemy.isMeleeHittingPlayer(player) && player.iFrames <= 0) {
-        const rawDmg   = enemy instanceof Shooter ? 8 : 15;
-        const finalDmg = Math.round(rawDmg * (1 - ps.damageReduction));
-        player.takeHit(finalDmg);
+        if (enemy instanceof Tank) {
+          // Tank hit: full damage + knockback
+          const finalDmg = Math.round(
+            enemy.meleeDamage * (1 - ps.damageReduction)
+          );
+          player.takeHit(finalDmg);
+          enemy.applyKnockback(player);
+        } else if (enemy instanceof Shooter) {
+          const finalDmg = Math.round(8 * (1 - ps.damageReduction));
+          player.takeHit(finalDmg);
+        } else {
+          // Grunt
+          const finalDmg = Math.round(15 * (1 - ps.damageReduction));
+          player.takeHit(finalDmg);
+        }
       }
     });
 
-    // Weapon input + hit resolution
+    // ── Weapon input + hit resolution ─────────────────────
     this.weaponSystem.processInput(player);
-    const hitEnemies = this.weaponSystem.resolveHits(player, state.enemies, ps.atkBonus);
 
-    // Executioner charm/weapon shockwave
-    if (player.attackType === 'heavy' && ps.hasCharm('executioner')) {
+    // Resolve hits — Tank uses takeDamageFrom for shield-arc check
+    const playerCX = player.x + player.width  / 2;
+    const playerCY = player.y + player.height / 2;
+    const isHeavy  = player.attackType === "heavy";
+
+    const hitEnemies = this.weaponSystem.resolveHitsCustom(
+      player,
+      state.enemies,
+      ps.atkBonus,
+      (enemy, amount) => {
+        if (enemy instanceof Tank) {
+          enemy.takeDamageFrom(amount, playerCX, playerCY, isHeavy);
+        } else {
+          enemy.takeDamage(amount);
+        }
+      }
+    );
+
+    // Executioner charm shockwave
+    if (isHeavy && ps.hasCharm("executioner")) {
       hitEnemies.forEach((enemy) => {
         if (enemy.isDead) {
-          this.triggerShockwave(state,
+          this.triggerShockwave(
+            state,
             enemy.x + enemy.width  / 2,
             enemy.y + enemy.height / 2,
             25
@@ -107,7 +148,7 @@ export class HordeSystem {
       });
     }
 
-    // Kill tracking
+    // ── Kill tracking ─────────────────────────────────────
     const before      = state.enemies.length;
     const deadEnemies = state.enemies.filter((e) => e.isDead);
     state.enemies     = state.enemies.filter((e) => !e.isDead);
@@ -118,17 +159,24 @@ export class HordeSystem {
       state.alive -= justKilled;
 
       deadEnemies.forEach((enemy) => {
-        const type = enemy instanceof Shooter ? 'shooter' : 'grunt';
-        this.goldSystem.spawnFromEnemy(state,
+        const type =
+          enemy instanceof Tank    ? "tank"    :
+          enemy instanceof Shooter ? "shooter" :
+                                     "grunt";
+
+        this.goldSystem.spawnFromEnemy(
+          state,
           enemy.x + enemy.width  / 2,
           enemy.y + enemy.height / 2,
           type
         );
+
         state.particles.push(...spawnBurst(
           enemy.x + enemy.width  / 2,
           enemy.y + enemy.height / 2,
           enemy.color, 6
         ));
+
         ps.charms.forEach((charm) => charm.onKill?.(player, ps.modifiers));
         if (ps.healOnKill > 0) {
           player.hp = Math.min(player.maxHp, player.hp + ps.healOnKill);
@@ -136,7 +184,7 @@ export class HordeSystem {
       });
     }
 
-    // Wave respawn
+    // ── Wave respawn ──────────────────────────────────────
     const killsLeft = KILL_THRESHOLD - state.kills;
     if (killsLeft > 0 && state.alive === 0 && Date.now() - state.lastSpawn > 1000) {
       const spawnCount = Math.min(WAVE_SIZE, killsLeft);
@@ -146,7 +194,7 @@ export class HordeSystem {
       state.lastSpawn = Date.now();
     }
 
-    // Projectiles
+    // ── Projectiles ───────────────────────────────────────
     state.projectiles.forEach((proj) => {
       proj.update();
       if (proj.isHittingPlayer(player) && player.iFrames <= 0) {
@@ -157,16 +205,27 @@ export class HordeSystem {
     });
     state.projectiles = state.projectiles.filter((p) => !p.isDone);
 
-    // Stamina regen
+    // ── Stamina regen ─────────────────────────────────────
     if (player.stamina < player.maxStamina) {
-      player.stamina = Math.min(player.maxStamina, player.stamina + ps.staminaRegenRate);
+      player.stamina = Math.min(
+        player.maxStamina,
+        player.stamina + ps.staminaRegenRate
+      );
     }
 
     const goldCollected = this.goldSystem.update(state, player);
     return { event: null, goldCollected };
   }
 
-  private triggerShockwave(state: GameState, cx: number, cy: number, damage: number) {
+  // ============================================================
+  // [🧱 BLOCK: Shockwave]
+  // ============================================================
+  private triggerShockwave(
+    state:  GameState,
+    cx:     number,
+    cy:     number,
+    damage: number
+  ) {
     state.enemies.forEach((enemy) => {
       if (enemy.isDead) return;
       const ex   = enemy.x + enemy.width  / 2;
@@ -176,7 +235,15 @@ export class HordeSystem {
     });
   }
 
-  draw(state: GameState, ctx: CanvasRenderingContext2D, camera: Camera, player: Player) {
+  // ============================================================
+  // [🧱 BLOCK: Draw]
+  // ============================================================
+  draw(
+    state:  GameState,
+    ctx:    CanvasRenderingContext2D,
+    camera: Camera,
+    player: Player
+  ) {
     state.door?.draw(ctx, camera);
     state.enemies.forEach((e)     => e.draw(ctx, camera));
     state.projectiles.forEach((p) => p.draw(ctx, camera));

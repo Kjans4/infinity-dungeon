@@ -1,16 +1,17 @@
 // src/engine/systems/GoldSystem.ts
-import { GoldDrop } from "../GoldDrop";
-import { Player }   from "../Player";
-import { Camera }   from "../Camera";
+import { GoldDrop }  from "../GoldDrop";
+import { Player }    from "../Player";
+import { Camera }    from "../Camera";
 import { GameState } from "../GameState";
 
 // ============================================================
 // [🧱 BLOCK: Gold Drop Ranges per enemy type]
 // ============================================================
 export const GOLD_DROPS = {
-  grunt:   { min: 5,  max: 10  },
-  shooter: { min: 8,  max: 15  },
-  boss:    { min: 80, max: 120 },
+  grunt:   { min: 5,   max: 10  },
+  shooter: { min: 8,   max: 15  },
+  tank:    { min: 15,  max: 25  },
+  boss:    { min: 80,  max: 120 },
 };
 
 function randInt(min: number, max: number): number {
@@ -28,15 +29,14 @@ export class GoldSystem {
   // Call when an enemy dies — pass its world position and type.
   // ============================================================
   spawnFromEnemy(
-    state:    GameState,
-    x:        number,
-    y:        number,
-    type:     'grunt' | 'shooter' | 'boss'
+    state:  GameState,
+    x:      number,
+    y:      number,
+    type:   "grunt" | "shooter" | "tank" | "boss"
   ) {
     const range  = GOLD_DROPS[type];
     const amount = randInt(range.min, range.max);
 
-    // Slight random scatter so stacked enemies don't overlap
     const offsetX = (Math.random() - 0.5) * 20;
     const offsetY = (Math.random() - 0.5) * 20;
 
@@ -54,15 +54,12 @@ export class GoldSystem {
     state.goldDrops.forEach((drop) => {
       const wasCollected = drop.collected;
       drop.update(player);
-
       if (!wasCollected && drop.collected) {
         collected += drop.amount;
       }
     });
 
-    // Remove collected/expired drops
     state.goldDrops = state.goldDrops.filter((d) => !d.collected);
-
     return collected;
   }
 

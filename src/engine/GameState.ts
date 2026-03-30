@@ -5,13 +5,13 @@ import { Door }        from "./Door";
 import { GoldDrop }    from "./GoldDrop";
 import { Particle }    from "./Particle";
 import { PlayerStats } from "./PlayerStats";
-import { Grunt, Shooter, Boss, Projectile } from "./enemy";
+import { Grunt, Shooter, Tank, Boss, Projectile } from "./enemy";
 
 export class GameState {
   // Entities
   player:      Player;
   camera:      Camera;
-  enemies:     (Grunt | Shooter)[];
+  enemies:     (Grunt | Shooter | Tank)[];
   boss:        Boss | null;
   door:        Door | null;
   projectiles: Projectile[];

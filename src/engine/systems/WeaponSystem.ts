@@ -3,6 +3,7 @@ import { Player }  from "../Player";
 import { Camera }  from "../Camera";
 import { Grunt }   from "../enemy/Grunt";
 import { Shooter } from "../enemy/Shooter";
+import { Tank }    from "../enemy/Tank";
 import { Boss }    from "../enemy/Boss";
 
 export class WeaponSystem {
@@ -39,9 +40,9 @@ export class WeaponSystem {
   // ============================================================
   resolveHits(
     player:   Player,
-    enemies:  (Grunt | Shooter)[],
+    enemies:  (Grunt | Shooter | Tank)[],
     atkBonus: number
-  ): (Grunt | Shooter)[] {
+  ): (Grunt | Shooter | Tank)[] {
     if (!player.isAttacking || !player.equippedWeapon || !player.attackType) {
       return [];
     }
@@ -56,7 +57,7 @@ export class WeaponSystem {
 
     const px  = player.x + player.width  / 2;
     const py  = player.y + player.height / 2;
-    const hit: (Grunt | Shooter)[] = [];
+    const hit: (Grunt | Shooter | Tank)[] = [];
 
     enemies.forEach((enemy) => {
       if (enemy.isDead) return;
@@ -64,6 +65,44 @@ export class WeaponSystem {
       const ey = enemy.y + enemy.height / 2;
       if (weapon.hitTest(px, py, facing, mode, ex, ey, enemy.width, enemy.height)) {
         enemy.takeDamage(damage);
+        hit.push(enemy);
+      }
+    });
+
+    return hit;
+  }
+
+  // ============================================================
+  // [🧱 BLOCK: Resolve Hits Custom]
+  // ============================================================
+  resolveHitsCustom(
+    player:   Player,
+    enemies:  (Grunt | Shooter | Tank)[],
+    atkBonus: number,
+    onHit:    (enemy: Grunt | Shooter | Tank, amount: number) => void
+  ): (Grunt | Shooter | Tank)[] {
+    if (!player.isAttacking || !player.equippedWeapon || !player.attackType) {
+      return [];
+    }
+
+    const weapon  = player.equippedWeapon;
+    const mode    = player.attackType;
+    const atk     = weapon.getAttack(mode);
+    const damage  = atk.damage + atkBonus;
+    const facing  = (mode === 'heavy' && player.lockedFacing)
+      ? player.lockedFacing
+      : player.facing;
+
+    const px  = player.x + player.width  / 2;
+    const py  = player.y + player.height / 2;
+    const hit: (Grunt | Shooter | Tank)[] = [];
+
+    enemies.forEach((enemy) => {
+      if (enemy.isDead) return;
+      const ex = enemy.x + enemy.width  / 2;
+      const ey = enemy.y + enemy.height / 2;
+      if (weapon.hitTest(px, py, facing, mode, ex, ey, enemy.width, enemy.height)) {
+        onHit(enemy, damage);
         hit.push(enemy);
       }
     });

@@ -4,8 +4,8 @@
 import React, { useEffect, useRef } from "react";
 import { GameState } from "@/engine/GameState";
 import { WORLD_W, WORLD_H, BOSS_WORLD_W, BOSS_WORLD_H } from "@/engine/Camera";
-import { Grunt } from "@/engine/enemy/Grunt";
 import { Shooter } from "@/engine/enemy/Shooter";
+import { Tank }    from "@/engine/enemy/Tank";
 import "@/styles/minimap.css";
 
 // ============================================================
@@ -30,6 +30,7 @@ const LEGEND = [
   { color: "#f8fafc", label: "You"     },
   { color: "#a855f7", label: "Grunt"   },
   { color: "#f59e0b", label: "Shooter" },
+  { color: "#475569", label: "Tank"    },
   { color: "#4ade80", label: "Gate"    },
 ];
 
@@ -62,21 +63,21 @@ export default function Minimap({ state, isBoss }: MinimapProps) {
         y: PADDING + wy * scaleY,
       });
 
-      // ── Clear ──────────────────────────────────────────────
+      // ── Clear ─────────────────────────────────────────────
       ctx.clearRect(0, 0, MAP_W, MAP_H);
 
-      // ── Background ─────────────────────────────────────────
+      // ── Background ────────────────────────────────────────
       ctx.fillStyle = "rgba(10, 15, 30, 0.85)";
       ctx.fillRect(0, 0, MAP_W, MAP_H);
 
-      // ── World boundary ─────────────────────────────────────
+      // ── World boundary ────────────────────────────────────
       ctx.strokeStyle = isBoss
         ? "rgba(249, 115, 22, 0.4)"
         : "rgba(239, 68, 68, 0.4)";
       ctx.lineWidth = 1;
       ctx.strokeRect(PADDING, PADDING, MAP_W - PADDING * 2, MAP_H - PADDING * 2);
 
-      // ── Door ───────────────────────────────────────────────
+      // ── Door ──────────────────────────────────────────────
       if (state.door) {
         const dp = toMap(
           state.door.x + state.door.width  / 2,
@@ -84,9 +85,7 @@ export default function Minimap({ state, isBoss }: MinimapProps) {
         );
         ctx.beginPath();
         ctx.arc(dp.x, dp.y, 3, 0, Math.PI * 2);
-        ctx.fillStyle = state.door.isActive
-          ? "#4ade80"
-          : "rgba(100,100,100,0.4)";
+        ctx.fillStyle = state.door.isActive ? "#4ade80" : "rgba(100,100,100,0.4)";
         ctx.fill();
 
         if (state.door.isActive) {
@@ -98,20 +97,28 @@ export default function Minimap({ state, isBoss }: MinimapProps) {
         }
       }
 
-      // ── Enemies ────────────────────────────────────────────
+      // ── Enemies ───────────────────────────────────────────
       state.enemies.forEach((enemy) => {
         if (enemy.isDead) return;
         const ep = toMap(
           enemy.x + enemy.width  / 2,
           enemy.y + enemy.height / 2
         );
+
+        // Tank gets a larger dot to reflect its physical size
+        const radius = enemy instanceof Tank ? 4 : 2;
+        const color  =
+          enemy instanceof Tank    ? "#475569" :
+          enemy instanceof Shooter ? "#f59e0b" :
+                                     "#a855f7";
+
         ctx.beginPath();
-        ctx.arc(ep.x, ep.y, 2, 0, Math.PI * 2);
-        ctx.fillStyle = enemy instanceof Shooter ? "#f59e0b" : "#a855f7";
+        ctx.arc(ep.x, ep.y, radius, 0, Math.PI * 2);
+        ctx.fillStyle = color;
         ctx.fill();
       });
 
-      // ── Boss ───────────────────────────────────────────────
+      // ── Boss ──────────────────────────────────────────────
       if (state.boss && !state.boss.isDead) {
         const bp = toMap(
           state.boss.x + state.boss.width  / 2,
@@ -129,7 +136,7 @@ export default function Minimap({ state, isBoss }: MinimapProps) {
         ctx.textAlign = "left";
       }
 
-      // ── Player ─────────────────────────────────────────────
+      // ── Player ────────────────────────────────────────────
       const pp = toMap(
         state.player.x + state.player.width  / 2,
         state.player.y + state.player.height / 2
@@ -145,7 +152,7 @@ export default function Minimap({ state, isBoss }: MinimapProps) {
       ctx.fillStyle = "#f8fafc";
       ctx.fill();
 
-      // ── Camera viewport ────────────────────────────────────
+      // ── Camera viewport ───────────────────────────────────
       const vp = toMap(state.camera.x, state.camera.y);
       ctx.strokeStyle = "rgba(255,255,255,0.12)";
       ctx.lineWidth   = 1;
