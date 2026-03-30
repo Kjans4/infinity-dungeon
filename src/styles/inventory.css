@@ -1,0 +1,317 @@
+/* ============================================================
+   Inventory — src/styles/inventory.css
+   All styles for the Inventory component (Inventory.tsx)
+   ============================================================ */
+
+/* ── Shared font ── */
+.inv-backdrop,
+.inv-backdrop * {
+  font-family: 'Courier New', monospace;
+}
+
+/* ============================================================
+   [🧱 BLOCK: Backdrop + Panel]
+   ============================================================ */
+.inv-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.85);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+
+.inv-panel {
+  width: min(620px, 95%);
+  max-height: 88vh;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  background: rgba(10, 15, 30, 0.98);
+  border: 2px solid rgba(56, 189, 248, 0.2);
+  border-radius: 12px;
+  padding: 24px;
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5);
+}
+
+/* ============================================================
+   [🧱 BLOCK: Header]
+   ============================================================ */
+.inv-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+}
+
+.inv-header__hint {
+  font-size: 9px;
+  color: #475569;
+  letter-spacing: 0.25em;
+  text-transform: uppercase;
+  margin-bottom: 4px;
+}
+
+.inv-header__title {
+  font-size: 22px;
+  font-weight: 900;
+  color: #f1f5f9;
+}
+
+.inv-header__gold {
+  text-align: right;
+}
+
+.inv-header__gold-label {
+  font-size: 9px;
+  color: #475569;
+  margin-bottom: 2px;
+}
+
+.inv-header__gold-value {
+  font-size: 18px;
+  font-weight: 900;
+  color: #facc15;
+}
+
+/* ============================================================
+   [🧱 BLOCK: Weapon Slot]
+   ============================================================ */
+.inv-weapon-slot {
+  border-radius: 10px;
+  padding: 16px;
+}
+
+.inv-weapon-slot--empty {
+  background: rgba(56, 189, 248, 0.03);
+  border: 1px dashed rgba(56, 189, 248, 0.15);
+}
+
+.inv-weapon-slot--equipped {
+  background: rgba(56, 189, 248, 0.05);
+  border: 1px solid rgba(56, 189, 248, 0.25);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.inv-weapon-slot__label {
+  font-size: 9px;
+  color: #38bdf8;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  margin-bottom: 8px;
+}
+
+.inv-weapon-slot--equipped .inv-weapon-slot__label {
+  margin-bottom: 0;
+}
+
+.inv-weapon-slot__fists {
+  font-size: 11px;
+  color: #334155;
+}
+
+.inv-weapon-slot__header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.inv-weapon-slot__icon {
+  font-size: 32px;
+}
+
+.inv-weapon-slot__info {
+  flex: 1;
+}
+
+.inv-weapon-slot__name {
+  font-size: 14px;
+  font-weight: 700;
+  color: #f1f5f9;
+  margin-bottom: 2px;
+}
+
+.inv-weapon-slot__type {
+  font-size: 9px;
+  color: #38bdf8;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  margin-bottom: 4px;
+}
+
+.inv-weapon-slot__desc {
+  font-size: 10px;
+  color: #94a3b8;
+}
+
+.inv-weapon-slot__tradeoff {
+  font-size: 9px;
+  color: #ef4444;
+  margin-top: 2px;
+}
+
+.inv-weapon-slot__atk-row {
+  display: flex;
+  gap: 8px;
+}
+
+.inv-weapon-slot__atk-card {
+  flex: 1;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 6px;
+  padding: 6px 10px;
+}
+
+.inv-weapon-slot__atk-label {
+  font-size: 8px;
+  color: #475569;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  margin-bottom: 4px;
+}
+
+.inv-weapon-slot__atk-dmg {
+  font-size: 11px;
+  color: #f1f5f9;
+  margin-bottom: 2px;
+}
+
+.inv-weapon-slot__atk-stam {
+  font-size: 9px;
+  color: #64748b;
+}
+
+/* ============================================================
+   [🧱 BLOCK: Charm Row]
+   ============================================================ */
+.inv-charms-section {
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 10px;
+  padding: 16px;
+}
+
+.inv-charms-section__label {
+  font-size: 9px;
+  color: #64748b;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  margin-bottom: 12px;
+}
+
+.inv-charms-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.inv-charm-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: rgba(250, 204, 21, 0.04);
+  border: 1px solid rgba(250, 204, 21, 0.12);
+  border-radius: 8px;
+  padding: 10px 12px;
+}
+
+.inv-charm-row__icon {
+  font-size: 20px;
+}
+
+.inv-charm-row__info {
+  flex: 1;
+}
+
+.inv-charm-row__name {
+  font-size: 11px;
+  font-weight: 700;
+  color: #f1f5f9;
+  margin-bottom: 2px;
+}
+
+.inv-charm-row__desc {
+  font-size: 9px;
+  color: #64748b;
+}
+
+.inv-charm-row__tradeoff {
+  font-size: 9px;
+  color: #ef4444;
+}
+
+.inv-charm-empty {
+  border: 1px dashed rgba(255, 255, 255, 0.05);
+  border-radius: 8px;
+  padding: 10px 12px;
+  color: #1e293b;
+  font-size: 11px;
+}
+
+/* ============================================================
+   [🧱 BLOCK: Confirm Row]
+   Shared layout for sell-confirm button pairs.
+   ============================================================ */
+.inv-confirm-row {
+  display: flex;
+  gap: 8px;
+}
+
+/* ============================================================
+   [🧱 BLOCK: Footer]
+   ============================================================ */
+.inv-footer {
+  margin-top: 10px;
+  text-align: center;
+}
+
+.inv-footer__hint {
+  font-size: 8px;
+  color: #334155;
+  text-align: center;
+  letter-spacing: 0.1em;
+  margin-top: 10px;
+}
+
+/* ============================================================
+   [🧱 BLOCK: Small Button]
+   Uses CSS custom property --btn-color for dynamic non-danger color.
+   ============================================================ */
+.inv-small-btn {
+  font-family: 'Courier New', monospace;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  background: transparent;
+  padding: 4px 10px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.1s;
+}
+
+.inv-small-btn--danger {
+  color: #ef4444;
+  border: 1px solid #ef4444;
+}
+
+.inv-small-btn--danger:hover {
+  color: #0f172a;
+  background: #ef4444;
+}
+
+.inv-small-btn--default {
+  color: var(--btn-color, #64748b);
+  border: 1px solid var(--btn-color, #64748b);
+}
+
+.inv-small-btn--default:hover {
+  color: #0f172a;
+  background: var(--btn-color, #64748b);
+}
