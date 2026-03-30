@@ -11,33 +11,136 @@ import {
   RoomState, initialRoomState, advanceRoom,
   nextFloor, enterBossPhase,
 } from "@/engine/RoomManager";
-import { useGameLoop }        from "@/hooks/useGameLoop";
-import HUD                    from "@/components/HUD";
-import Menu                   from "@/components/Menu";
-import Shop                   from "@/components/Shop";
-import Minimap                from "@/components/Minimap";
-import Inventory              from "@/components/Inventory";
-import GameOverOverlay         from "@/components/overlays/GameOverOverlay";
-import VictoryOverlay         from "@/components/overlays/VictoryOverlay";
-import PauseOverlay           from "@/components/overlays/PauseOverlay";
-import WaveClearAnnouncement  from "@/components/overlays/WaveClearAnnouncement";
+import { useGameLoop }       from "@/hooks/useGameLoop";
+import HUD                   from "@/components/HUD";
+import Menu                  from "@/components/Menu";
+import Shop                  from "@/components/Shop";
+import Minimap               from "@/components/Minimap";
+import Inventory             from "@/components/Inventory";
+import GameOverOverlay        from "@/components/overlays/GameOverOverlay";
+import VictoryOverlay        from "@/components/overlays/VictoryOverlay";
+import PauseOverlay          from "@/components/overlays/PauseOverlay";
+import WaveClearAnnouncement from "@/components/overlays/WaveClearAnnouncement";
+
+// ── Dev panel styles (panel itself only renders in development) ──
+import "@/styles/dev-panel.css";
 
 // ============================================================
 // [🧱 BLOCK: Constants]
 // ============================================================
-const MAX_HP           = 100;
-const MAX_STAMINA      = 100;
-const INVENTORY_HOLD_MS = 500; 
+const MAX_HP            = 100;
+const MAX_STAMINA       = 100;
+const INVENTORY_HOLD_MS = 500;
+const IS_DEV            = process.env.NODE_ENV === "development";
 
 interface HUDState {
   hp: number; stamina: number;
   kills: number; room: number; floor: number;
 }
 
+// ============================================================
+// [🧱 BLOCK: Dev Panel]
+// Only rendered in development. Closed over GameCanvas refs
+// and handlers so no prop drilling is needed.
+// To remove for production: delete this component + the
+// <DevPanel /> JSX below. The IS_DEV guard also prevents
+// it rendering in prod builds automatically.
+// ============================================================
+interface DevPanelProps {
+  isOpen:          boolean;
+  onToggle:        () => void;
+  gameActive:      boolean;  // false = on menu / game over
+  isBossPhase:     boolean;
+  isShopPhase:     boolean;
+  onKillAll:       () => void;
+  onSkipRoom:      () => void;
+  onSkipToShop:    () => void;
+  onSkipToBoss:    () => void;
+  onAddGold:       () => void;
+}
+
+function DevPanel({
+  isOpen, onToggle, gameActive, isBossPhase, isShopPhase,
+  onKillAll, onSkipRoom, onSkipToShop, onSkipToBoss, onAddGold,
+}: DevPanelProps) {
+  return (
+    <>
+      {/* F1 indicator pill — always visible in dev */}
+      <button
+        className={`dev-toggle ${isOpen ? "dev-toggle--active" : ""}`}
+        onClick={onToggle}
+      >
+        F1 DEV
+      </button>
+
+      {isOpen && (
+        <div className="dev-panel">
+          <div className="dev-panel__header">⚙ Dev Tools</div>
+
+          {/* ── Combat ── */}
+          <button
+            className="dev-btn dev-btn--red"
+            onClick={onKillAll}
+            disabled={!gameActive || isBossPhase}
+            title="Instantly kills all enemies and opens the door"
+          >
+            ☠ Kill All Enemies
+          </button>
+
+          <div className="dev-panel__divider" />
+
+          {/* ── Navigation ── */}
+          <button
+            className="dev-btn dev-btn--blue"
+            onClick={onSkipRoom}
+            disabled={!gameActive || isBossPhase || isShopPhase}
+            title="Skip directly to the next room (bypasses door walk)"
+          >
+            ⏭ Skip Room
+          </button>
+
+          <button
+            className="dev-btn dev-btn--blue"
+            onClick={onSkipToShop}
+            disabled={!gameActive || isBossPhase || isShopPhase}
+            title="Jump straight to the shop"
+          >
+            🛒 Skip to Shop
+          </button>
+
+          <button
+            className="dev-btn dev-btn--blue"
+            onClick={onSkipToBoss}
+            disabled={!gameActive || isBossPhase}
+            title="Skip shop and go directly to boss"
+          >
+            💀 Skip to Boss
+          </button>
+
+          <div className="dev-panel__divider" />
+
+          {/* ── Resources ── */}
+          <button
+            className="dev-btn dev-btn--green"
+            onClick={onAddGold}
+            disabled={!gameActive}
+            title="Add 200 gold"
+          >
+            💰 +200 Gold
+          </button>
+        </div>
+      )}
+    </>
+  );
+}
+
+// ============================================================
+// [🧱 BLOCK: GameCanvas]
+// ============================================================
 export default function GameCanvas() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
-  // ── Systems ────────────────────────────────────────────────
+  // ── Systems ───────────────────────────────────────────────
   const stateRef  = useRef<GameState | null>(null);
   const inputRef  = useRef<InputHandler | null>(null);
   const hordeRef  = useRef(new HordeSystem());
@@ -45,13 +148,11 @@ export default function GameCanvas() {
   const renderRef = useRef(new RenderSystem());
   const roomRef   = useRef<RoomState>(initialRoomState());
 
-  // ── Tracking Refs ──────────────────────────────────────────
-  const iHoldTimer   = useRef<ReturnType<typeof setTimeout> | null>(null);
-  
-  // CRITICAL: We use these refs to prevent stale closures in the Event Listener
+  // ── Tracking Refs ─────────────────────────────────────────
+  const iHoldTimer  = useRef<ReturnType<typeof setTimeout> | null>(null);
   const uiActiveRef = useRef({ menu: true, shop: false, gameOver: false, inventory: false });
 
-  // ── React State ────────────────────────────────────────────
+  // ── React State ───────────────────────────────────────────
   const [showMenu,      setShowMenu]      = useState(true);
   const [isGameOver,    setIsGameOver]    = useState(false);
   const [isVictory,     setIsVictory]     = useState(false);
@@ -62,20 +163,21 @@ export default function GameCanvas() {
   const [hud, setHud] = useState<HUDState>({
     hp: MAX_HP, stamina: MAX_STAMINA, kills: 0, room: 1, floor: 1,
   });
-
   const [announcement, setAnnouncement] = useState<{
     show: boolean; message: string; subtext?: string; color?: string;
   }>({ show: false, message: "" });
-
   const announcementRef = useRef(false);
 
-  // Keep the UI tracking ref in sync with state
+  // ── Dev State ─────────────────────────────────────────────
+  const [devPanelOpen, setDevPanelOpen] = useState(false);
+
+  // Keep UI tracking ref in sync with state
   useEffect(() => {
-    uiActiveRef.current = { 
-        menu: showMenu, 
-        shop: showShop, 
-        gameOver: isGameOver, 
-        inventory: showInventory 
+    uiActiveRef.current = {
+      menu:      showMenu,
+      shop:      showShop,
+      gameOver:  isGameOver,
+      inventory: showInventory,
     };
     announcementRef.current = announcement.show;
   }, [showMenu, showShop, isGameOver, showInventory, announcement.show]);
@@ -90,18 +192,23 @@ export default function GameCanvas() {
   // ============================================================
   useEffect(() => {
     const canvas = canvasRef.current!;
-    const w      = window.innerWidth;
-    const h      = window.innerHeight;
-    canvas.width  = w;
-    canvas.height = h;
+    canvas.width  = window.innerWidth;
+    canvas.height = window.innerHeight;
 
     const ctx = canvas.getContext("2d");
     if (ctx) ctx.save();
 
-    stateRef.current = new GameState(w, h);
+    stateRef.current = new GameState(window.innerWidth, window.innerHeight);
     inputRef.current = new InputHandler();
 
     const onKeyDown = (e: KeyboardEvent) => {
+      // F1 — toggle dev panel
+      if (e.code === "F1") {
+        e.preventDefault();
+        if (IS_DEV) setDevPanelOpen((prev) => !prev);
+        return;
+      }
+
       // ESC — toggle pause
       if (e.code === "Escape") {
         setShowInventory(false);
@@ -109,23 +216,18 @@ export default function GameCanvas() {
         return;
       }
 
-      // I — Long Press logic
+      // I — long press to open inventory
       if (e.code === "KeyI" && !e.repeat) {
         const ui = uiActiveRef.current;
-        
-        // Blocking conditions: Don't open if in Menu, Shop, or Game Over
         if (ui.menu || ui.shop || ui.gameOver) return;
-
-        // Clear existing timer just in case
         if (iHoldTimer.current) clearTimeout(iHoldTimer.current);
-
         iHoldTimer.current = setTimeout(() => {
-            setShowInventory((prev) => {
-                const next = !prev;
-                setIsPaused(next); // Pause if opening, unpause if closing
-                return next;
-            });
-            iHoldTimer.current = null;
+          setShowInventory((prev) => {
+            const next = !prev;
+            setIsPaused(next);
+            return next;
+          });
+          iHoldTimer.current = null;
         }, INVENTORY_HOLD_MS);
       }
     };
@@ -204,7 +306,7 @@ export default function GameCanvas() {
   const handleDoorEnter = useCallback(() => {
     const rs = advanceRoom(roomRef.current);
     roomRef.current = rs;
-    if (rs.phase === 'shop') {
+    if (rs.phase === "shop") {
       stateRef.current!.playerStats.generateShopOptions();
       announce("WAVE COMPLETE", "Entering the shop...", "#facc15");
       setTimeout(() => setShowShop(true), 1200);
@@ -240,6 +342,66 @@ export default function GameCanvas() {
   }, []);
 
   // ============================================================
+  // [🧱 BLOCK: Dev Handlers]
+  // All dev actions. Safe to delete along with DevPanel.
+  // ============================================================
+  const handleDevKillAll = useCallback(() => {
+    const state = stateRef.current;
+    if (!state) return;
+    // Wipe all enemies and set kill count to threshold
+    state.enemies = [];
+    state.kills   = hordeRef.current.killThreshold;
+    state.alive   = 0;
+    // Activate the door immediately
+    if (state.door) state.door.activate();
+    announce("DEV: ALL ENEMIES KILLED", "Gate is open", "#f87171");
+  }, [announce]);
+
+  const handleDevSkipRoom = useCallback(() => {
+    handleDoorEnter();
+    announce("DEV: ROOM SKIPPED", undefined, "#38bdf8");
+  }, [handleDoorEnter, announce]);
+
+  const handleDevSkipToShop = useCallback(() => {
+    const state = stateRef.current;
+    if (!state) return;
+    // Force advance to shop phase regardless of current room
+    const rs: RoomState = {
+      floor:       roomRef.current.floor,
+      roomInCycle: 3,
+      roomDisplay: (roomRef.current.floor - 1) * 3 + 3,
+      phase:       "shop",
+    };
+    roomRef.current = rs;
+    state.playerStats.generateShopOptions();
+    setShowShop(true);
+    announce("DEV: SKIPPED TO SHOP", undefined, "#facc15");
+  }, [announce]);
+
+  const handleDevSkipToBoss = useCallback(() => {
+    const state = stateRef.current;
+    if (!state) return;
+    setShowShop(false);
+    const rs: RoomState = {
+      floor:       roomRef.current.floor,
+      roomInCycle: 3,
+      roomDisplay: (roomRef.current.floor - 1) * 3 + 3,
+      phase:       "boss",
+    };
+    roomRef.current = rs;
+    bossRef.current.setup(state, rs);
+    announce("DEV: SKIPPED TO BOSS", undefined, "#f87171");
+  }, [announce]);
+
+  const handleDevAddGold = useCallback(() => {
+    const state = stateRef.current;
+    if (!state) return;
+    state.gold += 200;
+    setGold(state.gold);
+    announce("DEV: +200 GOLD", undefined, "#4ade80");
+  }, [announce]);
+
+  // ============================================================
   // [🧱 BLOCK: Game Loop]
   // ============================================================
   useGameLoop((_dt: number) => {
@@ -253,7 +415,7 @@ export default function GameCanvas() {
     if (showMenu || showShop || isVictory || isGameOver || isPaused || showInventory) return;
 
     const rs     = roomRef.current;
-    const isBoss = rs.phase === 'boss';
+    const isBoss = rs.phase === "boss";
     const worldW = isBoss ? BOSS_WORLD_W : WORLD_W;
     const worldH = isBoss ? BOSS_WORLD_H : WORLD_H;
     const player = state.player;
@@ -273,10 +435,14 @@ export default function GameCanvas() {
       const { event, goldCollected } = hordeRef.current.update(
         state, player, rs, worldW, worldH
       );
-      if (player.hp < prevHp) renderRef.current.shake('light');
+      if (player.hp < prevHp) renderRef.current.shake("light");
       if (goldCollected > 0)  state.gold += goldCollected;
-      if (event === 'door') { handleDoorEnter(); return; }
-      if (state.door?.isActive && state.kills >= hordeRef.current.killThreshold && !announcementRef.current) {
+      if (event === "door") { handleDoorEnter(); return; }
+      if (
+        state.door?.isActive &&
+        state.kills >= hordeRef.current.killThreshold &&
+        !announcementRef.current
+      ) {
         announce("ROOM CLEAR", "Gate is open — head north");
       }
       hordeRef.current.draw(state, ctx, state.camera, player);
@@ -286,12 +452,12 @@ export default function GameCanvas() {
       const prevHp = player.hp;
       const { event, goldCollected } = bossRef.current.update(state, player, worldW, worldH);
       if (player.hp < prevHp) {
-        renderRef.current.shake((prevHp - player.hp) >= 25 ? 'heavy' : 'medium');
+        renderRef.current.shake((prevHp - player.hp) >= 25 ? "heavy" : "medium");
       }
       if (goldCollected > 0) state.gold += goldCollected;
-      if (event === 'victory') {
+      if (event === "victory") {
         announce("BOSS SLAIN", "Victory — floor cleared!", "#4ade80");
-        roomRef.current = { ...rs, phase: 'victory' };
+        roomRef.current = { ...rs, phase: "victory" };
         setTimeout(() => setIsVictory(true), 2000);
         return;
       }
@@ -301,15 +467,22 @@ export default function GameCanvas() {
     player.draw(ctx, state.camera);
   });
 
+  // ============================================================
+  // [🧱 BLOCK: Derived State for DevPanel]
+  // ============================================================
+  const gameActive  = !showMenu && !isGameOver && !isVictory;
+  const isBossPhase = roomRef.current.phase === "boss";
+  const isShopPhase = roomRef.current.phase === "shop";
+
   const state = stateRef.current;
 
   return (
-    <div style={{ width:"100vw", height:"100vh", overflow:"hidden", background:"#0f172a" }}>
-      <canvas ref={canvasRef} style={{ display:"block" }} />
+    <div style={{ width: "100vw", height: "100vh", overflow: "hidden", background: "#0f172a" }}>
+      <canvas ref={canvasRef} style={{ display: "block" }} />
 
       {!showMenu && (
         <HUD
-          hp={hud.hp}            maxHp={MAX_HP}
+          hp={hud.hp}           maxHp={MAX_HP}
           stamina={hud.stamina} maxStamina={MAX_STAMINA}
           kills={hud.kills}     killThreshold={hordeRef.current.killThreshold}
           room={hud.room}       floor={hud.floor}
@@ -318,7 +491,7 @@ export default function GameCanvas() {
       )}
 
       {!showMenu && !isGameOver && (
-        <Minimap state={stateRef.current} isBoss={roomRef.current.phase === 'boss'} />
+        <Minimap state={stateRef.current} isBoss={roomRef.current.phase === "boss"} />
       )}
 
       {showShop && state && (
@@ -336,9 +509,13 @@ export default function GameCanvas() {
         />
       )}
 
-      {isVictory && <VictoryOverlay floor={hud.floor} onContinue={handleVictoryContinue} />}
-      {isGameOver && !showMenu && <GameOverOverlay floor={hud.floor} room={hud.room} onRetry={handleRestart} />}
-      
+      {isVictory && (
+        <VictoryOverlay floor={hud.floor} onContinue={handleVictoryContinue} />
+      )}
+      {isGameOver && !showMenu && (
+        <GameOverOverlay floor={hud.floor} room={hud.room} onRetry={handleRestart} />
+      )}
+
       {isPaused && !showMenu && !isGameOver && !showInventory && (
         <PauseOverlay
           floor={hud.floor} room={hud.room}
@@ -353,6 +530,22 @@ export default function GameCanvas() {
         show={announcement.show} message={announcement.message}
         subtext={announcement.subtext} color={announcement.color}
       />
+
+      {/* ── Dev Panel — only in development ── */}
+      {IS_DEV && (
+        <DevPanel
+          isOpen={devPanelOpen}
+          onToggle={() => setDevPanelOpen((p) => !p)}
+          gameActive={gameActive}
+          isBossPhase={isBossPhase}
+          isShopPhase={isShopPhase}
+          onKillAll={handleDevKillAll}
+          onSkipRoom={handleDevSkipRoom}
+          onSkipToShop={handleDevSkipToShop}
+          onSkipToBoss={handleDevSkipToBoss}
+          onAddGold={handleDevAddGold}
+        />
+      )}
     </div>
   );
 }

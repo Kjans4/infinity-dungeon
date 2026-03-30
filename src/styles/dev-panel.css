@@ -1,0 +1,147 @@
+/* ============================================================
+   DevPanel — src/styles/dev-panel.css
+   Floating developer cheat panel (DEV only, F1 to toggle)
+   ============================================================ */
+
+/* ── Shared font ── */
+.dev-panel,
+.dev-panel * {
+  font-family: 'Courier New', monospace;
+}
+
+/* ============================================================
+   [🧱 BLOCK: Toggle Button]
+   Always-visible F1 pill in top-left corner.
+   ============================================================ */
+.dev-toggle {
+  position: fixed;
+  top: 12px;
+  left: 12px;
+  z-index: 9999;
+  font-family: 'Courier New', monospace;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: rgba(250, 204, 21, 0.5);
+  background: rgba(0, 0, 0, 0.4);
+  border: 1px solid rgba(250, 204, 21, 0.2);
+  border-radius: 4px;
+  padding: 3px 8px;
+  cursor: pointer;
+  transition: all 0.1s ease;
+}
+
+.dev-toggle:hover {
+  color: #facc15;
+  border-color: rgba(250, 204, 21, 0.6);
+  background: rgba(0, 0, 0, 0.7);
+}
+
+.dev-toggle--active {
+  color: #facc15;
+  border-color: rgba(250, 204, 21, 0.6);
+  background: rgba(0, 0, 0, 0.7);
+}
+
+/* ============================================================
+   [🧱 BLOCK: Panel]
+   ============================================================ */
+.dev-panel {
+  position: fixed;
+  top: 36px;
+  left: 12px;
+  z-index: 9998;
+  width: 200px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  background: rgba(5, 8, 18, 0.92);
+  border: 1px solid rgba(250, 204, 21, 0.25);
+  border-radius: 8px;
+  padding: 12px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
+/* ============================================================
+   [🧱 BLOCK: Panel Header]
+   ============================================================ */
+.dev-panel__header {
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: 0.25em;
+  text-transform: uppercase;
+  color: rgba(250, 204, 21, 0.5);
+  margin-bottom: 4px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+/* ============================================================
+   [🧱 BLOCK: Divider]
+   Thin rule between button groups.
+   ============================================================ */
+.dev-panel__divider {
+  height: 1px;
+  background: rgba(255, 255, 255, 0.05);
+  margin: 2px 0;
+}
+
+/* ============================================================
+   [🧱 BLOCK: Buttons]
+   ============================================================ */
+.dev-btn {
+  width: 100%;
+  font-family: 'Courier New', monospace;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  text-align: left;
+  padding: 6px 10px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.1s ease;
+  background: transparent;
+}
+
+/* Red — dangerous / skip actions */
+.dev-btn--red {
+  color: #f87171;
+  border: 1px solid rgba(248, 113, 113, 0.3);
+}
+.dev-btn--red:hover {
+  background: rgba(248, 113, 113, 0.12);
+  border-color: rgba(248, 113, 113, 0.6);
+  color: #fca5a5;
+}
+
+/* Blue — navigation actions */
+.dev-btn--blue {
+  color: #38bdf8;
+  border: 1px solid rgba(56, 189, 248, 0.3);
+}
+.dev-btn--blue:hover {
+  background: rgba(56, 189, 248, 0.1);
+  border-color: rgba(56, 189, 248, 0.6);
+  color: #7dd3fc;
+}
+
+/* Green — resource actions */
+.dev-btn--green {
+  color: #4ade80;
+  border: 1px solid rgba(74, 222, 128, 0.3);
+}
+.dev-btn--green:hover {
+  background: rgba(74, 222, 128, 0.1);
+  border-color: rgba(74, 222, 128, 0.6);
+  color: #86efac;
+}
+
+/* Disabled state */
+.dev-btn:disabled {
+  opacity: 0.25;
+  cursor: not-allowed;
+}
