@@ -1,0 +1,88 @@
+/* ============================================================
+   Minimap — src/styles/minimap.css
+   All styles for the Minimap component (Minimap.tsx)
+   ============================================================ */
+
+/* ── Shared font ── */
+.minimap-root,
+.minimap-root * {
+  font-family: 'Courier New', monospace;
+}
+
+/* ============================================================
+   [🧱 BLOCK: Root]
+   Fixed to top-right corner, non-interactive.
+   ============================================================ */
+.minimap-root {
+  position: fixed;
+  top: 16px;
+  right: 16px;
+  z-index: 20;
+  pointer-events: none;
+}
+
+/* ============================================================
+   [🧱 BLOCK: Glass Frame]
+   Frosted glass card wrapping label + canvas + legend.
+   ============================================================ */
+.minimap-frame {
+  background: rgba(10, 15, 30, 0.6);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 8px;
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+/* ============================================================
+   [🧱 BLOCK: Label]
+   ============================================================ */
+.minimap-label {
+  font-size: 7px;
+  color: rgba(100, 116, 139, 0.7);
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  text-align: center;
+  margin: 0;
+  padding-top: 2px;
+}
+
+/* ============================================================
+   [🧱 BLOCK: Canvas]
+   ============================================================ */
+.minimap-canvas {
+  display: block;
+  border-radius: 4px;
+}
+
+/* ============================================================
+   [🧱 BLOCK: Legend]
+   ============================================================ */
+.minimap-legend {
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+  padding-bottom: 2px;
+}
+
+.minimap-legend__item {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.minimap-legend__dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  /* background set inline — each dot has a unique color */
+}
+
+.minimap-legend__label {
+  font-size: 6px;
+  color: rgba(100, 116, 139, 0.7);
+  letter-spacing: 0.05em;
+}
