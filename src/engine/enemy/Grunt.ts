@@ -3,13 +3,14 @@ import { Player } from "../Player";
 import { Camera } from "../Camera";
 import { BaseEnemy } from "./BaseEnemy";
 import { AttackState } from "./types";
+import { getEnemySpeedScale, getEnemyHpScale } from "../RoomManager";
 
 // ============================================================
 // [🧱 BLOCK: Grunt Stats]
 // ============================================================
 const GRUNT_STATS = {
   speed:         1.4,
-  hp:            65,   // ↑ was 30 — takes ~4 light fist hits on floor 1
+  hp:            65,
   size:          28,
   color:         '#a855f7',
   xpValue:       1,
@@ -19,27 +20,43 @@ const GRUNT_STATS = {
   meleeCooldown: 1500,
 };
 
+// Dash lunge constants (Floor 3+)
+const DASH_SPEED    = 10;   // px per frame during dash
+const DASH_DURATION = 200;  // ms
+const DASH_RANGE    = 300;  // px — only dash if player is within this range
+
+type GruntState = AttackState | 'dash';
+
 // ============================================================
 // [🧱 BLOCK: Grunt Class]
+// Floor 1-2: chase → windup → strike → cooldown
+// Floor 3+:  chase → dash → windup → strike → cooldown
+//            Grunt dashes toward player before winding up,
+//            making it harder to maintain safe distance.
 // ============================================================
 export class Grunt extends BaseEnemy {
-  attackState:    AttackState = 'chase';
-  attackTimer:    number      = 0;
-  attackCooldown: number      = 0;
+  attackState:    GruntState = 'chase';
+  attackTimer:    number     = 0;
+  attackCooldown: number     = 0;
   strikeDir: { x: number; y: number } = { x: 0, y: 1 };
   pendingProjectile: null = null;
 
+  // ── Floor stored for behavioral branching ────────────────
+  private floor: number;
+
+  // ── Dash trail for visual feedback ───────────────────────
+  private dashTrail: { x: number; y: number; alpha: number }[] = [];
+
   constructor(x: number, y: number, floor: number = 1) {
-    const speedScale = 1 + (floor - 1) * 0.15;
-    const hpScale    = 1 + (floor - 1) * 0.20;
     super(
       x, y,
       GRUNT_STATS.size,
-      GRUNT_STATS.speed * speedScale,
-      Math.round(GRUNT_STATS.hp * hpScale),
+      GRUNT_STATS.speed * getEnemySpeedScale(floor),
+      Math.round(GRUNT_STATS.hp * getEnemyHpScale(floor)),
       GRUNT_STATS.xpValue,
       GRUNT_STATS.color,
     );
+    this.floor = floor;
   }
 
   // ============================================================
@@ -60,19 +77,63 @@ export class Grunt extends BaseEnemy {
     const dy   = pcy - ecy;
     const dist = Math.sqrt(dx * dx + dy * dy) || 1;
 
+    // Fade out dash trail every frame
+    this.dashTrail = this.dashTrail
+      .map((p) => ({ ...p, alpha: p.alpha - 0.08 }))
+      .filter((p) => p.alpha > 0);
+
     switch (this.attackState) {
+
+      // ── Chase ───────────────────────────────────────────
       case 'chase':
         this.vx = (dx / dist) * this.speed;
         this.vy = (dy / dist) * this.speed;
         this.x += this.vx;
         this.y += this.vy;
+
         if (dist <= GRUNT_STATS.meleeRange && this.attackCooldown <= 0) {
+          // Floor 3+: dash first if player is far enough to make it worthwhile
+          if (this.floor >= 3 && dist > GRUNT_STATS.meleeRange + 20 && dist <= DASH_RANGE) {
+            this.attackState = 'dash';
+            this.attackTimer = DASH_DURATION;
+            this.strikeDir   = { x: dx / dist, y: dy / dist };
+          } else {
+            this.attackState = 'windup';
+            this.attackTimer = GRUNT_STATS.meleeWindup;
+            this.vx = 0; this.vy = 0;
+          }
+        }
+        break;
+
+      // ── Dash (Floor 3+ only) ────────────────────────────
+      case 'dash': {
+        // Lock dash direction at start, lunge fast toward player
+        this.x += this.strikeDir.x * DASH_SPEED;
+        this.y += this.strikeDir.y * DASH_SPEED;
+        this.clampToWorld(worldW, worldH);
+
+        // Leave a trail
+        this.dashTrail.push({
+          x: this.x + this.width  / 2,
+          y: this.y + this.height / 2,
+          alpha: 0.6,
+        });
+
+        const distNow = Math.sqrt(
+          (pcx - (this.x + this.width  / 2)) ** 2 +
+          (pcy - (this.y + this.height / 2)) ** 2
+        );
+
+        // Enter windup when close or timer expires
+        if (this.attackTimer <= 0 || distNow <= GRUNT_STATS.meleeRange) {
           this.attackState = 'windup';
           this.attackTimer = GRUNT_STATS.meleeWindup;
           this.vx = 0; this.vy = 0;
         }
         break;
+      }
 
+      // ── Windup ──────────────────────────────────────────
       case 'windup':
         this.vx = 0; this.vy = 0;
         if (this.attackTimer <= 100) {
@@ -84,6 +145,7 @@ export class Grunt extends BaseEnemy {
         }
         break;
 
+      // ── Strike ──────────────────────────────────────────
       case 'strike':
         this.x += this.strikeDir.x * 2;
         this.y += this.strikeDir.y * 2;
@@ -94,6 +156,7 @@ export class Grunt extends BaseEnemy {
         }
         break;
 
+      // ── Cooldown ────────────────────────────────────────
       case 'cooldown':
         this.vx = (dx / dist) * this.speed;
         this.vy = (dy / dist) * this.speed;
@@ -113,11 +176,11 @@ export class Grunt extends BaseEnemy {
   // ============================================================
   isMeleeHittingPlayer(player: Player): boolean {
     if (this.attackState !== 'strike') return false;
-    const ecx     = this.x + this.width  / 2;
-    const ecy     = this.y + this.height / 2;
-    const hitX    = ecx + this.strikeDir.x * 45;
-    const hitY    = ecy + this.strikeDir.y * 45;
-    const hitSize = 28;
+    const ecx      = this.x + this.width  / 2;
+    const ecy      = this.y + this.height / 2;
+    const hitX     = ecx + this.strikeDir.x * 45;
+    const hitY     = ecy + this.strikeDir.y * 45;
+    const hitSize  = 28;
     const nearestX = Math.max(player.x, Math.min(hitX, player.x + player.width));
     const nearestY = Math.max(player.y, Math.min(hitY, player.y + player.height));
     const distSq   = (hitX - nearestX) ** 2 + (hitY - nearestY) ** 2;
@@ -138,6 +201,26 @@ export class Grunt extends BaseEnemy {
     const cx = sx + this.width  / 2;
     const cy = sy + this.height / 2;
 
+    // ── Dash trail (Floor 3+) ────────────────────────────
+    this.dashTrail.forEach((p) => {
+      const tx = camera.toScreenX(p.x - this.width  / 2);
+      const ty = camera.toScreenY(p.y - this.height / 2);
+      ctx.globalAlpha = p.alpha;
+      ctx.fillStyle   = '#a855f7';
+      ctx.fillRect(tx, ty, this.width * 0.7, this.height * 0.7);
+    });
+    ctx.globalAlpha = 1;
+
+    // ── Dash indicator ring ──────────────────────────────
+    if (this.attackState === 'dash') {
+      ctx.beginPath();
+      ctx.arc(cx, cy, 20, 0, Math.PI * 2);
+      ctx.strokeStyle = 'rgba(168, 85, 247, 0.8)';
+      ctx.lineWidth   = 2;
+      ctx.stroke();
+    }
+
+    // ── Windup indicator ────────────────────────────────
     if (this.attackState === 'windup') {
       const progress = 1 - Math.max(0, this.attackTimer) / GRUNT_STATS.meleeWindup;
       const r        = 36 * (1 - progress * 0.5);
@@ -148,6 +231,7 @@ export class Grunt extends BaseEnemy {
       ctx.stroke();
     }
 
+    // ── Strike hitbox ────────────────────────────────────
     if (this.attackState === 'strike') {
       const hitX = cx + this.strikeDir.x * 45;
       const hitY = cy + this.strikeDir.y * 45;
@@ -158,6 +242,7 @@ export class Grunt extends BaseEnemy {
     }
 
     const bodyColor =
+      this.attackState === 'dash'   ? '#c084fc' :
       this.attackState === 'windup' ? '#fb923c' :
       this.attackState === 'strike' ? '#f97316' :
       this.color;

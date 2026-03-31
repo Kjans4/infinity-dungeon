@@ -4,13 +4,14 @@ import { Camera } from "../Camera";
 import { BaseEnemy } from "./BaseEnemy";
 import { Projectile } from "./Projectile";
 import { AttackState } from "./types";
+import { getEnemySpeedScale, getEnemyHpScale } from "../RoomManager";
 
 // ============================================================
 // [🧱 BLOCK: Shooter Stats]
 // ============================================================
 const SHOOTER_STATS = {
   speed:          1.1,
-  hp:             45,   // ↑ was 20 — takes ~4 light fist hits on floor 1
+  hp:             45,
   size:           24,
   color:          '#f59e0b',
   xpValue:        2,
@@ -25,28 +26,79 @@ const SHOOTER_STATS = {
   meleeCooldown:  1200,
 };
 
+// Spread shot constants (Floor 2+)
+// Three projectiles fired at -15°, 0°, +15° from aim direction
+const SPREAD_ANGLES = [-Math.PI / 12, 0, Math.PI / 12]; // ±15°
+
 // ============================================================
 // [🧱 BLOCK: Shooter Class]
+// Floor 1:  1 projectile, cooldown 2000ms
+// Floor 2-3: 3 projectiles (spread), cooldown 2000ms
+// Floor 4+: 3 projectiles (spread), cooldown 1400ms
 // ============================================================
 export class Shooter extends BaseEnemy {
-  attackState:       AttackState              = 'chase';
-  attackTimer:       number                   = 0;
-  attackCooldown:    number                   = 0;
-  currentMode:       'melee' | 'ranged'       = 'ranged';
-  strikeDir:         { x: number; y: number } = { x: 0, y: 1 };
-  pendingProjectile: Projectile | null        = null;
+  attackState:        AttackState              = 'chase';
+  attackTimer:        number                   = 0;
+  attackCooldown:     number                   = 0;
+  currentMode:        'melee' | 'ranged'       = 'ranged';
+  strikeDir:          { x: number; y: number } = { x: 0, y: 1 };
+
+  // Changed from single to array — HordeSystem drains this each frame
+  pendingProjectiles: Projectile[]             = [];
+
+  // Keep singular alias so HordeSystem legacy code still compiles
+  // (HordeSystem will be updated to use the array)
+  get pendingProjectile(): Projectile | null {
+    return this.pendingProjectiles[0] ?? null;
+  }
+
+  private floor: number;
 
   constructor(x: number, y: number, floor: number = 1) {
-    const speedScale = 1 + (floor - 1) * 0.15;
-    const hpScale    = 1 + (floor - 1) * 0.20;
     super(
       x, y,
       SHOOTER_STATS.size,
-      SHOOTER_STATS.speed * speedScale,
-      Math.round(SHOOTER_STATS.hp * hpScale),
+      SHOOTER_STATS.speed * getEnemySpeedScale(floor),
+      Math.round(SHOOTER_STATS.hp * getEnemyHpScale(floor)),
       SHOOTER_STATS.xpValue,
       SHOOTER_STATS.color,
     );
+    this.floor = floor;
+  }
+
+  // ============================================================
+  // [🧱 BLOCK: Fire Projectiles]
+  // Floor 1: single shot
+  // Floor 2+: 3-way spread at ±15°
+  // ============================================================
+  private fireProjectiles(ecx: number, ecy: number, pcx: number, pcy: number) {
+    const baseAngle = Math.atan2(pcy - ecy, pcx - ecx);
+
+    if (this.floor < 2) {
+      // Single shot
+      this.pendingProjectiles.push(
+        new Projectile(ecx, ecy, pcx, pcy, SHOOTER_STATS.rangedDamage)
+      );
+    } else {
+      // 3-way spread
+      SPREAD_ANGLES.forEach((offset) => {
+        const angle = baseAngle + offset;
+        const tx    = ecx + Math.cos(angle) * 200;
+        const ty    = ecy + Math.sin(angle) * 200;
+        this.pendingProjectiles.push(
+          new Projectile(ecx, ecy, tx, ty, SHOOTER_STATS.rangedDamage)
+        );
+      });
+    }
+  }
+
+  // ============================================================
+  // [🧱 BLOCK: Ranged Cooldown — floor-scaled]
+  // ============================================================
+  private get rangedCooldown(): number {
+    return this.floor >= 4
+      ? 1400   // ↓ was 2000 — faster fire rate on Floor 4+
+      : SHOOTER_STATS.rangedCooldown;
   }
 
   // ============================================================
@@ -97,10 +149,7 @@ export class Shooter extends BaseEnemy {
           this.attackState = 'strike';
           this.attackTimer = 150;
           if (this.currentMode === 'ranged') {
-            this.pendingProjectile = new Projectile(
-              ecx, ecy, pcx, pcy,
-              SHOOTER_STATS.rangedDamage
-            );
+            this.fireProjectiles(ecx, ecy, pcx, pcy);
           }
         }
         break;
@@ -112,7 +161,7 @@ export class Shooter extends BaseEnemy {
         }
         if (this.attackTimer <= 0) {
           const cd = this.currentMode === 'ranged'
-            ? SHOOTER_STATS.rangedCooldown
+            ? this.rangedCooldown
             : SHOOTER_STATS.meleeCooldown;
           this.attackState    = 'cooldown';
           this.attackTimer    = cd;
@@ -175,6 +224,15 @@ export class Shooter extends BaseEnemy {
     const cx = sx + this.width  / 2;
     const cy = sy + this.height / 2;
 
+    // ── Floor badge (F2+: show spread count) ──────────────
+    if (this.floor >= 2 && this.attackState === 'windup' && this.currentMode === 'ranged') {
+      ctx.fillStyle = "rgba(250,204,21,0.9)";
+      ctx.font      = "bold 8px 'Courier New'";
+      ctx.textAlign = "center";
+      ctx.fillText("×3", cx, sy - 10);
+      ctx.textAlign = "left";
+    }
+
     if (this.attackState === 'windup') {
       const windupTime = this.currentMode === 'ranged'
         ? SHOOTER_STATS.rangedWindup
@@ -191,14 +249,21 @@ export class Shooter extends BaseEnemy {
       ctx.stroke();
 
       if (this.currentMode === 'ranged') {
-        ctx.strokeStyle = `rgba(250, 204, 21, 0.35)`;
-        ctx.lineWidth   = 1;
-        ctx.setLineDash([4, 4]);
-        ctx.beginPath();
-        ctx.moveTo(cx, cy);
-        ctx.lineTo(cx + this.strikeDir.x * 180, cy + this.strikeDir.y * 180);
-        ctx.stroke();
-        ctx.setLineDash([]);
+        // Draw spread aim lines for Floor 2+
+        const angles = this.floor >= 2 ? SPREAD_ANGLES : [0];
+        const baseAngle = Math.atan2(this.strikeDir.y, this.strikeDir.x);
+
+        angles.forEach((offset) => {
+          const a = baseAngle + offset;
+          ctx.strokeStyle = `rgba(250, 204, 21, ${offset === 0 ? 0.35 : 0.18})`;
+          ctx.lineWidth   = 1;
+          ctx.setLineDash([4, 4]);
+          ctx.beginPath();
+          ctx.moveTo(cx, cy);
+          ctx.lineTo(cx + Math.cos(a) * 180, cy + Math.sin(a) * 180);
+          ctx.stroke();
+          ctx.setLineDash([]);
+        });
       }
     }
 

@@ -14,15 +14,22 @@ export interface RoomState {
 
 // ============================================================
 // [🧱 BLOCK: Scaling Helpers]
+// Using Floor 1 as the base for all multiplication.
+//
+// HP:    doubles each floor  → F1=1×  F2=2×  F3=3×  F4=4×
+// Speed: grows gently        → F1=1×  F2=1.25×  F3=1.5×  F4=1.75×
+//
+// Speed is kept gentler than HP so enemies don't become
+// impossible to kite at high floors while still feeling faster.
 // ============================================================
 export function getEnemySpeedScale(floor: number): number {
-  return 1 + (floor - 1) * 0.15;
+  return 1 + (floor - 1) * 0.25;   // ↑ was 0.15
 }
 export function getEnemyHpScale(floor: number): number {
-  return 1 + (floor - 1) * 0.20;
+  return 1 + (floor - 1) * 1.0;    // ↑ was 0.20 — doubles per floor
 }
 export function getBossHpScale(floor: number): number {
-  return 1 + (floor - 1) * 0.30;
+  return 1 + (floor - 1) * 0.50;   // ↑ was 0.30 — boss also hits harder
 }
 
 // ============================================================
@@ -62,7 +69,6 @@ export function advanceRoom(current: RoomState): RoomState {
   }
 
   if (roomInCycle === 2) {
-    // Go to shop placeholder before boss
     return {
       floor,
       roomInCycle: 3,
@@ -71,13 +77,11 @@ export function advanceRoom(current: RoomState): RoomState {
     };
   }
 
-  // roomInCycle 3 = boss just beaten, handled by GameCanvas
   return current;
 }
 
 // ============================================================
 // [🧱 BLOCK: Next Floor]
-// Called after victory screen is dismissed.
 // ============================================================
 export function nextFloor(current: RoomState): RoomState {
   const floor = current.floor + 1;
@@ -91,11 +95,7 @@ export function nextFloor(current: RoomState): RoomState {
 
 // ============================================================
 // [🧱 BLOCK: Enter Boss Phase]
-// Called by GameCanvas after shop is dismissed.
 // ============================================================
 export function enterBossPhase(current: RoomState): RoomState {
-  return {
-    ...current,
-    phase: 'boss',
-  };
+  return { ...current, phase: 'boss' };
 }

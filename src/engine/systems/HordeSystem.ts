@@ -20,17 +20,13 @@ export class HordeSystem {
 
   // ============================================================
   // [🧱 BLOCK: Setup]
-  // NOTE: player.hp is intentionally NOT reset here.
-  // HP is a persistent resource across rooms — the only place
-  // it can be restored is the shop (paid healing) before the
-  // boss room. Full HP is only restored on a full game reset.
+  // HP not reset — carries over from previous room.
   // ============================================================
   setup(state: GameState, rs: RoomState, worldW: number, worldH: number) {
     state.player.x  = worldW / 2;
     state.player.y  = worldH - 100;
     state.player.vx = 0;
     state.player.vy = 0;
-    // ── state.player.hp = state.player.maxHp  ← REMOVED intentionally ──
 
     state.kills       = 0;
     state.alive       = INITIAL_WAVE;
@@ -89,13 +85,14 @@ export class HordeSystem {
       }
     }
 
-    // ── Enemy update + melee hits ──────────────────────────
+    // ── Enemy update + projectile collection + melee hits ──
     state.enemies.forEach((enemy) => {
       enemy.update(player, worldW, worldH);
 
-      if (enemy instanceof Shooter && enemy.pendingProjectile) {
-        state.projectiles.push(enemy.pendingProjectile);
-        enemy.pendingProjectile = null;
+      // Drain pending projectiles — Shooter now fires arrays (spread shots)
+      if (enemy instanceof Shooter && enemy.pendingProjectiles.length > 0) {
+        state.projectiles.push(...enemy.pendingProjectiles);
+        enemy.pendingProjectiles = [];
       }
 
       if (enemy.isMeleeHittingPlayer(player) && player.iFrames <= 0) {

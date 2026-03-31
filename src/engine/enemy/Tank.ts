@@ -7,59 +7,68 @@ import { getEnemySpeedScale, getEnemyHpScale } from "../RoomManager";
 // ============================================================
 // [🧱 BLOCK: Constants]
 // ============================================================
-const BASE_HP       = 120;
-const BASE_SPEED    = 0.75;
-const SIZE          = 48;
-const MELEE_RANGE   = 64;
-const WINDUP_MS     = 1000;
-const STRIKE_MS     = 150;
-const COOLDOWN_MS   = 2500;
-const BASE_DAMAGE   = 30;
+const BASE_HP         = 120;
+const BASE_SPEED      = 0.75;
+const SIZE            = 48;
+const MELEE_RANGE     = 64;
+const STRIKE_MS       = 150;
+const COOLDOWN_MS     = 2500;
+const BASE_DAMAGE     = 30;
 const KNOCKBACK_FORCE = 8;
-const XP_VALUE      = 25; // Value provided to BaseEnemy
+const XP_VALUE        = 25;
 
-// Shield only active above this HP fraction
+// Windup durations per floor tier:
+//   Floor 1-2: 1000ms (full warning)
+//   Floor 3:    600ms (reduced warning)
+//   Floor 4+:     0ms (no windup — instant strike)
+const WINDUP_F1 = 1000;
+const WINDUP_F3 =  600;
+
 const SHIELD_HP_THRESHOLD = 0.5;
-// Front-facing damage reduction when shielded
 const SHIELD_REDUCTION    = 0.70;
-// Heavy attack ignores this fraction of the shield
 const HEAVY_SHIELD_PIERCE = 0.40;
 
-// Colors
-const COLOR_SHIELDED  = "#475569"; // Slate — shielded phase
-const COLOR_BROKEN    = "#dc2626"; // Red   — shield broken
-const COLOR_WINDUP    = "#f97316"; // Orange ring during windup
-const SHIELD_COLOR    = "rgba(148,163,184,0.55)";
-const SHIELD_GLOW     = "rgba(148,163,184,0.2)";
+const COLOR_SHIELDED = "#475569";
+const COLOR_BROKEN   = "#dc2626";
+const COLOR_WINDUP   = "#f97316";
+const SHIELD_COLOR   = "rgba(148,163,184,0.55)";
+const SHIELD_GLOW    = "rgba(148,163,184,0.2)";
 
 type TankState = "chase" | "windup" | "strike" | "cooldown";
 
 // ============================================================
 // [🧱 BLOCK: Tank Class]
+// Floor 1-2: chase → windup (1000ms) → strike → cooldown
+// Floor 3:   chase → windup (600ms)  → strike → cooldown
+// Floor 4+:  chase → strike (no windup — telegraphs nothing)
 // ============================================================
 export class Tank extends BaseEnemy {
-  // ── State machine ────────────────────────────────────────
-  private state:     TankState = "chase";
-  private stateTimer = 0;
-
-  // ── Facing (for shield direction) ────────────────────────
-  private facingX = 0;
-  private facingY = 1;
+  private tankState:  TankState = "chase";
+  private stateTimer: number    = 0;
+  private facingX:    number    = 0;
+  private facingY:    number    = 1;
+  private floor:      number;
 
   constructor(x: number, y: number, floor = 1) {
-    const hpScale = getEnemyHpScale(floor);
-    const speedScale = getEnemySpeedScale(floor);
-    
-    // Fixed: Super now receives all 7 arguments required by BaseEnemy
     super(
-      x, 
-      y, 
-      SIZE, 
-      BASE_SPEED * speedScale, 
-      Math.round(BASE_HP * hpScale), 
-      XP_VALUE, 
+      x, y,
+      SIZE,
+      BASE_SPEED * getEnemySpeedScale(floor),
+      Math.round(BASE_HP * getEnemyHpScale(floor)),
+      XP_VALUE,
       COLOR_SHIELDED
     );
+    this.floor = floor;
+  }
+
+  // ============================================================
+  // [🧱 BLOCK: Windup Duration]
+  // Returns 0 on Floor 4+ so the windup state is skipped.
+  // ============================================================
+  private get windupMs(): number {
+    if (this.floor >= 4) return 0;
+    if (this.floor >= 3) return WINDUP_F3;
+    return WINDUP_F1;
   }
 
   // ============================================================
@@ -69,76 +78,53 @@ export class Tank extends BaseEnemy {
     return this.hp / this.maxHp > SHIELD_HP_THRESHOLD;
   }
 
-  /**
-   * Returns true if the attack is hitting the shielded front arc.
-   * "Front" = within 90° of the Tank's facing direction toward player.
-   */
   private isFrontHit(fromX: number, fromY: number): boolean {
-    const dx = fromX - (this.x + SIZE / 2);
-    const dy = fromY - (this.y + SIZE / 2);
+    const dx  = fromX - (this.x + SIZE / 2);
+    const dy  = fromY - (this.y + SIZE / 2);
     const len = Math.sqrt(dx * dx + dy * dy) || 1;
     const dot = (dx / len) * this.facingX + (dy / len) * this.facingY;
-    // dot > cos(90°/2) = cos(45°) ≈ 0.707
     return dot > 0.5;
   }
 
   // ============================================================
   // [🧱 BLOCK: takeDamage Override]
-  // Applies shield reduction when shielded + front hit.
   // ============================================================
   takeDamage(amount: number, isHeavy = false): void {
     if (this.isDead) return;
-
-    let finalAmount = amount;
-
+    let final = amount;
     if (this.isShielded) {
       const reduction = isHeavy
         ? SHIELD_REDUCTION * (1 - HEAVY_SHIELD_PIERCE)
         : SHIELD_REDUCTION;
-      finalAmount = Math.round(amount * (1 - reduction));
+      final = Math.round(amount * (1 - reduction));
     }
-
-    super.takeDamage(finalAmount);
-
-    // Update color when shield breaks
-    if (!this.isShielded) {
-      this.color = COLOR_BROKEN;
-    }
+    super.takeDamage(final);
+    if (!this.isShielded) this.color = COLOR_BROKEN;
   }
 
-  /**
-   * Extended takeDamage that accepts player position for front-arc check.
-   */
   takeDamageFrom(
-    amount:   number,
-    playerX:  number,
-    playerY:  number,
+    amount: number,
+    playerX: number,
+    playerY: number,
     isHeavy = false
   ): void {
     if (this.isDead) return;
-
-    let finalAmount = amount;
-
+    let final = amount;
     if (this.isShielded && this.isFrontHit(playerX, playerY)) {
       const reduction = isHeavy
         ? SHIELD_REDUCTION * (1 - HEAVY_SHIELD_PIERCE)
         : SHIELD_REDUCTION;
-      finalAmount = Math.round(amount * (1 - reduction));
+      final = Math.round(amount * (1 - reduction));
     }
-
-    super.takeDamage(finalAmount);
-
-    if (!this.isShielded) {
-      this.color = COLOR_BROKEN;
-    }
+    super.takeDamage(final);
+    if (!this.isShielded) this.color = COLOR_BROKEN;
   }
 
   // ============================================================
-  // [🧱 BLOCK: isMeleeHittingPlayer Override]
-  // Returns hit data including knockback direction.
+  // [🧱 BLOCK: isMeleeHittingPlayer]
   // ============================================================
   isMeleeHittingPlayer(player: Player): boolean {
-    if (this.state !== "strike" || this.isDead) return false;
+    if (this.tankState !== "strike" || this.isDead) return false;
     const cx  = this.x + SIZE / 2;
     const cy  = this.y + SIZE / 2;
     const pcx = player.x + player.width  / 2;
@@ -146,9 +132,6 @@ export class Tank extends BaseEnemy {
     return Math.sqrt((cx - pcx) ** 2 + (cy - pcy) ** 2) < MELEE_RANGE + 10;
   }
 
-  /**
-   * Apply knockback to the player away from the Tank.
-   */
   applyKnockback(player: Player): void {
     const cx  = this.x + SIZE / 2;
     const cy  = this.y + SIZE / 2;
@@ -167,65 +150,65 @@ export class Tank extends BaseEnemy {
   update(player: Player, worldW: number, worldH: number): void {
     if (this.isDead) return;
 
-    this.tickHitFlash(); // Fixed: Renamed from updateHitFlash to match BaseEnemy
+    this.tickHitFlash();
 
-    const cx  = this.x + SIZE / 2;
-    const cy  = this.y + SIZE / 2;
-    const pcx = player.x + player.width  / 2;
-    const pcy = player.y + player.height / 2;
-    const dx  = pcx - cx;
-    const dy  = pcy - cy;
+    const cx   = this.x + SIZE / 2;
+    const cy   = this.y + SIZE / 2;
+    const pcx  = player.x + player.width  / 2;
+    const pcy  = player.y + player.height / 2;
+    const dx   = pcx - cx;
+    const dy   = pcy - cy;
     const dist = Math.sqrt(dx * dx + dy * dy) || 1;
 
-    // Always track facing toward player (for shield arc)
     this.facingX = dx / dist;
     this.facingY = dy / dist;
 
-    switch (this.state) {
-      // ── Chase ─────────────────────────────────────────────
-      case "chase": {
+    switch (this.tankState) {
+
+      case "chase":
         if (dist > MELEE_RANGE) {
           this.x += (dx / dist) * this.speed;
           this.y += (dy / dist) * this.speed;
-          this.clampToWorld(worldW, worldH); // Fixed: Use base class helper
+          this.clampToWorld(worldW, worldH);
         } else {
-          this.state      = "windup";
-          this.stateTimer = WINDUP_MS;
+          // Floor 4+: skip windup entirely
+          if (this.windupMs === 0) {
+            this.tankState  = "strike";
+            this.stateTimer = STRIKE_MS;
+            // Lunge
+            this.x += (dx / dist) * 12;
+            this.y += (dy / dist) * 12;
+          } else {
+            this.tankState  = "windup";
+            this.stateTimer = this.windupMs;
+          }
         }
         break;
-      }
 
-      // ── Windup ────────────────────────────────────────────
-      case "windup": {
-        this.stateTimer -= 16; 
+      case "windup":
+        this.stateTimer -= 16;
         if (this.stateTimer <= 0) {
-          this.state      = "strike";
+          this.tankState  = "strike";
           this.stateTimer = STRIKE_MS;
-          // Short lunge
           this.x += (dx / dist) * 12;
           this.y += (dy / dist) * 12;
         }
         break;
-      }
 
-      // ── Strike ────────────────────────────────────────────
-      case "strike": {
+      case "strike":
         this.stateTimer -= 16;
         if (this.stateTimer <= 0) {
-          this.state      = "cooldown";
+          this.tankState  = "cooldown";
           this.stateTimer = COOLDOWN_MS;
         }
         break;
-      }
 
-      // ── Cooldown ──────────────────────────────────────────
-      case "cooldown": {
+      case "cooldown":
         this.stateTimer -= 16;
         if (this.stateTimer <= 0) {
-          this.state = "chase";
+          this.tankState = "chase";
         }
         break;
-      }
     }
   }
 
@@ -237,12 +220,12 @@ export class Tank extends BaseEnemy {
 
     const sx = camera.toScreenX(this.x);
     const sy = camera.toScreenY(this.y);
+    const cx = sx + SIZE / 2;
+    const cy = sy + SIZE / 2;
 
-    // ── Windup ring ───────────────────────────────────────
-    if (this.state === "windup") {
-      const progress = 1 - this.stateTimer / WINDUP_MS;
-      const cx = sx + SIZE / 2;
-      const cy = sy + SIZE / 2;
+    // ── Windup ring (not shown on Floor 4+ since windup is skipped) ──
+    if (this.tankState === "windup" && this.windupMs > 0) {
+      const progress = 1 - this.stateTimer / this.windupMs;
       ctx.beginPath();
       ctx.arc(cx, cy, SIZE / 2 + 10, 0, Math.PI * 2);
       ctx.strokeStyle = COLOR_WINDUP;
@@ -252,26 +235,29 @@ export class Tank extends BaseEnemy {
       ctx.globalAlpha = 1;
     }
 
-    // ── Body ─────────────────────────────────────────────
-    // Fixed: Uses base class drawBody and tickHitFlash property
+    // ── Floor 4+ danger indicator — red pulse during chase ──
+    if (this.floor >= 4 && this.tankState === "chase") {
+      ctx.beginPath();
+      ctx.arc(cx, cy, SIZE / 2 + 6, 0, Math.PI * 2);
+      ctx.strokeStyle = "rgba(239,68,68,0.5)";
+      ctx.lineWidth   = 2;
+      ctx.stroke();
+    }
+
     this.drawBody(ctx, sx, sy);
 
-    // ── Shield arc (front face when shielded) ─────────────
+    // ── Shield arc ────────────────────────────────────────
     if (this.isShielded) {
-      const cx    = sx + SIZE / 2;
-      const cy    = sy + SIZE / 2;
       const angle = Math.atan2(this.facingY, this.facingX);
-      const arc   = Math.PI * 0.75; // ±67.5° shield cone
+      const arc   = Math.PI * 0.75;
 
-      // Glow backing
       ctx.beginPath();
       ctx.moveTo(cx, cy);
       ctx.arc(cx, cy, SIZE / 2 + 14, angle - arc / 2, angle + arc / 2);
       ctx.closePath();
-      ctx.fillStyle   = SHIELD_GLOW;
+      ctx.fillStyle = SHIELD_GLOW;
       ctx.fill();
 
-      // Shield edge
       ctx.beginPath();
       ctx.arc(cx, cy, SIZE / 2 + 14, angle - arc / 2, angle + arc / 2);
       ctx.strokeStyle = SHIELD_COLOR;
@@ -279,18 +265,16 @@ export class Tank extends BaseEnemy {
       ctx.stroke();
     }
 
-    // ── HP bar ────────────────────────────────────────────
     this.drawHpBar(ctx, sx, sy);
 
-    // Shield threshold marker (Custom addition over base bar)
+    // Shield threshold marker
     if (this.isShielded) {
-      const barY = sy - 8;
+      const barY    = sy - 8;
       const markerX = sx + SIZE * SHIELD_HP_THRESHOLD;
       ctx.fillStyle = "rgba(255,255,255,0.5)";
       ctx.fillRect(markerX - 1, barY - 1, 2, 6);
     }
   }
 
-  // ── Expose damage for HordeSystem ────────────────────────
   get meleeDamage(): number { return BASE_DAMAGE; }
 }
