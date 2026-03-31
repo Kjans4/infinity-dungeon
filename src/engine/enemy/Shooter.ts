@@ -10,17 +10,15 @@ import { AttackState } from "./types";
 // ============================================================
 const SHOOTER_STATS = {
   speed:          1.1,
-  hp:             20,
+  hp:             45,   // ↑ was 20 — takes ~4 light fist hits on floor 1
   size:           24,
   color:          '#f59e0b',
   xpValue:        2,
   preferredDist:  180,
-  // Ranged
   rangedRange:    200,
   rangedWindup:   800,
   rangedDamage:   12,
   rangedCooldown: 2000,
-  // Melee fallback (desperation)
   meleeRange:     60,
   meleeWindup:    400,
   meleeDamage:    8,
@@ -29,24 +27,18 @@ const SHOOTER_STATS = {
 
 // ============================================================
 // [🧱 BLOCK: Shooter Class]
-// Maintains preferred distance, fires ranged projectiles.
-// Falls back to melee if player gets too close.
 // ============================================================
 export class Shooter extends BaseEnemy {
-  // Attack state
-  attackState:       AttackState           = 'chase';
-  attackTimer:       number                = 0;
-  attackCooldown:    number                = 0;
-  currentMode:       'melee' | 'ranged'   = 'ranged';
+  attackState:       AttackState              = 'chase';
+  attackTimer:       number                   = 0;
+  attackCooldown:    number                   = 0;
+  currentMode:       'melee' | 'ranged'       = 'ranged';
   strikeDir:         { x: number; y: number } = { x: 0, y: 1 };
-
-  // Projectile fired this frame — collected by GameCanvas
-  pendingProjectile: Projectile | null = null;
+  pendingProjectile: Projectile | null        = null;
 
   constructor(x: number, y: number, floor: number = 1) {
     const speedScale = 1 + (floor - 1) * 0.15;
     const hpScale    = 1 + (floor - 1) * 0.20;
-
     super(
       x, y,
       SHOOTER_STATS.size,
@@ -58,7 +50,7 @@ export class Shooter extends BaseEnemy {
   }
 
   // ============================================================
-  // [🧱 BLOCK: Update — Shooter State Machine]
+  // [🧱 BLOCK: Update]
   // ============================================================
   update(player: Player, worldW: number, worldH: number) {
     if (this.isDead) return;
@@ -76,13 +68,10 @@ export class Shooter extends BaseEnemy {
     const dist = Math.sqrt(dx * dx + dy * dy) || 1;
 
     switch (this.attackState) {
-
       case 'chase': {
         this.maintainDistance(dx, dy, dist);
-
         const canAttack = this.attackCooldown <= 0;
 
-        // Melee fallback — player too close
         if (canAttack && dist <= SHOOTER_STATS.meleeRange) {
           this.currentMode = 'melee';
           this.attackState = 'windup';
@@ -90,8 +79,6 @@ export class Shooter extends BaseEnemy {
           this.vx = 0; this.vy = 0;
           break;
         }
-
-        // Ranged attack — in preferred zone
         if (canAttack && dist <= SHOOTER_STATS.rangedRange) {
           this.currentMode = 'ranged';
           this.attackState = 'windup';
@@ -103,17 +90,12 @@ export class Shooter extends BaseEnemy {
 
       case 'windup':
         this.vx = 0; this.vy = 0;
-
-        // Lock aim late in the windup so fast players can still dodge
         if (this.attackTimer <= 150) {
           this.strikeDir = { x: dx / dist, y: dy / dist };
         }
-
         if (this.attackTimer <= 0) {
           this.attackState = 'strike';
           this.attackTimer = 150;
-
-          // Fire projectile on ranged strike
           if (this.currentMode === 'ranged') {
             this.pendingProjectile = new Projectile(
               ecx, ecy, pcx, pcy,
@@ -128,7 +110,6 @@ export class Shooter extends BaseEnemy {
           this.x += this.strikeDir.x * 2;
           this.y += this.strikeDir.y * 2;
         }
-
         if (this.attackTimer <= 0) {
           const cd = this.currentMode === 'ranged'
             ? SHOOTER_STATS.rangedCooldown
@@ -149,7 +130,7 @@ export class Shooter extends BaseEnemy {
   }
 
   // ============================================================
-  // [🧱 BRICK: Maintain Preferred Distance]
+  // [🧱 BLOCK: Maintain Preferred Distance]
   // ============================================================
   private maintainDistance(dx: number, dy: number, dist: number) {
     const diff = dist - SHOOTER_STATS.preferredDist;
@@ -169,13 +150,11 @@ export class Shooter extends BaseEnemy {
   // ============================================================
   isMeleeHittingPlayer(player: Player): boolean {
     if (this.attackState !== 'strike' || this.currentMode !== 'melee') return false;
-
     const ecx      = this.x + this.width  / 2;
     const ecy      = this.y + this.height / 2;
     const hitX     = ecx + this.strikeDir.x * 45;
     const hitY     = ecy + this.strikeDir.y * 45;
     const hitSize  = 24;
-
     const nearestX = Math.max(player.x, Math.min(hitX, player.x + player.width));
     const nearestY = Math.max(player.y, Math.min(hitY, player.y + player.height));
     const distSq   = (hitX - nearestX) ** 2 + (hitY - nearestY) ** 2;
@@ -196,7 +175,6 @@ export class Shooter extends BaseEnemy {
     const cx = sx + this.width  / 2;
     const cy = sy + this.height / 2;
 
-    // ── Windup indicator ──
     if (this.attackState === 'windup') {
       const windupTime = this.currentMode === 'ranged'
         ? SHOOTER_STATS.rangedWindup
@@ -212,7 +190,6 @@ export class Shooter extends BaseEnemy {
       ctx.lineWidth   = 2;
       ctx.stroke();
 
-      // Dashed aim line for ranged
       if (this.currentMode === 'ranged') {
         ctx.strokeStyle = `rgba(250, 204, 21, 0.35)`;
         ctx.lineWidth   = 1;
@@ -225,7 +202,6 @@ export class Shooter extends BaseEnemy {
       }
     }
 
-    // ── Melee strike hitbox ──
     if (this.attackState === 'strike' && this.currentMode === 'melee') {
       const hitX = cx + this.strikeDir.x * 40;
       const hitY = cy + this.strikeDir.y * 40;
@@ -235,7 +211,6 @@ export class Shooter extends BaseEnemy {
       ctx.fill();
     }
 
-    // ── Body color by state ──
     const bodyColor =
       this.attackState === 'windup' && this.currentMode === 'ranged'  ? '#fde047' :
       this.attackState === 'windup' && this.currentMode === 'melee'   ? '#fb923c' :

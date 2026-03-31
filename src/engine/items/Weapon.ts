@@ -4,22 +4,30 @@ import { getWeaponDef } from "./WeaponRegistry";
 
 // ============================================================
 // [🧱 BLOCK: Bare Fists Fallback]
-// Used when no weapon is equipped.
-// Matches the old circle hitbox behaviour.
+// Damage nerfed so fists can't one-shot enemies on floor 1.
+// Heavy attack stamina raised to discourage spam.
+//   Light:  6 dmg, 10 stamina — ~11 hits to kill a Grunt
+//   Heavy: 15 dmg, 38 stamina — ~5 hits, nearly drains full bar in 2 swings
 // ============================================================
 const BARE_FISTS: WeaponDef = {
   type: 'sword', name: 'Fists', icon: '👊',
   light: {
-    damage: 10, duration: 150, staminaCost: 10,
-    cooldown: 0, haltsPlayer: false,
-    color: "rgba(255,255,255,0.5)",
-    hitbox: { kind: 'circle', radius: 15 },
+    damage:      6,    // ↓ was 10
+    duration:    150,
+    staminaCost: 10,
+    cooldown:    0,
+    haltsPlayer: false,
+    color:       "rgba(255,255,255,0.5)",
+    hitbox:      { kind: 'circle', radius: 15 },
   },
   heavy: {
-    damage: 25, duration: 400, staminaCost: 25,
-    cooldown: 1200, haltsPlayer: true,
-    color: "rgba(251,191,36,0.6)",
-    hitbox: { kind: 'circle', radius: 25 },
+    damage:      15,   // ↓ was 25
+    duration:    400,
+    staminaCost: 38,   // ↑ was 25
+    cooldown:    1200,
+    haltsPlayer: true,
+    color:       "rgba(251,191,36,0.6)",
+    hitbox:      { kind: 'circle', radius: 25 },
   },
 };
 
@@ -33,9 +41,9 @@ export class Weapon {
     this.def = type === 'fists' ? BARE_FISTS : getWeaponDef(type);
   }
 
-  get type(): WeaponType   { return this.def.type; }
-  get name(): string       { return this.def.name; }
-  get icon(): string       { return this.def.icon; }
+  get type(): WeaponType { return this.def.type; }
+  get name(): string     { return this.def.name; }
+  get icon(): string     { return this.def.icon; }
 
   getAttack(mode: 'light' | 'heavy'): AttackDef {
     return mode === 'light' ? this.def.light : this.def.heavy;
