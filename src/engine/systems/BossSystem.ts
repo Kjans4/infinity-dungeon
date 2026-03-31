@@ -27,11 +27,18 @@ function spawnBossGold(state: GameState, x: number, y: number) {
 export class BossSystem {
   private weaponSystem = new WeaponSystem();
 
+  // ============================================================
+  // [🧱 BLOCK: Setup]
+  // NOTE: player.hp is intentionally NOT reset here.
+  // Whatever HP the player had leaving the shop carries into
+  // the boss fight. Use the shop's paid healing to prepare.
+  // ============================================================
   setup(state: GameState, rs: RoomState) {
     state.player.x  = BOSS_WORLD_W / 2;
     state.player.y  = BOSS_WORLD_H - 100;
     state.player.vx = 0;
     state.player.vy = 0;
+    // ── state.player.hp = state.player.maxHp  ← REMOVED intentionally ──
 
     state.enemies     = [];
     state.projectiles = [];
@@ -45,18 +52,24 @@ export class BossSystem {
     state.playerStats.applyToPlayer(state.player);
   }
 
+  // ============================================================
+  // [🧱 BLOCK: Reset]
+  // ============================================================
   reset(state: GameState) {
     state.boss      = null;
     state.goldDrops = [];
     state.particles = [];
   }
 
+  // ============================================================
+  // [🧱 BLOCK: Update]
+  // ============================================================
   update(
     state:  GameState,
     player: Player,
     worldW: number,
     worldH: number
-  ): { event: 'victory' | null; goldCollected: number } {
+  ): { event: "victory" | null; goldCollected: number } {
     const boss = state.boss;
     if (!boss) return { event: null, goldCollected: 0 };
 
@@ -82,7 +95,10 @@ export class BossSystem {
 
     // Stamina regen
     if (player.stamina < player.maxStamina) {
-      player.stamina = Math.min(player.maxStamina, player.stamina + ps.staminaRegenRate);
+      player.stamina = Math.min(
+        player.maxStamina,
+        player.stamina + ps.staminaRegenRate
+      );
     }
 
     // Gold collection
@@ -100,13 +116,21 @@ export class BossSystem {
       const by = boss.y + boss.height / 2;
       spawnBossGold(state, bx, by);
       state.particles.push(...spawnBurst(bx, by, "#dc2626", 12, 1.8));
-      return { event: 'victory', goldCollected };
+      return { event: "victory", goldCollected };
     }
 
     return { event: null, goldCollected };
   }
 
-  draw(state: GameState, ctx: CanvasRenderingContext2D, camera: Camera, player: Player) {
+  // ============================================================
+  // [🧱 BLOCK: Draw]
+  // ============================================================
+  draw(
+    state:  GameState,
+    ctx:    CanvasRenderingContext2D,
+    camera: Camera,
+    player: Player
+  ) {
     state.boss?.draw(ctx, camera);
     state.goldDrops.forEach((drop) => drop.draw(ctx, camera));
     state.particles.forEach((p)   => p.update());

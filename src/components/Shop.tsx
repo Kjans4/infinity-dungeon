@@ -20,6 +20,17 @@ interface ShopProps {
 }
 
 // ============================================================
+// [🧱 BLOCK: Heal Tiers]
+// Costs scale per floor so healing doesn't trivialise later floors.
+// Formula: baseCost × floor
+// ============================================================
+const HEAL_TIERS = [
+  { label: "Small",  hp: 25,  baseCost: 40,  icon: "🩹" },
+  { label: "Medium", hp: 50,  baseCost: 75,  icon: "💊" },
+  { label: "Full",   hp: 999, baseCost: 120, icon: "❤️" }, // 999 = full heal (capped at maxHp)
+];
+
+// ============================================================
 // [🧱 BLOCK: Shared Button]
 // ============================================================
 function PillBtn({ label, onClick, disabled, color = "#facc15", small = false }: {
@@ -103,9 +114,9 @@ function ShopItemCard({ item, gold, playerStats, player, onBuy }: {
     ? playerStats.equippedWeaponItem?.id === weaponItem!.id
     : playerStats.hasCharm(charmItem!.id);
 
-  const charmsFull = !isWeapon && playerStats.charms.length >= playerStats.maxCharms;
-  const canAfford  = gold >= item.cost;
-  const canBuy     = !alreadyOwned && canAfford && !charmsFull;
+  const charmsFull  = !isWeapon && playerStats.charms.length >= playerStats.maxCharms;
+  const canAfford   = gold >= item.cost;
+  const canBuy      = !alreadyOwned && canAfford && !charmsFull;
   const accentColor = isWeapon ? "#38bdf8" : "#facc15";
   const typeLabel   = isWeapon
     ? `${weaponItem!.weaponType.toUpperCase()} · Weapon`
@@ -120,14 +131,9 @@ function ShopItemCard({ item, gold, playerStats, player, onBuy }: {
   }
 
   return (
-    <div
-      className={`shop-item-card ${alreadyOwned ? "shop-item-card--owned" : ""}`}
-    >
+    <div className={`shop-item-card ${alreadyOwned ? "shop-item-card--owned" : ""}`}>
       <div className="shop-item-card__icon">{item.icon}</div>
-      <div
-        className="shop-item-card__type"
-        style={{ color: accentColor }}
-      >
+      <div className="shop-item-card__type" style={{ color: accentColor }}>
         {typeLabel}
       </div>
       <div className="shop-item-card__name">{item.name}</div>
@@ -200,6 +206,83 @@ function EquippedWeaponPill({ item, onSell }: { item: WeaponItem; onSell: () => 
 }
 
 // ============================================================
+// [🧱 BLOCK: Healing Section]
+// Only appears in the shop (before boss room).
+// Three fixed tiers — costs scale with floor number.
+// HP does not restore between rooms — this is the only source
+// of healing in the run outside of charm/weapon passives.
+// ============================================================
+function HealingSection({ player, gold, floor, onHeal }: {
+  player: Player;
+  gold:   number;
+  floor:  number;
+  onHeal: (newGold: number) => void;
+}) {
+  const atFullHp = player.hp >= player.maxHp;
+  const hpPct    = Math.round((player.hp / player.maxHp) * 100);
+
+  return (
+    <div className="shop-section shop-healing">
+      <div className="shop-healing__header">
+        <p className="shop-section__label">⚕ Healing — Before Boss</p>
+        <span className="shop-healing__hp-badge">
+          ❤️ {Math.round(player.hp)} / {player.maxHp}
+        </span>
+      </div>
+
+      {/* HP bar */}
+      <div className="shop-healing__bar-track">
+        <div
+          className="shop-healing__bar-fill"
+          style={{
+            width: `${hpPct}%`,
+            background: hpPct > 50 ? "#4ade80" : hpPct > 25 ? "#facc15" : "#ef4444",
+          }}
+        />
+      </div>
+
+      {atFullHp ? (
+        <p className="shop-healing__full-msg">✓ Already at full HP</p>
+      ) : (
+        <div className="shop-healing__tiers">
+          {HEAL_TIERS.map((tier) => {
+            const cost       = tier.baseCost * floor;
+            const healAmt    = Math.min(tier.hp, player.maxHp - player.hp);
+            const wouldHeal  = healAmt > 0;
+            const canAfford  = gold >= cost;
+            const disabled   = !canAfford || !wouldHeal;
+
+            return (
+              <div key={tier.label} className="shop-healing__tier">
+                <div className="shop-healing__tier-info">
+                  <span className="shop-healing__tier-icon">{tier.icon}</span>
+                  <div>
+                    <p className="shop-healing__tier-label">{tier.label} Heal</p>
+                    <p className="shop-healing__tier-sub">
+                      +{healAmt} HP · 💰 {cost}g
+                    </p>
+                  </div>
+                </div>
+                <PillBtn
+                  label={canAfford ? `Heal +${healAmt}` : "Can't afford"}
+                  onClick={() => {
+                    player.hp = Math.min(player.maxHp, player.hp + tier.hp);
+                    onHeal(gold - cost);
+                  }}
+                  disabled={disabled}
+                  color="#4ade80"
+                  small
+                />
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ============================================================
 // [🧱 BLOCK: Shop Main]
 // ============================================================
 export default function Shop({
@@ -219,6 +302,7 @@ export default function Shop({
   const handleReroll     = () => { onGoldChange(playerStats.reroll(gold)); refresh(); };
   const handleSellCharm  = (id: string) => { onGoldChange(playerStats.sellCharm(id, gold, player)); refresh(); };
   const handleSellWeapon = () => { onGoldChange(playerStats.unequipWeapon(gold, player)); refresh(); };
+  const handleHeal       = (ng: number) => { onGoldChange(ng); refresh(); };
 
   const cap = statCap(floor);
 
@@ -229,7 +313,7 @@ export default function Shop({
         {/* Header */}
         <div className="shop-header">
           <div>
-            <p className="shop-header__eyebrow">Floor {floor} · Before Room {room}</p>
+            <p className="shop-header__eyebrow">Floor {floor} · Before Boss</p>
             <p className="shop-header__title">SHOP</p>
           </div>
           <div className="shop-header__gold">
@@ -319,6 +403,14 @@ export default function Shop({
 
           </div>
         </div>
+
+        {/* ── Healing Section ── */}
+        <HealingSection
+          player={player}
+          gold={gold}
+          floor={floor}
+          onHeal={handleHeal}
+        />
 
         {/* Continue */}
         <div className="shop-footer">

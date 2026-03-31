@@ -1,13 +1,13 @@
 // src/engine/systems/HordeSystem.ts
-import { Player }                    from "../Player";
-import { Camera }                    from "../Camera";
-import { Door }                      from "../Door";
+import { Player }                          from "../Player";
+import { Camera }                          from "../Camera";
+import { Door }                            from "../Door";
 import { Grunt, Shooter, Tank, spawnWave } from "../enemy";
-import { RoomState }                 from "../RoomManager";
-import { GameState }                 from "../GameState";
-import { GoldSystem }                from "./GoldSystem";
-import { WeaponSystem }              from "./WeaponSystem";
-import { spawnBurst }                from "../Particle";
+import { RoomState }                       from "../RoomManager";
+import { GameState }                       from "../GameState";
+import { GoldSystem }                      from "./GoldSystem";
+import { WeaponSystem }                    from "./WeaponSystem";
+import { spawnBurst }                      from "../Particle";
 
 const KILL_THRESHOLD = 20;
 const INITIAL_WAVE   = 8;
@@ -20,13 +20,17 @@ export class HordeSystem {
 
   // ============================================================
   // [🧱 BLOCK: Setup]
+  // NOTE: player.hp is intentionally NOT reset here.
+  // HP is a persistent resource across rooms — the only place
+  // it can be restored is the shop (paid healing) before the
+  // boss room. Full HP is only restored on a full game reset.
   // ============================================================
   setup(state: GameState, rs: RoomState, worldW: number, worldH: number) {
     state.player.x  = worldW / 2;
     state.player.y  = worldH - 100;
     state.player.vx = 0;
     state.player.vy = 0;
-    state.player.hp = state.player.maxHp;
+    // ── state.player.hp = state.player.maxHp  ← REMOVED intentionally ──
 
     state.kills       = 0;
     state.alive       = INITIAL_WAVE;
@@ -96,17 +100,13 @@ export class HordeSystem {
 
       if (enemy.isMeleeHittingPlayer(player) && player.iFrames <= 0) {
         if (enemy instanceof Tank) {
-          // Tank hit: full damage + knockback
-          const finalDmg = Math.round(
-            enemy.meleeDamage * (1 - ps.damageReduction)
-          );
+          const finalDmg = Math.round(enemy.meleeDamage * (1 - ps.damageReduction));
           player.takeHit(finalDmg);
           enemy.applyKnockback(player);
         } else if (enemy instanceof Shooter) {
           const finalDmg = Math.round(8 * (1 - ps.damageReduction));
           player.takeHit(finalDmg);
         } else {
-          // Grunt
           const finalDmg = Math.round(15 * (1 - ps.damageReduction));
           player.takeHit(finalDmg);
         }
@@ -116,7 +116,6 @@ export class HordeSystem {
     // ── Weapon input + hit resolution ─────────────────────
     this.weaponSystem.processInput(player);
 
-    // Resolve hits — Tank uses takeDamageFrom for shield-arc check
     const playerCX = player.x + player.width  / 2;
     const playerCY = player.y + player.height / 2;
     const isHeavy  = player.attackType === "heavy";
