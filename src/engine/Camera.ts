@@ -25,15 +25,31 @@ export class Camera {
 
   // ============================================================
   // [🧱 BLOCK: Update — Follow Player]
-  // worldW and worldH are passed in so the same camera works
-  // for both the horde world and the smaller boss world.
+  // When the world is larger than the screen: clamp so the
+  // camera never shows outside the world boundary.
+  //
+  // When the world is SMALLER than the screen (e.g. boss arena
+  // on a wide monitor): center the world instead. Without this,
+  // Math.max(0, worldW - screenW) = Math.max(0, negative) = 0,
+  // which locks the camera to the top-left corner and makes
+  // the arena appear off-center to the left.
   // ============================================================
   update(player: Player, worldW: number = WORLD_W, worldH: number = WORLD_H) {
-    const targetX = player.x + player.width  / 2 - this.screenW / 2;
-    const targetY = player.y + player.height / 2 - this.screenH / 2;
+    // X axis
+    if (worldW <= this.screenW) {
+      this.x = -(this.screenW - worldW) / 2;
+    } else {
+      const targetX = player.x + player.width  / 2 - this.screenW / 2;
+      this.x = Math.max(0, Math.min(worldW - this.screenW, targetX));
+    }
 
-    this.x = Math.max(0, Math.min(worldW - this.screenW, targetX));
-    this.y = Math.max(0, Math.min(worldH - this.screenH, targetY));
+    // Y axis
+    if (worldH <= this.screenH) {
+      this.y = -(this.screenH - worldH) / 2;
+    } else {
+      const targetY = player.y + player.height / 2 - this.screenH / 2;
+      this.y = Math.max(0, Math.min(worldH - this.screenH, targetY));
+    }
   }
 
   toScreenX(worldX: number): number { return worldX - this.x; }
