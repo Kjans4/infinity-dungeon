@@ -427,7 +427,6 @@ export default function GameCanvas() {
       if (goldCollected > 0)  state.gold += goldCollected;
       if (event === "door") { handleDoorEnter(); return; }
 
-      // ── Room clear announcement (fires once when threshold met) ──
       const threshold = hordeRef.current.getThreshold(rs.floor);
       if (
         state.door?.isActive &&
@@ -466,7 +465,6 @@ export default function GameCanvas() {
   const isShopPhase = roomRef.current.phase === "shop";
   const state       = stateRef.current;
 
-  // Dynamic threshold for current floor — used by HUD
   const currentThreshold = hordeRef.current.getThreshold(hud.floor);
 
   return (
@@ -509,9 +507,14 @@ export default function GameCanvas() {
         <GameOverOverlay floor={hud.floor} room={hud.room} onRetry={handleRestart} />
       )}
 
-      {isPaused && !showMenu && !isGameOver && !showInventory && (
+      {/* ── Pause Overlay — includes live stats panel ── */}
+      {isPaused && !showMenu && !isGameOver && !showInventory && state && (
         <PauseOverlay
-          floor={hud.floor} room={hud.room}
+          floor={hud.floor}         room={hud.room}
+          hp={hud.hp}               maxHp={MAX_HP}
+          gold={gold}
+          playerStats={state.playerStats}
+          player={state.player}
           onResume={() => setIsPaused(false)}
           onQuit={() => { setIsPaused(false); handleRestart(); }}
         />

@@ -2,170 +2,190 @@
 "use client";
 
 import React, { useState } from "react";
+import { PlayerStats, STAT_DEFS } from "@/engine/PlayerStats";
+import { Player }                 from "@/engine/Player";
+import "@/styles/pause.css";
 
 // ============================================================
-// [🧱 BLOCK: PauseOverlay Props]
+// [🧱 BLOCK: Props]
 // ============================================================
 interface Props {
-  floor:   number;
-  room:    number;
-  onResume: () => void;
-  onQuit:   () => void;
+  floor:        number;
+  room:         number;
+  hp:           number;
+  maxHp:        number;
+  gold:         number;
+  playerStats:  PlayerStats;
+  player:       Player;
+  onResume:     () => void;
+  onQuit:       () => void;
 }
 
 // ============================================================
 // [🧱 BLOCK: Controls Reference]
 // ============================================================
 const CONTROLS = [
-  { key: "W A S D",  desc: "Move"          },
-  { key: "J",        desc: "Light Attack"  },
-  { key: "K",        desc: "Heavy Attack"  },
-  { key: "C",        desc: "Dash"          },
-  { key: "Escape",   desc: "Pause / Resume"},
+  { key: "W A S D", desc: "Move"          },
+  { key: "J",       desc: "Light Attack"  },
+  { key: "K",       desc: "Heavy Attack"  },
+  { key: "C",       desc: "Dash"          },
+  { key: "Escape",  desc: "Pause / Resume"},
 ];
+
+// ============================================================
+// [🧱 BLOCK: Stats Panel]
+// Shows current HP, gold, stat levels, weapon, charms.
+// ============================================================
+function StatsPanel({ hp, maxHp, gold, playerStats }: {
+  hp: number; maxHp: number; gold: number; playerStats: PlayerStats;
+}) {
+  const hpPct   = Math.round((hp / maxHp) * 100);
+  const hpColor = hpPct > 50 ? "#4ade80" : hpPct > 25 ? "#facc15" : "#ef4444";
+
+  return (
+    <div className="pause-stats">
+
+      {/* ── HP bar ── */}
+      <div className="pause-stats__section">
+        <div className="pause-stats__row-spread">
+          <span className="pause-stats__label">❤️ HP</span>
+          <span className="pause-stats__value" style={{ color: hpColor }}>
+            {Math.round(hp)} / {maxHp}
+          </span>
+        </div>
+        <div className="pause-stats__bar-track">
+          <div
+            className="pause-stats__bar-fill"
+            style={{ width: `${hpPct}%`, background: hpColor }}
+          />
+        </div>
+      </div>
+
+      {/* ── Gold ── */}
+      <div className="pause-stats__row-spread">
+        <span className="pause-stats__label">💰 Gold</span>
+        <span className="pause-stats__value" style={{ color: "#facc15" }}>{gold}g</span>
+      </div>
+
+      {/* ── Stat levels ── */}
+      <div className="pause-stats__section">
+        <p className="pause-stats__sublabel">Stats</p>
+        <div className="pause-stats__stat-grid">
+          {STAT_DEFS.map((def) => (
+            <div key={def.key} className="pause-stats__stat-row">
+              <span className="pause-stats__stat-icon">{def.icon}</span>
+              <span className="pause-stats__stat-key">{def.label}</span>
+              <span className="pause-stats__stat-val">{playerStats[def.key]}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* ── Weapon ── */}
+      <div className="pause-stats__section">
+        <p className="pause-stats__sublabel">Weapon</p>
+        {playerStats.equippedWeaponItem ? (
+          <div className="pause-stats__weapon">
+            <span className="pause-stats__weapon-icon">
+              {playerStats.equippedWeaponItem.icon}
+            </span>
+            <div>
+              <p className="pause-stats__weapon-name">
+                {playerStats.equippedWeaponItem.name}
+              </p>
+              <p className="pause-stats__weapon-type">
+                {playerStats.equippedWeaponItem.weaponType}
+              </p>
+            </div>
+          </div>
+        ) : (
+          <p className="pause-stats__empty">👊 Bare Fists</p>
+        )}
+      </div>
+
+      {/* ── Charms ── */}
+      <div className="pause-stats__section">
+        <p className="pause-stats__sublabel">
+          Charms ({playerStats.charms.length}/{playerStats.maxCharms})
+        </p>
+        {playerStats.charms.length === 0 ? (
+          <p className="pause-stats__empty">None equipped</p>
+        ) : (
+          <div className="pause-stats__charms">
+            {playerStats.charms.map((charm) => (
+              <div key={charm.id} className="pause-stats__charm-row">
+                <span>{charm.icon}</span>
+                <span className="pause-stats__charm-name">{charm.name}</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+    </div>
+  );
+}
 
 // ============================================================
 // [🧱 BLOCK: PauseOverlay Component]
 // ============================================================
-export default function PauseOverlay({ floor, room, onResume, onQuit }: Props) {
+export default function PauseOverlay({
+  floor, room, hp, maxHp, gold, playerStats, player,
+  onResume, onQuit,
+}: Props) {
   const [confirmQuit, setConfirmQuit] = useState(false);
 
   return (
-    <div
-      style={{
-        position:       "fixed",
-        inset:          0,
-        zIndex:         60,
-        display:        "flex",
-        flexDirection:  "column",
-        alignItems:     "center",
-        justifyContent: "center",
-        background:     "rgba(0, 0, 0, 0.75)",
-        backdropFilter: "blur(6px)",
-        fontFamily:     "'Courier New', monospace",
-      }}
-    >
-      {/* ── Card ── */}
-      <div style={{
-        background:   "rgba(10, 15, 30, 0.9)",
-        border:       "1px solid rgba(255,255,255,0.08)",
-        borderRadius: 12,
-        padding:      "36px 48px",
-        display:      "flex",
-        flexDirection:"column",
-        alignItems:   "center",
-        gap:          24,
-        minWidth:     320,
-      }}>
+    <div className="pause-backdrop">
+      <div className="pause-card">
 
-        {/* Title */}
-        <div style={{ textAlign: "center" }}>
-          <p style={{
-            fontSize: 9, color: "#475569",
-            letterSpacing: "0.3em", textTransform: "uppercase",
-            marginBottom: 6,
-          }}>
-            Floor {floor} · Room {room}
-          </p>
-          <p style={{
-            fontSize: 32, fontWeight: 900,
-            color: "#f1f5f9", letterSpacing: "0.1em",
-          }}>
-            PAUSED
-          </p>
+        {/* ── Title ── */}
+        <div className="pause-title-block">
+          <p className="pause-location">Floor {floor} · Room {room}</p>
+          <p className="pause-title">PAUSED</p>
         </div>
 
-        {/* Divider */}
-        <div style={{ width: "100%", height: 1, background: "rgba(255,255,255,0.06)" }} />
+        <div className="pause-divider" />
 
-        {/* Controls */}
-        <div style={{ width: "100%", display: "flex", flexDirection: "column", gap: 8 }}>
-          <p style={{
-            fontSize: 8, color: "#334155",
-            letterSpacing: "0.2em", textTransform: "uppercase",
-            marginBottom: 4,
-          }}>
-            Controls
-          </p>
-          {CONTROLS.map(({ key, desc }) => (
-            <div key={key} style={{
-              display:        "flex",
-              justifyContent: "space-between",
-              alignItems:     "center",
-              gap:            24,
-            }}>
-              <span style={{
-                fontSize:     10,
-                fontWeight:   700,
-                color:        "#f1f5f9",
-                background:   "rgba(255,255,255,0.06)",
-                border:       "1px solid rgba(255,255,255,0.1)",
-                borderRadius: 4,
-                padding:      "2px 8px",
-                letterSpacing:"0.05em",
-              }}>
-                {key}
-              </span>
-              <span style={{
-                fontSize: 10,
-                color:    "rgba(100,116,139,0.9)",
-                letterSpacing: "0.08em",
-              }}>
-                {desc}
-              </span>
-            </div>
-          ))}
+        {/* ── Two-column layout: Stats | Controls ── */}
+        <div className="pause-columns">
+
+          {/* Stats */}
+          <StatsPanel
+            hp={hp} maxHp={maxHp}
+            gold={gold} playerStats={playerStats}
+          />
+
+          {/* Controls */}
+          <div className="pause-controls">
+            <p className="pause-controls__label">Controls</p>
+            {CONTROLS.map(({ key, desc }) => (
+              <div key={key} className="pause-controls__row">
+                <span className="pause-controls__key">{key}</span>
+                <span className="pause-controls__desc">{desc}</span>
+              </div>
+            ))}
+          </div>
+
         </div>
 
-        {/* Divider */}
-        <div style={{ width: "100%", height: 1, background: "rgba(255,255,255,0.06)" }} />
+        <div className="pause-divider" />
 
-        {/* Buttons */}
-        <div style={{ display: "flex", flexDirection: "column", gap: 10, width: "100%" }}>
-
-          {/* Resume */}
+        {/* ── Buttons ── */}
+        <div className="pause-buttons">
           <button
             onClick={onResume}
-            style={{
-              fontFamily:    "'Courier New', monospace",
-              fontSize:      13,
-              fontWeight:    700,
-              letterSpacing: "0.2em",
-              textTransform: "uppercase",
-              color:         "#0f172a",
-              background:    "#f1f5f9",
-              border:        "none",
-              padding:       "12px 0",
-              borderRadius:  6,
-              cursor:        "pointer",
-              width:         "100%",
-              transition:    "background 0.12s",
-            }}
+            className="pause-btn pause-btn--resume"
             onMouseEnter={(e) => (e.currentTarget.style.background = "#e2e8f0")}
             onMouseLeave={(e) => (e.currentTarget.style.background = "#f1f5f9")}
           >
             ▶ Resume
           </button>
 
-          {/* Quit — with confirm step */}
           {!confirmQuit ? (
             <button
               onClick={() => setConfirmQuit(true)}
-              style={{
-                fontFamily:    "'Courier New', monospace",
-                fontSize:      12,
-                fontWeight:    700,
-                letterSpacing: "0.2em",
-                textTransform: "uppercase",
-                color:         "#64748b",
-                background:    "transparent",
-                border:        "1px solid #1e293b",
-                padding:       "10px 0",
-                borderRadius:  6,
-                cursor:        "pointer",
-                width:         "100%",
-                transition:    "all 0.12s",
-              }}
+              className="pause-btn pause-btn--quit"
               onMouseEnter={(e) => {
                 e.currentTarget.style.color  = "#ef4444";
                 e.currentTarget.style.border = "1px solid #ef4444";
@@ -178,19 +198,10 @@ export default function PauseOverlay({ floor, room, onResume, onQuit }: Props) {
               Quit to Menu
             </button>
           ) : (
-            // Confirm row
-            <div style={{ display: "flex", gap: 8 }}>
+            <div className="pause-confirm-row">
               <button
                 onClick={onQuit}
-                style={{
-                  fontFamily:    "'Courier New', monospace",
-                  fontSize:      11, fontWeight: 700,
-                  letterSpacing: "0.15em", textTransform: "uppercase",
-                  color:         "#0f172a", background: "#ef4444",
-                  border:        "none", padding: "10px 0",
-                  borderRadius:  6, cursor: "pointer", flex: 1,
-                  transition:    "background 0.12s",
-                }}
+                className="pause-btn pause-btn--confirm-yes"
                 onMouseEnter={(e) => (e.currentTarget.style.background = "#f87171")}
                 onMouseLeave={(e) => (e.currentTarget.style.background = "#ef4444")}
               >
@@ -198,16 +209,7 @@ export default function PauseOverlay({ floor, room, onResume, onQuit }: Props) {
               </button>
               <button
                 onClick={() => setConfirmQuit(false)}
-                style={{
-                  fontFamily:    "'Courier New', monospace",
-                  fontSize:      11, fontWeight: 700,
-                  letterSpacing: "0.15em", textTransform: "uppercase",
-                  color:         "#64748b", background: "transparent",
-                  border:        "1px solid #1e293b",
-                  padding:       "10px 0",
-                  borderRadius:  6, cursor: "pointer", flex: 1,
-                  transition:    "all 0.12s",
-                }}
+                className="pause-btn pause-btn--confirm-cancel"
                 onMouseEnter={(e) => (e.currentTarget.style.color = "#f1f5f9")}
                 onMouseLeave={(e) => (e.currentTarget.style.color = "#64748b")}
               >
@@ -219,15 +221,7 @@ export default function PauseOverlay({ floor, room, onResume, onQuit }: Props) {
 
       </div>
 
-      {/* Hint */}
-      <p style={{
-        marginTop:     16,
-        fontSize:      9,
-        color:         "#1e293b",
-        letterSpacing: "0.15em",
-      }}>
-        Press ESC to resume
-      </p>
+      <p className="pause-hint">Press ESC to resume</p>
     </div>
   );
 }
