@@ -9,14 +9,41 @@ import { GoldSystem }                      from "./GoldSystem";
 import { WeaponSystem }                    from "./WeaponSystem";
 import { spawnBurst }                      from "../Particle";
 
-const KILL_THRESHOLD = 20;
-const INITIAL_WAVE   = 8;
-const WAVE_SIZE      = 6;
+const INITIAL_WAVE          = 8;
+const WAVE_SIZE             = 6;
+const BASE_THRESHOLD        = 20;   // Floor 1 kill threshold
+const THRESHOLD_PER_FLOOR   = 5;    // +5 kills required per floor
+const FARMING_SPAWN_INTERVAL= 3000; // ms between single enemy spawns after threshold
+
+// ============================================================
+// [🧱 BLOCK: Gold Multiplier After Threshold]
+// Progressive diminishing returns on bonus kills.
+// Every 10 extra kills reduces gold by 20%, floored at 20%.
+// ============================================================
+function goldMultiplierForKills(kills: number, threshold: number): number {
+  if (kills < threshold) return 1.0;
+  const extraKills = kills - threshold;
+  const tier       = Math.floor(extraKills / 10);
+  return Math.max(0.20, 1.0 - tier * 0.20);
+}
 
 export class HordeSystem {
-  readonly killThreshold = KILL_THRESHOLD;
-  private goldSystem     = new GoldSystem();
-  private weaponSystem   = new WeaponSystem();
+  private goldSystem   = new GoldSystem();
+  private weaponSystem = new WeaponSystem();
+
+  // ============================================================
+  // [🧱 BLOCK: Threshold Helper]
+  // Dynamic per floor. Used by GameCanvas for HUD and dev tools.
+  // ============================================================
+  getThreshold(floor: number): number {
+    return BASE_THRESHOLD + (floor - 1) * THRESHOLD_PER_FLOOR;
+  }
+
+  // Backwards-compat getter — returns Floor 1 threshold.
+  // GameCanvas should prefer getThreshold(floor) where possible.
+  get killThreshold(): number {
+    return BASE_THRESHOLD;
+  }
 
   // ============================================================
   // [🧱 BLOCK: Setup]
@@ -72,12 +99,14 @@ export class HordeSystem {
     worldW: number,
     worldH: number
   ): { event: "door" | null; goldCollected: number } {
-    const ps = state.playerStats;
+    const ps        = state.playerStats;
+    const threshold = this.getThreshold(rs.floor);
+    const thresholdMet = state.kills >= threshold;
 
     // ── Door ───────────────────────────────────────────────
     if (state.door) {
       state.door.update();
-      if (state.kills >= KILL_THRESHOLD && !state.door.isActive) {
+      if (thresholdMet && !state.door.isActive) {
         state.door.activate();
       }
       if (state.door.isCollidingWithPlayer(player)) {
@@ -89,7 +118,6 @@ export class HordeSystem {
     state.enemies.forEach((enemy) => {
       enemy.update(player, worldW, worldH);
 
-      // Drain pending projectiles — Shooter now fires arrays (spread shots)
       if (enemy instanceof Shooter && enemy.pendingProjectiles.length > 0) {
         state.projectiles.push(...enemy.pendingProjectiles);
         enemy.pendingProjectiles = [];
@@ -160,11 +188,15 @@ export class HordeSystem {
           enemy instanceof Shooter ? "shooter" :
                                      "grunt";
 
+        // Apply diminishing gold multiplier for kills beyond threshold
+        const multiplier = goldMultiplierForKills(state.kills, threshold);
+
         this.goldSystem.spawnFromEnemy(
           state,
           enemy.x + enemy.width  / 2,
           enemy.y + enemy.height / 2,
-          type
+          type,
+          multiplier
         );
 
         state.particles.push(...spawnBurst(
@@ -180,14 +212,28 @@ export class HordeSystem {
       });
     }
 
-    // ── Wave respawn ──────────────────────────────────────
-    const killsLeft = KILL_THRESHOLD - state.kills;
-    if (killsLeft > 0 && state.alive === 0 && Date.now() - state.lastSpawn > 1000) {
-      const spawnCount = Math.min(WAVE_SIZE, killsLeft);
-      const newWave    = spawnWave(spawnCount, worldW, worldH, rs.roomInCycle, rs.floor);
-      state.enemies.push(...newWave);
-      state.alive     = spawnCount;
-      state.lastSpawn = Date.now();
+    // ── Wave spawning ─────────────────────────────────────
+    const now = Date.now();
+
+    if (!thresholdMet) {
+      // Before threshold: batch spawning — fill up when alive === 0
+      const killsLeft = threshold - state.kills;
+      if (killsLeft > 0 && state.alive === 0 && now - state.lastSpawn > 1000) {
+        const spawnCount = Math.min(WAVE_SIZE, killsLeft);
+        const newWave    = spawnWave(spawnCount, worldW, worldH, rs.roomInCycle, rs.floor);
+        state.enemies.push(...newWave);
+        state.alive     = spawnCount;
+        state.lastSpawn = now;
+      }
+    } else {
+      // After threshold: trickle spawn — 1 enemy every 3000ms indefinitely
+      // Gives the player a safer farming window while keeping pressure alive
+      if (now - state.lastSpawn > FARMING_SPAWN_INTERVAL) {
+        const [newEnemy] = spawnWave(1, worldW, worldH, rs.roomInCycle, rs.floor);
+        state.enemies.push(newEnemy);
+        state.alive    += 1;
+        state.lastSpawn = now;
+      }
     }
 
     // ── Projectiles ───────────────────────────────────────

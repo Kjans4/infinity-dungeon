@@ -49,13 +49,32 @@ function ThinBar({
 
 // ============================================================
 // [🧱 BLOCK: Kill Ring]
+// Before threshold: fills red → green, shows kills/threshold.
+// After threshold:  stays full green, shows +N extra kills
+// and a gold tier indicator so the player knows how much
+// diminished gold they're earning.
 // ============================================================
 function KillRing({ kills, threshold }: { kills: number; threshold: number }) {
-  const pct           = Math.min(kills / threshold, 1);
+  const done          = kills >= threshold;
+  const pct           = done ? 1 : Math.min(kills / threshold, 1);
   const radius        = 16;
   const circumference = 2 * Math.PI * radius;
   const dashOffset    = circumference * (1 - pct);
-  const done          = kills >= threshold;
+
+  // Gold tier after threshold
+  const extraKills   = done ? kills - threshold : 0;
+  const tier         = Math.floor(extraKills / 10);
+  const multiplier   = done ? Math.max(0.20, 1.0 - tier * 0.20) : 1.0;
+  const multiplierPct = Math.round(multiplier * 100);
+
+  // Ring color — dims as gold value reduces
+  const ringColor = !done
+    ? "#f87171"
+    : multiplier >= 1.0  ? "#4ade80"
+    : multiplier >= 0.80 ? "#a3e635"
+    : multiplier >= 0.60 ? "#facc15"
+    : multiplier >= 0.40 ? "#fb923c"
+    : "#f87171";
 
   return (
     <div className="hud-kill-ring-wrapper">
@@ -67,35 +86,48 @@ function KillRing({ kills, threshold }: { kills: number; threshold: number }) {
           <circle cx="20" cy="20" r={radius} fill="none" stroke="rgba(30,41,59,0.8)" strokeWidth="4" />
           <circle
             cx="20" cy="20" r={radius} fill="none"
-            stroke={done ? "#4ade80" : "#f87171"}
+            stroke={ringColor}
             strokeWidth="4"
             strokeDasharray={circumference}
             strokeDashoffset={dashOffset}
             strokeLinecap="round"
             style={{
-              transition: "stroke-dashoffset 0.1s linear",
-              filter: done ? "drop-shadow(0 0 4px #4ade80)" : "none",
+              transition: "stroke-dashoffset 0.1s linear, stroke 0.3s ease",
+              filter: done ? `drop-shadow(0 0 4px ${ringColor})` : "none",
             }}
           />
         </svg>
         <div className="hud-kill-ring-count">
-          <span
-            className="hud-kill-ring-number"
-            style={{ color: done ? "#4ade80" : "#f1f5f9" }}
-          >
-            {kills}
-          </span>
+          {done ? (
+            <span className="hud-kill-ring-number" style={{ color: ringColor }}>
+              +{extraKills}
+            </span>
+          ) : (
+            <span className="hud-kill-ring-number" style={{ color: "#f1f5f9" }}>
+              {kills}
+            </span>
+          )}
         </div>
       </div>
-      <span
-        className="hud-kill-ring-label"
-        style={{
-          color: done ? "#4ade80" : "rgba(148,163,184,0.6)",
-          textShadow: done ? "0 0 8px #4ade80" : "none",
-        }}
-      >
-        {done ? "⚡ open" : `${kills}/${threshold}`}
-      </span>
+
+      {/* Label row */}
+      {done ? (
+        <div className="hud-kill-ring-farming">
+          <span className="hud-kill-ring-label" style={{ color: ringColor, textShadow: `0 0 8px ${ringColor}` }}>
+            ⚡ open
+          </span>
+          <span className="hud-kill-ring-bonus" style={{ color: ringColor }}>
+            💰 {multiplierPct}%
+          </span>
+        </div>
+      ) : (
+        <span
+          className="hud-kill-ring-label"
+          style={{ color: "rgba(148,163,184,0.6)" }}
+        >
+          {kills}/{threshold}
+        </span>
+      )}
     </div>
   );
 }

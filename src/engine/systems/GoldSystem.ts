@@ -20,22 +20,24 @@ function randInt(min: number, max: number): number {
 
 // ============================================================
 // [🧱 BLOCK: GoldSystem Class]
-// Spawns, updates, collects and draws all gold drops.
 // ============================================================
 export class GoldSystem {
 
   // ============================================================
   // [🧱 BLOCK: Spawn]
-  // Call when an enemy dies — pass its world position and type.
+  // multiplier — applied to amount for diminishing returns
+  // on kills beyond the room threshold. Defaults to 1.0.
   // ============================================================
   spawnFromEnemy(
-    state:  GameState,
-    x:      number,
-    y:      number,
-    type:   "grunt" | "shooter" | "tank" | "boss"
+    state:      GameState,
+    x:          number,
+    y:          number,
+    type:       "grunt" | "shooter" | "tank" | "boss",
+    multiplier: number = 1.0
   ) {
     const range  = GOLD_DROPS[type];
-    const amount = randInt(range.min, range.max);
+    const base   = randInt(range.min, range.max);
+    const amount = Math.max(1, Math.round(base * multiplier));
 
     const offsetX = (Math.random() - 0.5) * 20;
     const offsetY = (Math.random() - 0.5) * 20;
@@ -45,8 +47,6 @@ export class GoldSystem {
 
   // ============================================================
   // [🧱 BLOCK: Update]
-  // Ticks all drops, collects gold if player walks over.
-  // Returns total gold collected this frame.
   // ============================================================
   update(state: GameState, player: Player): number {
     let collected = 0;

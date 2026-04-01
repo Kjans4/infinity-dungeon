@@ -38,7 +38,6 @@
 
 /* ============================================================
    [🧱 BLOCK: Divider]
-   Thin vertical rule separating pill sections.
    ============================================================ */
 .hud-divider {
   width: 1px;
@@ -92,7 +91,7 @@
   height: 100%;
   border-radius: 3px;
   transition: width 0.1s linear;
-  /* background and box-shadow are set inline (dynamic per-bar color) */
+  /* background and box-shadow set inline — dynamic per-bar color */
 }
 
 /* ============================================================
@@ -176,12 +175,29 @@
 .hud-kill-ring-number {
   font-size: 10px;
   font-weight: 900;
-  /* color set inline (dynamic: green when done, white otherwise) */
+  /* color set inline — dynamic */
 }
 
 .hud-kill-ring-label {
   font-size: 8px;
   letter-spacing: 0.1em;
   text-transform: uppercase;
-  /* color and text-shadow set inline (dynamic: green when done) */
+  /* color and text-shadow set inline — dynamic */
+}
+
+/* ============================================================
+   [🧱 BLOCK: Farming State]
+   Shown after threshold is met — stacked label + gold %.
+   ============================================================ */
+.hud-kill-ring-farming {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+}
+
+.hud-kill-ring-bonus {
+  font-size: 7px;
+  letter-spacing: 0.08em;
+  /* color set inline — shifts with gold tier */
 }

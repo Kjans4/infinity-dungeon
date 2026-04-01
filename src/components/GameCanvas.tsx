@@ -49,7 +49,7 @@ interface HUDState {
 interface DevPanelProps {
   isOpen:          boolean;
   onToggle:        () => void;
-  gameActive:      boolean;  // false = on menu / game over
+  gameActive:      boolean;
   isBossPhase:     boolean;
   isShopPhase:     boolean;
   onKillAll:       () => void;
@@ -65,7 +65,6 @@ function DevPanel({
 }: DevPanelProps) {
   return (
     <>
-      {/* F1 indicator pill — always visible in dev */}
       <button
         className={`dev-toggle ${isOpen ? "dev-toggle--active" : ""}`}
         onClick={onToggle}
@@ -77,7 +76,6 @@ function DevPanel({
         <div className="dev-panel">
           <div className="dev-panel__header">⚙ Dev Tools</div>
 
-          {/* ── Combat ── */}
           <button
             className="dev-btn dev-btn--red"
             onClick={onKillAll}
@@ -89,7 +87,6 @@ function DevPanel({
 
           <div className="dev-panel__divider" />
 
-          {/* ── Navigation ── */}
           <button
             className="dev-btn dev-btn--blue"
             onClick={onSkipRoom}
@@ -119,7 +116,6 @@ function DevPanel({
 
           <div className="dev-panel__divider" />
 
-          {/* ── Resources ── */}
           <button
             className="dev-btn dev-btn--green"
             onClick={onAddGold}
@@ -202,21 +198,16 @@ export default function GameCanvas() {
     inputRef.current = new InputHandler();
 
     const onKeyDown = (e: KeyboardEvent) => {
-      // F1 — toggle dev panel
       if (e.code === "F1") {
         e.preventDefault();
         if (IS_DEV) setDevPanelOpen((prev) => !prev);
         return;
       }
-
-      // ESC — toggle pause
       if (e.code === "Escape") {
         setShowInventory(false);
         setIsPaused((prev) => !prev);
         return;
       }
-
-      // I — long press to open inventory
       if (e.code === "KeyI" && !e.repeat) {
         const ui = uiActiveRef.current;
         if (ui.menu || ui.shop || ui.gameOver) return;
@@ -348,11 +339,9 @@ export default function GameCanvas() {
   const handleDevKillAll = useCallback(() => {
     const state = stateRef.current;
     if (!state) return;
-    // Wipe all enemies and set kill count to threshold
     state.enemies = [];
-    state.kills   = hordeRef.current.killThreshold;
+    state.kills   = hordeRef.current.getThreshold(roomRef.current.floor);
     state.alive   = 0;
-    // Activate the door immediately
     if (state.door) state.door.activate();
     announce("DEV: ALL ENEMIES KILLED", "Gate is open", "#f87171");
   }, [announce]);
@@ -365,7 +354,6 @@ export default function GameCanvas() {
   const handleDevSkipToShop = useCallback(() => {
     const state = stateRef.current;
     if (!state) return;
-    // Force advance to shop phase regardless of current room
     const rs: RoomState = {
       floor:       roomRef.current.floor,
       roomInCycle: 3,
@@ -438,9 +426,12 @@ export default function GameCanvas() {
       if (player.hp < prevHp) renderRef.current.shake("light");
       if (goldCollected > 0)  state.gold += goldCollected;
       if (event === "door") { handleDoorEnter(); return; }
+
+      // ── Room clear announcement (fires once when threshold met) ──
+      const threshold = hordeRef.current.getThreshold(rs.floor);
       if (
         state.door?.isActive &&
-        state.kills >= hordeRef.current.killThreshold &&
+        state.kills >= threshold &&
         !announcementRef.current
       ) {
         announce("ROOM CLEAR", "Gate is open — head north");
@@ -473,8 +464,10 @@ export default function GameCanvas() {
   const gameActive  = !showMenu && !isGameOver && !isVictory;
   const isBossPhase = roomRef.current.phase === "boss";
   const isShopPhase = roomRef.current.phase === "shop";
+  const state       = stateRef.current;
 
-  const state = stateRef.current;
+  // Dynamic threshold for current floor — used by HUD
+  const currentThreshold = hordeRef.current.getThreshold(hud.floor);
 
   return (
     <div style={{ width: "100vw", height: "100vh", overflow: "hidden", background: "#0f172a" }}>
@@ -484,7 +477,7 @@ export default function GameCanvas() {
         <HUD
           hp={hud.hp}           maxHp={MAX_HP}
           stamina={hud.stamina} maxStamina={MAX_STAMINA}
-          kills={hud.kills}     killThreshold={hordeRef.current.killThreshold}
+          kills={hud.kills}     killThreshold={currentThreshold}
           room={hud.room}       floor={hud.floor}
           gold={gold}
         />
