@@ -1,10 +1,11 @@
 // src/engine/enemy/Boss.ts
-import { Player } from "../Player";
-import { Camera } from "../Camera";
-import { BaseEnemy } from "./BaseEnemy";
+import { Player }     from "../Player";
+import { Camera }     from "../Camera";
+import { BaseEnemy }  from "./BaseEnemy";
+import { Projectile } from "./Projectile";
 
 // ============================================================
-// [🧱 BLOCK: Boss Attack States]
+// [🧱 BLOCK: Boss States]
 // ============================================================
 type BossState =
   | 'chase'
@@ -12,53 +13,143 @@ type BossState =
   | 'charging'
   | 'warn_slam'
   | 'slamming'
+  | 'slamming2'    // double slam (Floor 3+)
+  | 'warn_shoot'   // projectile spread (Floor 2+)
+  | 'shooting'
   | 'cooldown';
 
 // ============================================================
 // [🧱 BLOCK: Boss Stats]
 // ============================================================
 const BOSS_STATS = {
-  speed:        1.2,
-  baseHp:       300,
-  size:         80,
-  color:        '#dc2626',
-  xpValue:      20,
-  damage:       20,
-  slamDamage:   30,
-  slamMaxRadius:120,
+  baseSpeed:      1.2,
+  rageSpeed:      2.0,
+  baseHp:         300,
+  size:           80,
+  color:          '#dc2626',
+  rageColor:      '#7f1d1d',
+  xpValue:        20,
+  damage:         20,
+  slamDamage:     30,
+  slamMaxRadius:  120,
+  slam2MaxRadius: 80,   // second slam is smaller
+  chargeSpeed:    14,
+  rageChargeSpeed:20,
+  shootDamage:    15,
 };
+
+// Warn durations — floor and rage aware
+const WARN_NORMAL  = 1500;
+const WARN_FLOOR4  =  900;
+const WARN_RAGE    =  700;
+const CHASE_NORMAL = 3000;
+const CHASE_RAGE   = 1800;
+
+// Spread shot angles (Floor 2+): ±20°
+const SPREAD_ANGLES = [-Math.PI / 9, 0, Math.PI / 9];
 
 // ============================================================
 // [🧱 BLOCK: Boss Class]
-// Single large enemy with 3-phase attack pattern:
-//   chase → warn_charge (yellow ring) → charging (fast dash)
-//   chase → warn_slam   (red ring)    → slamming (AoE burst)
 // ============================================================
 export class Boss extends BaseEnemy {
-  state:      BossState = 'chase';
-  stateTimer: number    = 3000; // Start with 3s chase before first attack
+  bossState:  BossState = 'chase';
+  stateTimer: number    = CHASE_NORMAL;
 
   // Charge
   chargeDir: { x: number; y: number } = { x: 0, y: 0 };
 
   // Slam
-  slamRadius:    number  = 0;
-  slamActive:    boolean = false;
+  slamRadius:  number  = 0;
+  slamActive:  boolean = false;
+  slam2Radius: number  = 0;
+  slam2Active: boolean = false;
+
+  // Projectiles — drained by BossSystem each frame
+  pendingProjectiles: Projectile[] = [];
+
+  // Rage
+  isEnraged:            boolean = false;
+  justEnragedThisFrame: boolean = false;
 
   // Shared
-  damageCooldown:  number = 0;
-  indicatorPulse:  number = 0;
+  damageCooldown: number = 0;
+  indicatorPulse: number = 0;
+
+  private floor: number;
 
   constructor(x: number, y: number, floor: number = 1) {
-    const hpScale = 1 + (floor - 1) * 0.30;
+    const hpScale = 1 + (floor - 1) * 0.50;
     super(
       x, y,
       BOSS_STATS.size,
-      BOSS_STATS.speed,
+      BOSS_STATS.baseSpeed,
       Math.round(BOSS_STATS.baseHp * hpScale),
       BOSS_STATS.xpValue,
       BOSS_STATS.color,
     );
+    this.floor = floor;
+  }
+
+  // ============================================================
+  // [🧱 BLOCK: Computed Timings]
+  // Warn durations shrink with floor and rage.
+  // ============================================================
+  private get warnDuration(): number {
+    if (this.isEnraged) return WARN_RAGE;
+    if (this.floor >= 4) return WARN_FLOOR4;
+    return WARN_NORMAL;
+  }
+
+  private get chaseDuration(): number {
+    return this.isEnraged ? CHASE_RAGE : CHASE_NORMAL;
+  }
+
+  private get currentChargeSpeed(): number {
+    return this.isEnraged ? BOSS_STATS.rageChargeSpeed : BOSS_STATS.chargeSpeed;
+  }
+
+  // ============================================================
+  // [🧱 BLOCK: Pick Next Attack]
+  // Floor 1:  charge | slam (50/50)
+  // Floor 2+: charge | slam | shoot (33/33/33)
+  // Floor 3+: charge | double-slam | shoot (33/33/33)
+  // ============================================================
+  private pickNextAttack(): BossState {
+    const roll = Math.random();
+    if (this.floor < 2) {
+      return roll < 0.5 ? 'warn_charge' : 'warn_slam';
+    }
+    if (roll < 0.33) return 'warn_charge';
+    if (roll < 0.66) return 'warn_slam';
+    return 'warn_shoot';
+  }
+
+  // ============================================================
+  // [🧱 BLOCK: Check Rage Trigger]
+  // Triggers once when HP drops to or below 50%.
+  // ============================================================
+  private checkRage(): void {
+    if (!this.isEnraged && this.hp / this.maxHp <= 0.5) {
+      this.isEnraged            = true;
+      this.justEnragedThisFrame = true;
+      this.speed                = BOSS_STATS.rageSpeed;
+      this.color                = BOSS_STATS.rageColor;
+    }
+  }
+
+  // ============================================================
+  // [🧱 BLOCK: Fire Spread Shot]
+  // ============================================================
+  private fireSpread(ecx: number, ecy: number, pcx: number, pcy: number): void {
+    const baseAngle = Math.atan2(pcy - ecy, pcx - ecx);
+    SPREAD_ANGLES.forEach((offset) => {
+      const angle = baseAngle + offset;
+      const tx    = ecx + Math.cos(angle) * 300;
+      const ty    = ecy + Math.sin(angle) * 300;
+      this.pendingProjectiles.push(
+        new Projectile(ecx, ecy, tx, ty, BOSS_STATS.shootDamage)
+      );
+    });
   }
 
   // ============================================================
@@ -67,10 +158,15 @@ export class Boss extends BaseEnemy {
   update(player: Player, worldW: number, worldH: number) {
     if (this.isDead) return;
 
+    // Reset one-frame flag
+    this.justEnragedThisFrame = false;
+
     this.tickHitFlash();
     this.stateTimer     -= 16;
     this.indicatorPulse += 16;
     if (this.damageCooldown > 0) this.damageCooldown -= 16;
+
+    this.checkRage();
 
     const pcx  = player.x + player.width  / 2;
     const pcy  = player.y + player.height / 2;
@@ -80,8 +176,9 @@ export class Boss extends BaseEnemy {
     const dy   = pcy - ecy;
     const dist = Math.sqrt(dx * dx + dy * dy) || 1;
 
-    switch (this.state) {
+    switch (this.bossState) {
 
+      // ── Chase ───────────────────────────────────────────
       case 'chase':
         this.vx = (dx / dist) * this.speed;
         this.vy = (dy / dist) * this.speed;
@@ -89,66 +186,107 @@ export class Boss extends BaseEnemy {
         this.y += this.vy;
 
         if (this.stateTimer <= 0) {
-          // Randomly pick next attack pattern
-          this.state          = Math.random() < 0.5 ? 'warn_charge' : 'warn_slam';
-          this.stateTimer     = 1500;
+          this.bossState      = this.pickNextAttack();
+          this.stateTimer     = this.warnDuration;
           this.indicatorPulse = 0;
         }
         break;
 
+      // ── Warn Charge ─────────────────────────────────────
       case 'warn_charge':
-        // Stop — show yellow warning ring
         this.vx = 0; this.vy = 0;
-
-        // Lock direction late so player can reposition
         if (this.stateTimer <= 300) {
           this.chargeDir = { x: dx / dist, y: dy / dist };
         }
-
         if (this.stateTimer <= 0) {
-          this.state      = 'charging';
+          this.bossState  = 'charging';
           this.stateTimer = 600;
         }
         break;
 
+      // ── Charging ────────────────────────────────────────
       case 'charging':
-        // Fast dash in locked direction
-        this.x += this.chargeDir.x * 14;
-        this.y += this.chargeDir.y * 14;
-
+        this.x += this.chargeDir.x * this.currentChargeSpeed;
+        this.y += this.chargeDir.y * this.currentChargeSpeed;
         if (this.stateTimer <= 0) {
-          this.state      = 'cooldown';
+          this.bossState  = 'cooldown';
           this.stateTimer = 800;
         }
         break;
 
+      // ── Warn Slam ───────────────────────────────────────
       case 'warn_slam':
-        // Stop — grow red warning ring
         this.vx = 0; this.vy = 0;
-        this.slamRadius = BOSS_STATS.slamMaxRadius * (1 - this.stateTimer / 1500);
-
+        this.slamRadius = BOSS_STATS.slamMaxRadius * (1 - this.stateTimer / this.warnDuration);
         if (this.stateTimer <= 0) {
-          this.state      = 'slamming';
+          this.bossState  = 'slamming';
           this.stateTimer = 400;
           this.slamActive = true;
           this.slamRadius = BOSS_STATS.slamMaxRadius;
         }
         break;
 
+      // ── Slamming ────────────────────────────────────────
       case 'slamming':
         if (this.stateTimer <= 0) {
           this.slamActive = false;
           this.slamRadius = 0;
-          this.state      = 'cooldown';
+          // Floor 3+: fire second slam immediately
+          if (this.floor >= 3) {
+            this.bossState  = 'slamming2';
+            this.stateTimer = this.warnDuration;
+            this.slam2Radius = 0;
+          } else {
+            this.bossState  = 'cooldown';
+            this.stateTimer = 1000;
+          }
+        }
+        break;
+
+      // ── Slamming 2 (Floor 3+) ───────────────────────────
+      case 'slamming2':
+        this.slam2Radius = BOSS_STATS.slam2MaxRadius * (1 - this.stateTimer / this.warnDuration);
+        if (this.stateTimer <= 0) {
+          this.slam2Active = true;
+          this.slam2Radius = BOSS_STATS.slam2MaxRadius;
+          // Brief active window then cooldown
+          setTimeout(() => {
+            this.slam2Active = false;
+            this.slam2Radius = 0;
+          }, 350);
+          this.bossState  = 'cooldown';
+          this.stateTimer = 1200;
+        }
+        break;
+
+      // ── Warn Shoot (Floor 2+) ───────────────────────────
+      case 'warn_shoot':
+        this.vx = 0; this.vy = 0;
+        // Lock aim late in windup
+        if (this.stateTimer <= 200) {
+          this.chargeDir = { x: dx / dist, y: dy / dist };
+        }
+        if (this.stateTimer <= 0) {
+          this.bossState  = 'shooting';
+          this.stateTimer = 300;
+          this.fireSpread(ecx, ecy, pcx, pcy);
+        }
+        break;
+
+      // ── Shooting ────────────────────────────────────────
+      case 'shooting':
+        if (this.stateTimer <= 0) {
+          this.bossState  = 'cooldown';
           this.stateTimer = 1000;
         }
         break;
 
+      // ── Cooldown ────────────────────────────────────────
       case 'cooldown':
         this.vx = 0; this.vy = 0;
         if (this.stateTimer <= 0) {
-          this.state      = 'chase';
-          this.stateTimer = 3000;
+          this.bossState  = 'chase';
+          this.stateTimer = this.chaseDuration;
         }
         break;
     }
@@ -171,16 +309,23 @@ export class Boss extends BaseEnemy {
   }
 
   isSlamHittingPlayer(player: Player): boolean {
-    if (!this.slamActive) return false;
-    const cx   = this.x + this.width  / 2;
-    const cy   = this.y + this.height / 2;
-    const px   = player.x + player.width  / 2;
-    const py   = player.y + player.height / 2;
-    return Math.sqrt((cx - px) ** 2 + (cy - py) ** 2) < this.slamRadius;
+    const cx = this.x + this.width  / 2;
+    const cy = this.y + this.height / 2;
+    const px = player.x + player.width  / 2;
+    const py = player.y + player.height / 2;
+    const d  = Math.sqrt((cx - px) ** 2 + (cy - py) ** 2);
+
+    if (this.slamActive  && d < this.slamRadius)  return true;
+    if (this.slam2Active && d < this.slam2Radius) return true;
+    return false;
   }
 
-  get contactDamage()  { return BOSS_STATS.damage;      }
-  get slamDamage()     { return BOSS_STATS.slamDamage;  }
+  // ── Expose slam2Active for BossSystem ────────────────────
+  
+
+  get contactDamage() { return BOSS_STATS.damage;      }
+  get slamDamage()    { return BOSS_STATS.slamDamage;  }
+  get shootDamage()   { return BOSS_STATS.shootDamage; }
 
   // ============================================================
   // [🧱 BLOCK: Draw]
@@ -193,11 +338,10 @@ export class Boss extends BaseEnemy {
     const cx = sx + this.width  / 2;
     const cy = sy + this.height / 2;
 
-    // ── Slam warning ring ──
-    if (this.state === 'warn_slam' || this.state === 'slamming') {
+    // ── Slam 1 warning / active ──────────────────────────
+    if (this.bossState === 'warn_slam' || this.bossState === 'slamming') {
       const pulse = Math.sin(this.indicatorPulse / 150) * 0.3 + 0.7;
-
-      if (this.state === 'slamming') {
+      if (this.bossState === 'slamming') {
         ctx.beginPath();
         ctx.arc(cx, cy, this.slamRadius, 0, Math.PI * 2);
         ctx.fillStyle   = "rgba(255,255,255,0.15)";
@@ -214,8 +358,26 @@ export class Boss extends BaseEnemy {
       }
     }
 
-    // ── Charge warning ring ──
-    if (this.state === 'warn_charge') {
+    // ── Slam 2 warning / active (Floor 3+) ───────────────
+    if (this.bossState === 'slamming2' || this.slam2Active) {
+      const pulse = Math.sin(this.indicatorPulse / 120) * 0.3 + 0.7;
+      ctx.beginPath();
+      ctx.arc(cx, cy, this.slam2Radius || BOSS_STATS.slam2MaxRadius, 0, Math.PI * 2);
+      if (this.slam2Active) {
+        ctx.fillStyle   = "rgba(255,200,200,0.12)";
+        ctx.fill();
+        ctx.strokeStyle = "rgba(255,150,150,0.9)";
+        ctx.lineWidth   = 3;
+        ctx.stroke();
+      } else {
+        ctx.strokeStyle = `rgba(249, 115, 22, ${pulse})`;
+        ctx.lineWidth   = 2;
+        ctx.stroke();
+      }
+    }
+
+    // ── Charge warning ring ──────────────────────────────
+    if (this.bossState === 'warn_charge') {
       const pulse = Math.sin(this.indicatorPulse / 100) * 0.4 + 0.6;
       ctx.beginPath();
       ctx.arc(cx, cy, 65, 0, Math.PI * 2);
@@ -223,7 +385,6 @@ export class Boss extends BaseEnemy {
       ctx.lineWidth   = 3;
       ctx.stroke();
 
-      // Direction arrow
       ctx.strokeStyle = `rgba(250, 204, 21, ${pulse})`;
       ctx.lineWidth   = 2;
       ctx.beginPath();
@@ -232,25 +393,70 @@ export class Boss extends BaseEnemy {
       ctx.stroke();
     }
 
-    // ── Body ──
+    // ── Shoot warning ring (Floor 2+) ────────────────────
+    if (this.bossState === 'warn_shoot') {
+      const pulse = Math.sin(this.indicatorPulse / 100) * 0.4 + 0.6;
+      // Cyan-blue ring to distinguish from charge
+      ctx.beginPath();
+      ctx.arc(cx, cy, 55, 0, Math.PI * 2);
+      ctx.strokeStyle = `rgba(56, 189, 248, ${pulse})`;
+      ctx.lineWidth   = 3;
+      ctx.stroke();
+
+      // Draw spread aim lines
+      const baseAngle = Math.atan2(this.chargeDir.y, this.chargeDir.x);
+      SPREAD_ANGLES.forEach((offset) => {
+        const a = baseAngle + offset;
+        ctx.strokeStyle = `rgba(56, 189, 248, ${offset === 0 ? 0.4 : 0.2})`;
+        ctx.lineWidth   = 1;
+        ctx.setLineDash([4, 4]);
+        ctx.beginPath();
+        ctx.moveTo(cx, cy);
+        ctx.lineTo(cx + Math.cos(a) * 200, cy + Math.sin(a) * 200);
+        ctx.stroke();
+        ctx.setLineDash([]);
+      });
+    }
+
+    // ── Rage aura ────────────────────────────────────────
+    if (this.isEnraged) {
+      const pulse = Math.sin(this.indicatorPulse / 80) * 0.3 + 0.4;
+      ctx.beginPath();
+      ctx.arc(cx, cy, this.width / 2 + 8, 0, Math.PI * 2);
+      ctx.strokeStyle = `rgba(127, 29, 29, ${pulse})`;
+      ctx.lineWidth   = 3;
+      ctx.stroke();
+    }
+
+    // ── Body ─────────────────────────────────────────────
     const bodyColor =
-      this.isHit              ? '#ffffff'  :
-      this.state === 'charging' ? '#f97316' :
-      this.state === 'slamming' ? '#ef4444' :
+      this.isHit                        ? '#ffffff'  :
+      this.bossState === 'charging'     ? '#f97316'  :
+      this.bossState === 'slamming'     ? '#ef4444'  :
+      this.bossState === 'slamming2'    ? '#f87171'  :
+      this.bossState === 'shooting'     ? '#38bdf8'  :
+      this.isEnraged                    ? '#991b1b'  :
       BOSS_STATS.color;
 
     this.drawBody(ctx, sx, sy, bodyColor);
 
-    // ── Wide HP bar (2× width, centered) ──
+    // ── Wide HP bar ───────────────────────────────────────
     const barW = this.width * 2;
     const barX = sx - this.width / 2;
     this.drawHpBar(ctx, barX, sy, barW, -14);
 
-    // ── BOSS label ──
-    ctx.fillStyle = "rgba(255,255,255,0.7)";
-    ctx.font      = "bold 10px 'Courier New'";
+    // ── Rage threshold marker on HP bar ──────────────────
+    if (!this.isEnraged) {
+      const markerX = barX + barW * 0.5;
+      ctx.fillStyle = "rgba(255,255,255,0.6)";
+      ctx.fillRect(markerX - 1, sy - 15, 2, 6);
+    }
+
+    // ── BOSS label ────────────────────────────────────────
+    ctx.fillStyle = this.isEnraged ? "#f87171" : "rgba(255,255,255,0.7)";
+    ctx.font      = `bold 10px 'Courier New'`;
     ctx.textAlign = "center";
-    ctx.fillText("BOSS", cx, sy - 20);
+    ctx.fillText(this.isEnraged ? "⚡ ENRAGED" : "BOSS", cx, sy - 20);
     ctx.textAlign = "left";
   }
 }

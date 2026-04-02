@@ -22,6 +22,7 @@ import VictoryOverlay        from "@/components/overlays/VictoryOverlay";
 import PauseOverlay          from "@/components/overlays/PauseOverlay";
 import WaveClearAnnouncement from "@/components/overlays/WaveClearAnnouncement";
 
+// ── Dev panel styles (panel itself only renders in development) ──
 import "@/styles/dev-panel.css";
 
 // ============================================================
@@ -32,12 +33,10 @@ const MAX_STAMINA       = 100;
 const INVENTORY_HOLD_MS = 500;
 const IS_DEV            = process.env.NODE_ENV === "development";
 
-// Kill count milestones that trigger announcements before threshold.
-// [remaining kills, message, color]
-const KILL_MILESTONES: [number, string, string][] = [
-  [5, "5 REMAINING", "#fb923c"],
-  [3, "3 REMAINING", "#f97316"],
-  [1, "LAST ONE",    "#ef4444"],
+const REMAINING_MILESTONES = [
+  { at: 5, color: "#f59e0b" },
+  { at: 3, color: "#f97316" },
+  { at: 1, color: "#ef4444" },
 ];
 
 interface HUDState {
@@ -47,12 +46,23 @@ interface HUDState {
 
 // ============================================================
 // [🧱 BLOCK: Dev Panel]
+// Only rendered in development. Closed over GameCanvas refs
+// and handlers so no prop drilling is needed.
+// To remove for production: delete this component + the
+// <DevPanel /> JSX below. The IS_DEV guard also prevents
+// it rendering in prod builds automatically.
 // ============================================================
 interface DevPanelProps {
-  isOpen: boolean; onToggle: () => void; gameActive: boolean;
-  isBossPhase: boolean; isShopPhase: boolean;
-  onKillAll: () => void; onSkipRoom: () => void;
-  onSkipToShop: () => void; onSkipToBoss: () => void; onAddGold: () => void;
+  isOpen:          boolean;
+  onToggle:        () => void;
+  gameActive:      boolean;
+  isBossPhase:     boolean;
+  isShopPhase:     boolean;
+  onKillAll:       () => void;
+  onSkipRoom:      () => void;
+  onSkipToShop:    () => void;
+  onSkipToBoss:    () => void;
+  onAddGold:       () => void;
 }
 
 function DevPanel({
@@ -61,32 +71,63 @@ function DevPanel({
 }: DevPanelProps) {
   return (
     <>
-      <button className={`dev-toggle ${isOpen ? "dev-toggle--active" : ""}`} onClick={onToggle}>
+      <button
+        className={`dev-toggle ${isOpen ? "dev-toggle--active" : ""}`}
+        onClick={onToggle}
+      >
         F1 DEV
       </button>
+
       {isOpen && (
         <div className="dev-panel">
           <div className="dev-panel__header">⚙ Dev Tools</div>
-          <button className="dev-btn dev-btn--red" onClick={onKillAll}
-            disabled={!gameActive || isBossPhase} title="Instantly kills all enemies and opens the door">
+
+          <button
+            className="dev-btn dev-btn--red"
+            onClick={onKillAll}
+            disabled={!gameActive || isBossPhase}
+            title="Instantly kills all enemies and opens the door"
+          >
             ☠ Kill All Enemies
           </button>
+
           <div className="dev-panel__divider" />
-          <button className="dev-btn dev-btn--blue" onClick={onSkipRoom}
-            disabled={!gameActive || isBossPhase || isShopPhase} title="Skip directly to the next room">
+
+          <button
+            className="dev-btn dev-btn--blue"
+            onClick={onSkipRoom}
+            disabled={!gameActive || isBossPhase || isShopPhase}
+            title="Skip directly to the next room (bypasses door walk)"
+          >
             ⏭ Skip Room
           </button>
-          <button className="dev-btn dev-btn--blue" onClick={onSkipToShop}
-            disabled={!gameActive || isBossPhase || isShopPhase} title="Jump straight to the shop">
+
+          <button
+            className="dev-btn dev-btn--blue"
+            onClick={onSkipToShop}
+            disabled={!gameActive || isBossPhase || isShopPhase}
+            title="Jump straight to the shop"
+          >
             🛒 Skip to Shop
           </button>
-          <button className="dev-btn dev-btn--blue" onClick={onSkipToBoss}
-            disabled={!gameActive || isBossPhase} title="Skip shop and go directly to boss">
+
+          <button
+            className="dev-btn dev-btn--blue"
+            onClick={onSkipToBoss}
+            disabled={!gameActive || isBossPhase}
+            title="Skip shop and go directly to boss"
+          >
             💀 Skip to Boss
           </button>
+
           <div className="dev-panel__divider" />
-          <button className="dev-btn dev-btn--green" onClick={onAddGold}
-            disabled={!gameActive} title="Add 200 gold">
+
+          <button
+            className="dev-btn dev-btn--green"
+            onClick={onAddGold}
+            disabled={!gameActive}
+            title="Add 200 gold"
+          >
             💰 +200 Gold
           </button>
         </div>
@@ -110,11 +151,9 @@ export default function GameCanvas() {
   const roomRef   = useRef<RoomState>(initialRoomState());
 
   // ── Tracking Refs ─────────────────────────────────────────
-  const iHoldTimer             = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const uiActiveRef            = useRef({ menu: true, shop: false, gameOver: false, inventory: false });
-  // Tracks which "N remaining" milestones have fired this room.
-  // Reset on every new room so they fire fresh each time.
-  const announcedMilestonesRef = useRef<Set<number>>(new Set());
+  const iHoldTimer                = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const uiActiveRef               = useRef({ menu: true, shop: false, gameOver: false, inventory: false });
+  const lastAnnouncedRemainingRef = useRef<number | null>(null);
 
   // ── React State ───────────────────────────────────────────
   const [showMenu,      setShowMenu]      = useState(true);
@@ -131,10 +170,17 @@ export default function GameCanvas() {
     show: boolean; message: string; subtext?: string; color?: string;
   }>({ show: false, message: "" });
   const announcementRef = useRef(false);
+
+  // ── Dev State ─────────────────────────────────────────────
   const [devPanelOpen, setDevPanelOpen] = useState(false);
 
   useEffect(() => {
-    uiActiveRef.current = { menu: showMenu, shop: showShop, gameOver: isGameOver, inventory: showInventory };
+    uiActiveRef.current = {
+      menu:      showMenu,
+      shop:      showShop,
+      gameOver:  isGameOver,
+      inventory: showInventory,
+    };
     announcementRef.current = announcement.show;
   }, [showMenu, showShop, isGameOver, showInventory, announcement.show]);
 
@@ -144,20 +190,13 @@ export default function GameCanvas() {
   }, []);
 
   // ============================================================
-  // [🧱 BLOCK: Reset Milestones]
-  // Call whenever a new room starts so milestones fire fresh.
-  // ============================================================
-  const resetMilestones = useCallback(() => {
-    announcedMilestonesRef.current = new Set();
-  }, []);
-
-  // ============================================================
   // [🧱 BLOCK: Init & Input]
   // ============================================================
   useEffect(() => {
     const canvas = canvasRef.current!;
     canvas.width  = window.innerWidth;
     canvas.height = window.innerHeight;
+
     const ctx = canvas.getContext("2d");
     if (ctx) ctx.save();
 
@@ -165,20 +204,38 @@ export default function GameCanvas() {
     inputRef.current = new InputHandler();
 
     const onKeyDown = (e: KeyboardEvent) => {
-      if (e.code === "F1") { e.preventDefault(); if (IS_DEV) setDevPanelOpen((p) => !p); return; }
-      if (e.code === "Escape") { setShowInventory(false); setIsPaused((p) => !p); return; }
+      if (e.code === "F1") {
+        e.preventDefault();
+        if (IS_DEV) setDevPanelOpen((prev) => !prev);
+        return;
+      }
+      if (e.code === "Escape") {
+        setShowInventory(false);
+        setIsPaused((prev) => !prev);
+        return;
+      }
       if (e.code === "KeyI" && !e.repeat) {
         const ui = uiActiveRef.current;
         if (ui.menu || ui.shop || ui.gameOver) return;
         if (iHoldTimer.current) clearTimeout(iHoldTimer.current);
         iHoldTimer.current = setTimeout(() => {
-          setShowInventory((prev) => { const next = !prev; setIsPaused(next); return next; });
+          setShowInventory((prev) => {
+            const next = !prev;
+            setIsPaused(next);
+            return next;
+          });
           iHoldTimer.current = null;
         }, INVENTORY_HOLD_MS);
       }
     };
+
     const onKeyUp = (e: KeyboardEvent) => {
-      if (e.code === "KeyI" && iHoldTimer.current) { clearTimeout(iHoldTimer.current); iHoldTimer.current = null; }
+      if (e.code === "KeyI") {
+        if (iHoldTimer.current) {
+          clearTimeout(iHoldTimer.current);
+          iHoldTimer.current = null;
+        }
+      }
     };
 
     window.addEventListener("keydown", onKeyDown);
@@ -195,7 +252,13 @@ export default function GameCanvas() {
       const s = stateRef.current;
       const r = roomRef.current;
       if (!s) return;
-      setHud({ hp: Math.max(0, s.player.hp), stamina: Math.round(s.player.stamina), kills: s.kills, room: r.roomDisplay, floor: r.floor });
+      setHud({
+        hp:      Math.max(0, s.player.hp),
+        stamina: Math.round(s.player.stamina),
+        kills:   s.kills,
+        room:    r.roomDisplay,
+        floor:   r.floor,
+      });
       setGold(s.gold);
     }, 100);
 
@@ -220,9 +283,10 @@ export default function GameCanvas() {
     setGold(0);
     setIsGameOver(false); setIsVictory(false);
     setShowShop(false);   setIsPaused(false);
-    setShowInventory(false); setShowMenu(false);
-    resetMilestones();
-  }, [resetMilestones]);
+    setShowInventory(false);
+    setShowMenu(false);
+    lastAnnouncedRemainingRef.current = null;
+  }, []);
 
   const handleRestart = useCallback(() => {
     stateRef.current!.reset();
@@ -233,14 +297,15 @@ export default function GameCanvas() {
     setGold(0);
     setIsGameOver(false); setIsVictory(false);
     setShowShop(false);   setIsPaused(false);
-    setShowInventory(false); setShowMenu(true);
-    resetMilestones();
-  }, [resetMilestones]);
+    setShowInventory(false);
+    setShowMenu(true);
+    lastAnnouncedRemainingRef.current = null;
+  }, []);
 
   const handleDoorEnter = useCallback(() => {
     const rs = advanceRoom(roomRef.current);
     roomRef.current = rs;
-    resetMilestones(); // New room — fresh milestone set
+    lastAnnouncedRemainingRef.current = null;
     if (rs.phase === "shop") {
       stateRef.current!.playerStats.generateShopOptions();
       announce("WAVE COMPLETE", "Entering the shop...", "#facc15");
@@ -249,7 +314,7 @@ export default function GameCanvas() {
       hordeRef.current.setup(stateRef.current!, rs, WORLD_W, WORLD_H);
       announce("NEXT ROOM", `Room ${rs.roomDisplay}`, "#38bdf8");
     }
-  }, [announce, resetMilestones]);
+  }, [announce]);
 
   const handleShopContinue = useCallback(() => {
     roomRef.current = enterBossPhase(roomRef.current);
@@ -262,12 +327,20 @@ export default function GameCanvas() {
     roomRef.current = rs;
     stateRef.current!.resetRoom();
     hordeRef.current.setup(stateRef.current!, rs, WORLD_W, WORLD_H);
-    setIsVictory(false); setShowShop(false);
-    resetMilestones();
-  }, [resetMilestones]);
+    setIsVictory(false);
+    setShowShop(false);
+    lastAnnouncedRemainingRef.current = null;
+  }, []);
 
-  const handleGoldChange   = useCallback((ng: number) => { if (stateRef.current) stateRef.current.gold = ng; setGold(ng); }, []);
-  const handleInventoryClose = useCallback(() => { setShowInventory(false); setIsPaused(false); }, []);
+  const handleGoldChange = useCallback((newGold: number) => {
+    if (stateRef.current) stateRef.current.gold = newGold;
+    setGold(newGold);
+  }, []);
+
+  const handleInventoryClose = useCallback(() => {
+    setShowInventory(false);
+    setIsPaused(false);
+  }, []);
 
   // ============================================================
   // [🧱 BLOCK: Dev Handlers]
@@ -279,16 +352,24 @@ export default function GameCanvas() {
     state.kills   = hordeRef.current.getThreshold(roomRef.current.floor);
     state.alive   = 0;
     if (state.door) state.door.activate();
-    resetMilestones();
+    lastAnnouncedRemainingRef.current = null;
     announce("DEV: ALL ENEMIES KILLED", "Gate is open", "#f87171");
-  }, [announce, resetMilestones]);
+  }, [announce]);
 
-  const handleDevSkipRoom  = useCallback(() => { handleDoorEnter(); announce("DEV: ROOM SKIPPED", undefined, "#38bdf8"); }, [handleDoorEnter, announce]);
+  const handleDevSkipRoom = useCallback(() => {
+    handleDoorEnter();
+    announce("DEV: ROOM SKIPPED", undefined, "#38bdf8");
+  }, [handleDoorEnter, announce]);
 
   const handleDevSkipToShop = useCallback(() => {
     const state = stateRef.current;
     if (!state) return;
-    const rs: RoomState = { floor: roomRef.current.floor, roomInCycle: 3, roomDisplay: (roomRef.current.floor - 1) * 3 + 3, phase: "shop" };
+    const rs: RoomState = {
+      floor:       roomRef.current.floor,
+      roomInCycle: 3,
+      roomDisplay: (roomRef.current.floor - 1) * 3 + 3,
+      phase:       "shop",
+    };
     roomRef.current = rs;
     state.playerStats.generateShopOptions();
     setShowShop(true);
@@ -299,7 +380,12 @@ export default function GameCanvas() {
     const state = stateRef.current;
     if (!state) return;
     setShowShop(false);
-    const rs: RoomState = { floor: roomRef.current.floor, roomInCycle: 3, roomDisplay: (roomRef.current.floor - 1) * 3 + 3, phase: "boss" };
+    const rs: RoomState = {
+      floor:       roomRef.current.floor,
+      roomInCycle: 3,
+      roomDisplay: (roomRef.current.floor - 1) * 3 + 3,
+      phase:       "boss",
+    };
     roomRef.current = rs;
     bossRef.current.setup(state, rs);
     announce("DEV: SKIPPED TO BOSS", undefined, "#f87171");
@@ -308,7 +394,8 @@ export default function GameCanvas() {
   const handleDevAddGold = useCallback(() => {
     const state = stateRef.current;
     if (!state) return;
-    state.gold += 200; setGold(state.gold);
+    state.gold += 200;
+    setGold(state.gold);
     announce("DEV: +200 GOLD", undefined, "#4ade80");
   }, [announce]);
 
@@ -343,7 +430,9 @@ export default function GameCanvas() {
 
     if (!isBoss) {
       const prevHp = player.hp;
-      const { event, goldCollected } = hordeRef.current.update(state, player, rs, worldW, worldH);
+      const { event, goldCollected } = hordeRef.current.update(
+        state, player, rs, worldW, worldH
+      );
       if (player.hp < prevHp) renderRef.current.shake("light");
       if (goldCollected > 0)  state.gold += goldCollected;
       if (event === "door") { handleDoorEnter(); return; }
@@ -351,20 +440,30 @@ export default function GameCanvas() {
       const threshold = hordeRef.current.getThreshold(rs.floor);
       const remaining = threshold - state.kills;
 
-      // ── Kill count milestone announcements ─────────────
-      // Fires once per milestone per room, only before threshold is met.
+      // ── Kill count milestone announcements ────────────────
       if (remaining > 0 && !announcementRef.current) {
-        for (const [milestone, message, color] of KILL_MILESTONES) {
-          if (remaining === milestone && !announcedMilestonesRef.current.has(milestone)) {
-            announcedMilestonesRef.current.add(milestone);
-            announce(message, undefined, color);
+        for (const milestone of REMAINING_MILESTONES) {
+          if (
+            remaining === milestone.at &&
+            lastAnnouncedRemainingRef.current !== milestone.at
+          ) {
+            lastAnnouncedRemainingRef.current = milestone.at;
+            announce(
+              `${milestone.at} REMAINING`,
+              milestone.at === 1 ? "Last one!" : undefined,
+              milestone.color
+            );
             break;
           }
         }
       }
 
-      // ── Room clear ─────────────────────────────────────
-      if (state.door?.isActive && state.kills >= threshold && !announcementRef.current) {
+      // ── Room clear ────────────────────────────────────────
+      if (
+        state.door?.isActive &&
+        state.kills >= threshold &&
+        !announcementRef.current
+      ) {
         announce("ROOM CLEAR", "Gate is open — head north");
       }
 
@@ -374,16 +473,25 @@ export default function GameCanvas() {
     if (isBoss) {
       const prevHp = player.hp;
       const { event, goldCollected } = bossRef.current.update(state, player, worldW, worldH);
+
       if (player.hp < prevHp) {
         renderRef.current.shake((prevHp - player.hp) >= 25 ? "heavy" : "medium");
       }
       if (goldCollected > 0) state.gold += goldCollected;
+
+      // ── Boss enrage ───────────────────────────────────────
+      if (event === "enraged") {
+        announce("⚡ ENRAGED", "Boss enters rage mode!", "#ef4444");
+        renderRef.current.shake("heavy");
+      }
+
       if (event === "victory") {
         announce("BOSS SLAIN", "Victory — floor cleared!", "#4ade80");
         roomRef.current = { ...rs, phase: "victory" };
         setTimeout(() => setIsVictory(true), 2000);
         return;
       }
+
       bossRef.current.draw(state, ctx, state.camera, player);
     }
 
@@ -391,12 +499,13 @@ export default function GameCanvas() {
   });
 
   // ============================================================
-  // [🧱 BLOCK: Derived State]
+  // [🧱 BLOCK: Derived State for DevPanel]
   // ============================================================
-  const gameActive       = !showMenu && !isGameOver && !isVictory;
-  const isBossPhase      = roomRef.current.phase === "boss";
-  const isShopPhase      = roomRef.current.phase === "shop";
-  const state            = stateRef.current;
+  const gameActive  = !showMenu && !isGameOver && !isVictory;
+  const isBossPhase = roomRef.current.phase === "boss";
+  const isShopPhase = roomRef.current.phase === "shop";
+  const state       = stateRef.current;
+
   const currentThreshold = hordeRef.current.getThreshold(hud.floor);
 
   return (
@@ -404,8 +513,13 @@ export default function GameCanvas() {
       <canvas ref={canvasRef} style={{ display: "block" }} />
 
       {!showMenu && (
-        <HUD hp={hud.hp} maxHp={MAX_HP} stamina={hud.stamina} maxStamina={MAX_STAMINA}
-          kills={hud.kills} killThreshold={currentThreshold} room={hud.room} floor={hud.floor} gold={gold} />
+        <HUD
+          hp={hud.hp}           maxHp={MAX_HP}
+          stamina={hud.stamina} maxStamina={MAX_STAMINA}
+          kills={hud.kills}     killThreshold={currentThreshold}
+          room={hud.room}       floor={hud.floor}
+          gold={gold}
+        />
       )}
 
       {!showMenu && !isGameOver && (
@@ -413,37 +527,60 @@ export default function GameCanvas() {
       )}
 
       {showShop && state && (
-        <Shop floor={roomRef.current.floor} room={roomRef.current.roomDisplay}
+        <Shop
+          floor={roomRef.current.floor} room={roomRef.current.roomDisplay}
           gold={gold} playerStats={state.playerStats} player={state.player}
-          onGoldChange={handleGoldChange} onContinue={handleShopContinue} />
+          onGoldChange={handleGoldChange} onContinue={handleShopContinue}
+        />
       )}
 
       {showInventory && state && (
-        <Inventory playerStats={state.playerStats} player={state.player}
-          gold={gold} onGoldChange={handleGoldChange} onClose={handleInventoryClose} />
+        <Inventory
+          playerStats={state.playerStats} player={state.player}
+          gold={gold} onGoldChange={handleGoldChange} onClose={handleInventoryClose}
+        />
       )}
 
-      {isVictory && <VictoryOverlay floor={hud.floor} onContinue={handleVictoryContinue} />}
-      {isGameOver && !showMenu && <GameOverOverlay floor={hud.floor} room={hud.room} onRetry={handleRestart} />}
+      {isVictory && (
+        <VictoryOverlay floor={hud.floor} onContinue={handleVictoryContinue} />
+      )}
+      {isGameOver && !showMenu && (
+        <GameOverOverlay floor={hud.floor} room={hud.room} onRetry={handleRestart} />
+      )}
 
       {isPaused && !showMenu && !isGameOver && !showInventory && state && (
-        <PauseOverlay floor={hud.floor} room={hud.room} hp={hud.hp} maxHp={MAX_HP}
-          gold={gold} playerStats={state.playerStats} player={state.player}
+        <PauseOverlay
+          floor={hud.floor}         room={hud.room}
+          hp={hud.hp}               maxHp={MAX_HP}
+          gold={gold}
+          playerStats={state.playerStats}
+          player={state.player}
           onResume={() => setIsPaused(false)}
-          onQuit={() => { setIsPaused(false); handleRestart(); }} />
+          onQuit={() => { setIsPaused(false); handleRestart(); }}
+        />
       )}
 
       {showMenu && <Menu onStart={handleStart} />}
 
-      <WaveClearAnnouncement show={announcement.show} message={announcement.message}
-        subtext={announcement.subtext} color={announcement.color} />
+      <WaveClearAnnouncement
+        show={announcement.show} message={announcement.message}
+        subtext={announcement.subtext} color={announcement.color}
+      />
 
+      {/* ── Dev Panel — only in development ── */}
       {IS_DEV && (
-        <DevPanel isOpen={devPanelOpen} onToggle={() => setDevPanelOpen((p) => !p)}
-          gameActive={gameActive} isBossPhase={isBossPhase} isShopPhase={isShopPhase}
-          onKillAll={handleDevKillAll} onSkipRoom={handleDevSkipRoom}
-          onSkipToShop={handleDevSkipToShop} onSkipToBoss={handleDevSkipToBoss}
-          onAddGold={handleDevAddGold} />
+        <DevPanel
+          isOpen={devPanelOpen}
+          onToggle={() => setDevPanelOpen((p) => !p)}
+          gameActive={gameActive}
+          isBossPhase={isBossPhase}
+          isShopPhase={isShopPhase}
+          onKillAll={handleDevKillAll}
+          onSkipRoom={handleDevSkipRoom}
+          onSkipToShop={handleDevSkipToShop}
+          onSkipToBoss={handleDevSkipToBoss}
+          onAddGold={handleDevAddGold}
+        />
       )}
     </div>
   );
