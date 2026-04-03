@@ -30,15 +30,12 @@ export class BossSystem {
   // ============================================================
   // [🧱 BLOCK: Setup]
   // NOTE: player.hp is intentionally NOT reset here.
-  // Whatever HP the player had leaving the shop carries into
-  // the boss fight. Use the shop's paid healing to prepare.
   // ============================================================
   setup(state: GameState, rs: RoomState) {
     state.player.x  = BOSS_WORLD_W / 2;
     state.player.y  = BOSS_WORLD_H - 100;
     state.player.vx = 0;
     state.player.vy = 0;
-    // ── state.player.hp = state.player.maxHp  ← REMOVED intentionally ──
 
     state.enemies     = [];
     state.projectiles = [];
@@ -64,9 +61,6 @@ export class BossSystem {
 
   // ============================================================
   // [🧱 BLOCK: Update]
-  // Returns event: "victory" | "enraged" | null
-  // "enraged" fires once when boss drops to ≤50% HP —
-  // GameCanvas uses it to announce + trigger screen shake.
   // ============================================================
   update(
     state:  GameState,
@@ -104,7 +98,7 @@ export class BossSystem {
       boss.damageCooldown = 800;
     }
 
-    // ── Boss slam AoE (slam 1 + slam 2) ──────────────────
+    // ── Boss slam AoE ─────────────────────────────────────
     if (boss.isSlamHittingPlayer(player) && player.iFrames <= 0) {
       const final = Math.round(boss.slamDamage * (1 - ps.damageReduction));
       player.takeHit(final);
@@ -122,7 +116,7 @@ export class BossSystem {
       );
     }
 
-    // ── Gold collection ───────────────────────────────────
+    // ── Gold collection — track lifetime earned ───────────
     let goldCollected = 0;
     state.goldDrops.forEach((drop) => {
       const was = drop.collected;
@@ -130,14 +124,16 @@ export class BossSystem {
       if (!was && drop.collected) goldCollected += drop.amount;
     });
     state.goldDrops = state.goldDrops.filter((d) => !d.collected);
+    state.totalGoldEarned += goldCollected;  // ← run-wide counter
 
-    // ── Enrage event (one-frame flag) ─────────────────────
+    // ── Enrage event ──────────────────────────────────────
     if (boss.justEnragedThisFrame) {
       return { event: "enraged", goldCollected };
     }
 
     // ── Boss death ────────────────────────────────────────
     if (boss.isDead) {
+      state.totalKills += 1;  // ← count boss kill in run total
       const bx = boss.x + boss.width  / 2;
       const by = boss.y + boss.height / 2;
       spawnBossGold(state, bx, by);
@@ -151,12 +147,7 @@ export class BossSystem {
   // ============================================================
   // [🧱 BLOCK: Draw]
   // ============================================================
-  draw(
-    state:  GameState,
-    ctx:    CanvasRenderingContext2D,
-    camera: Camera,
-    player: Player
-  ) {
+  draw(state: GameState, ctx: CanvasRenderingContext2D, camera: Camera, player: Player) {
     state.boss?.draw(ctx, camera);
     state.projectiles.forEach((p) => p.draw(ctx, camera));
     state.goldDrops.forEach((drop) => drop.draw(ctx, camera));

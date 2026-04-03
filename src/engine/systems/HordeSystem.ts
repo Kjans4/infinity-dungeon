@@ -9,17 +9,12 @@ import { GoldSystem }                      from "./GoldSystem";
 import { WeaponSystem }                    from "./WeaponSystem";
 import { spawnBurst }                      from "../Particle";
 
-const INITIAL_WAVE          = 8;
-const WAVE_SIZE             = 6;
-const BASE_THRESHOLD        = 20;   // Floor 1 kill threshold
-const THRESHOLD_PER_FLOOR   = 5;    // +5 kills required per floor
-const FARMING_SPAWN_INTERVAL= 3000; // ms between single enemy spawns after threshold
+const INITIAL_WAVE           = 8;
+const WAVE_SIZE              = 6;
+const BASE_THRESHOLD         = 20;
+const THRESHOLD_PER_FLOOR    = 5;
+const FARMING_SPAWN_INTERVAL = 3000;
 
-// ============================================================
-// [🧱 BLOCK: Gold Multiplier After Threshold]
-// Progressive diminishing returns on bonus kills.
-// Every 10 extra kills reduces gold by 20%, floored at 20%.
-// ============================================================
 function goldMultiplierForKills(kills: number, threshold: number): number {
   if (kills < threshold) return 1.0;
   const extraKills = kills - threshold;
@@ -33,21 +28,15 @@ export class HordeSystem {
 
   // ============================================================
   // [🧱 BLOCK: Threshold Helper]
-  // Dynamic per floor. Used by GameCanvas for HUD and dev tools.
   // ============================================================
   getThreshold(floor: number): number {
     return BASE_THRESHOLD + (floor - 1) * THRESHOLD_PER_FLOOR;
   }
 
-  // Backwards-compat getter — returns Floor 1 threshold.
-  // GameCanvas should prefer getThreshold(floor) where possible.
-  get killThreshold(): number {
-    return BASE_THRESHOLD;
-  }
+  get killThreshold(): number { return BASE_THRESHOLD; }
 
   // ============================================================
   // [🧱 BLOCK: Setup]
-  // HP not reset — carries over from previous room.
   // ============================================================
   setup(state: GameState, rs: RoomState, worldW: number, worldH: number) {
     state.player.x  = worldW / 2;
@@ -99,22 +88,20 @@ export class HordeSystem {
     worldW: number,
     worldH: number
   ): { event: "door" | null; goldCollected: number } {
-    const ps        = state.playerStats;
-    const threshold = this.getThreshold(rs.floor);
+    const ps           = state.playerStats;
+    const threshold    = this.getThreshold(rs.floor);
     const thresholdMet = state.kills >= threshold;
 
     // ── Door ───────────────────────────────────────────────
     if (state.door) {
       state.door.update();
-      if (thresholdMet && !state.door.isActive) {
-        state.door.activate();
-      }
+      if (thresholdMet && !state.door.isActive) state.door.activate();
       if (state.door.isCollidingWithPlayer(player)) {
         return { event: "door", goldCollected: 0 };
       }
     }
 
-    // ── Enemy update + projectile collection + melee hits ──
+    // ── Enemy update + melee hits ──────────────────────────
     state.enemies.forEach((enemy) => {
       enemy.update(player, worldW, worldH);
 
@@ -146,9 +133,7 @@ export class HordeSystem {
     const isHeavy  = player.attackType === "heavy";
 
     const hitEnemies = this.weaponSystem.resolveHitsCustom(
-      player,
-      state.enemies,
-      ps.atkBonus,
+      player, state.enemies, ps.atkBonus,
       (enemy, amount) => {
         if (enemy instanceof Tank) {
           enemy.takeDamageFrom(amount, playerCX, playerCY, isHeavy);
@@ -158,7 +143,6 @@ export class HordeSystem {
       }
     );
 
-    // Executioner charm shockwave
     if (isHeavy && ps.hasCharm("executioner")) {
       hitEnemies.forEach((enemy) => {
         if (enemy.isDead) {
@@ -179,8 +163,9 @@ export class HordeSystem {
     const justKilled  = before - state.enemies.length;
 
     if (justKilled > 0) {
-      state.kills += justKilled;
-      state.alive -= justKilled;
+      state.kills      += justKilled;
+      state.alive      -= justKilled;
+      state.totalKills += justKilled;  // ← run-wide counter
 
       deadEnemies.forEach((enemy) => {
         const type =
@@ -188,9 +173,7 @@ export class HordeSystem {
           enemy instanceof Shooter ? "shooter" :
                                      "grunt";
 
-        // Apply diminishing gold multiplier for kills beyond threshold
         const multiplier = goldMultiplierForKills(state.kills, threshold);
-
         this.goldSystem.spawnFromEnemy(
           state,
           enemy.x + enemy.width  / 2,
@@ -216,7 +199,6 @@ export class HordeSystem {
     const now = Date.now();
 
     if (!thresholdMet) {
-      // Before threshold: batch spawning — fill up when alive === 0
       const killsLeft = threshold - state.kills;
       if (killsLeft > 0 && state.alive === 0 && now - state.lastSpawn > 1000) {
         const spawnCount = Math.min(WAVE_SIZE, killsLeft);
@@ -226,8 +208,6 @@ export class HordeSystem {
         state.lastSpawn = now;
       }
     } else {
-      // After threshold: trickle spawn — 1 enemy every 3000ms indefinitely
-      // Gives the player a safer farming window while keeping pressure alive
       if (now - state.lastSpawn > FARMING_SPAWN_INTERVAL) {
         const [newEnemy] = spawnWave(1, worldW, worldH, rs.roomInCycle, rs.floor);
         state.enemies.push(newEnemy);
@@ -255,19 +235,18 @@ export class HordeSystem {
       );
     }
 
+    // ── Gold collection — track lifetime earned ───────────
+    const goldBefore    = state.gold;
     const goldCollected = this.goldSystem.update(state, player);
+    state.totalGoldEarned += goldCollected;  // ← run-wide counter
+
     return { event: null, goldCollected };
   }
 
   // ============================================================
   // [🧱 BLOCK: Shockwave]
   // ============================================================
-  private triggerShockwave(
-    state:  GameState,
-    cx:     number,
-    cy:     number,
-    damage: number
-  ) {
+  private triggerShockwave(state: GameState, cx: number, cy: number, damage: number) {
     state.enemies.forEach((enemy) => {
       if (enemy.isDead) return;
       const ex   = enemy.x + enemy.width  / 2;
@@ -280,12 +259,7 @@ export class HordeSystem {
   // ============================================================
   // [🧱 BLOCK: Draw]
   // ============================================================
-  draw(
-    state:  GameState,
-    ctx:    CanvasRenderingContext2D,
-    camera: Camera,
-    player: Player
-  ) {
+  draw(state: GameState, ctx: CanvasRenderingContext2D, camera: Camera, player: Player) {
     state.door?.draw(ctx, camera);
     state.enemies.forEach((e)     => e.draw(ctx, camera));
     state.projectiles.forEach((p) => p.draw(ctx, camera));
