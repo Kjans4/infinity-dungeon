@@ -15,6 +15,20 @@ const BASE_THRESHOLD         = 20;
 const THRESHOLD_PER_FLOOR    = 5;
 const FARMING_SPAWN_INTERVAL = 3000;
 
+// ============================================================
+// [🧱 BLOCK: Separation Constants]
+// SEPARATION_PASSES — how many rounds of pushing per frame.
+//   1 pass is enough for small groups; 2 gives cleaner results
+//   with 8+ enemies without being expensive.
+// SEPARATION_STRENGTH — fraction of overlap to correct each pass.
+//   0.4 feels solid without jitter.
+// TANK_RADIUS_BONUS — tanks take up more social space so smaller
+//   enemies naturally orbit around them.
+// ============================================================
+const SEPARATION_PASSES    = 2;
+const SEPARATION_STRENGTH  = 0.4;
+const TANK_RADIUS_BONUS    = 10;
+
 function goldMultiplierForKills(kills: number, threshold: number): number {
   if (kills < threshold) return 1.0;
   const extraKills = kills - threshold;
@@ -79,6 +93,80 @@ export class HordeSystem {
   }
 
   // ============================================================
+  // [🧱 BLOCK: Separate Enemies]
+  // Prevents enemies from stacking on the same pixel.
+  //
+  // For every pair (i, j) of living enemies, compute the
+  // overlap between their bounding circles. If they overlap,
+  // push each enemy away from the other by half the overlap
+  // distance scaled by SEPARATION_STRENGTH.
+  //
+  // Effective radius = half the enemy's width, plus a bonus
+  // for Tanks so smaller enemies naturally spread around them.
+  //
+  // Running SEPARATION_PASSES iterations per frame settles
+  // large groups faster without a performance cliff —
+  // complexity is O(n² × passes) which is fine for ≤ ~20 enemies.
+  // ============================================================
+  private separateEnemies(
+    enemies: (Grunt | Shooter | Tank)[],
+    worldW:  number,
+    worldH:  number
+  ): void {
+    for (let pass = 0; pass < SEPARATION_PASSES; pass++) {
+      for (let i = 0; i < enemies.length; i++) {
+        const a = enemies[i];
+        if (a.isDead) continue;
+
+        const aRadius = a.width / 2 + (a instanceof Tank ? TANK_RADIUS_BONUS : 0);
+        const acx     = a.x + a.width  / 2;
+        const acy     = a.y + a.height / 2;
+
+        for (let j = i + 1; j < enemies.length; j++) {
+          const b = enemies[j];
+          if (b.isDead) continue;
+
+          const bRadius = b.width / 2 + (b instanceof Tank ? TANK_RADIUS_BONUS : 0);
+          const bcx     = b.x + b.width  / 2;
+          const bcy     = b.y + b.height / 2;
+
+          const dx   = bcx - acx;
+          const dy   = bcy - acy;
+          const dist = Math.sqrt(dx * dx + dy * dy) || 0.01;
+          const minD = aRadius + bRadius;
+
+          if (dist >= minD) continue; // no overlap — skip
+
+          // How far they need to move in total
+          const overlap = (minD - dist) * SEPARATION_STRENGTH;
+          const nx      = dx / dist;
+          const ny      = dy / dist;
+
+          // Push each enemy half the correction in opposite directions.
+          // Tanks are heavier — they get pushed less (25%), the lighter
+          // enemy absorbs more (75%).
+          const aIsHeavy = a instanceof Tank;
+          const bIsHeavy = b instanceof Tank;
+
+          const pushA = aIsHeavy ? overlap * 0.25 : (bIsHeavy ? overlap * 0.75 : overlap * 0.5);
+          const pushB = bIsHeavy ? overlap * 0.25 : (aIsHeavy ? overlap * 0.75 : overlap * 0.5);
+
+          a.x -= nx * pushA;
+          a.y -= ny * pushA;
+          b.x += nx * pushB;
+          b.y += ny * pushB;
+
+          // Keep both inside the world after nudging
+          a.x = Math.max(0, Math.min(worldW - a.width,  a.x));
+          a.y = Math.max(0, Math.min(worldH - a.height, a.y));
+          b.x = Math.max(0, Math.min(worldW - b.width,  b.x));
+          b.y = Math.max(0, Math.min(worldH - b.height, b.y));
+        }
+      }
+    }
+  }
+
+  // ============================================================
   // [🧱 BLOCK: Update]
   // ============================================================
   update(
@@ -124,6 +212,9 @@ export class HordeSystem {
         }
       }
     });
+
+    // ── Separation — prevent enemy stacking ───────────────
+    this.separateEnemies(state.enemies, worldW, worldH);
 
     // ── Weapon input + hit resolution ─────────────────────
     this.weaponSystem.processInput(player);
@@ -236,7 +327,6 @@ export class HordeSystem {
     }
 
     // ── Gold collection — track lifetime earned ───────────
-    const goldBefore    = state.gold;
     const goldCollected = this.goldSystem.update(state, player);
     state.totalGoldEarned += goldCollected;  // ← run-wide counter
 
