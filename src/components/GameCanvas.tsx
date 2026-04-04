@@ -34,9 +34,9 @@ const INVENTORY_HOLD_MS = 500;
 const IS_DEV            = process.env.NODE_ENV === "development";
 
 // Death sequence timing (ms)
-const DEATH_FLASH_MS    = 600;   // rapid white flash duration
-const DEATH_VIGNETTE_MS = 800;   // vignette fade-in duration
-const DEATH_HOLD_MS     = 400;   // hold at full vignette before overlay
+const DEATH_FLASH_MS    = 600;
+const DEATH_VIGNETTE_MS = 800;
+const DEATH_HOLD_MS     = 400;
 const DEATH_TOTAL_MS    = DEATH_FLASH_MS + DEATH_VIGNETTE_MS + DEATH_HOLD_MS;
 
 const REMAINING_MILESTONES = [
@@ -241,7 +241,27 @@ export default function GameCanvas() {
     vignetteAlphaRef.current = 0;
   }, []);
 
-  const handleRestart = useCallback(() => {
+  // ── Raid Again — resets everything and jumps straight into play ──
+  const handleRaidAgain = useCallback(() => {
+    const rs = initialRoomState();
+    roomRef.current = rs;
+    stateRef.current!.reset();
+    hordeRef.current.reset(stateRef.current!);
+    bossRef.current.reset(stateRef.current!);
+    hordeRef.current.setup(stateRef.current!, rs, WORLD_W, WORLD_H);
+    setHud({ hp: MAX_HP, stamina: MAX_STAMINA, kills: 0, room: 1, floor: 1 });
+    setGold(0);
+    setIsGameOver(false); setIsVictory(false);
+    setShowShop(false);   setIsPaused(false);
+    setShowInventory(false);
+    setShowMenu(false);           // ← stay in-game, no menu
+    lastAnnouncedRemainingRef.current = null;
+    isDyingRef.current = false;
+    vignetteAlphaRef.current = 0;
+  }, []);
+
+  // ── Quit to Menu — resets everything and shows the main menu ──
+  const handleQuitToMenu = useCallback(() => {
     stateRef.current!.reset();
     hordeRef.current.reset(stateRef.current!);
     bossRef.current.reset(stateRef.current!);
@@ -251,7 +271,7 @@ export default function GameCanvas() {
     setIsGameOver(false); setIsVictory(false);
     setShowShop(false);   setIsPaused(false);
     setShowInventory(false);
-    setShowMenu(true);
+    setShowMenu(true);            // ← back to menu
     lastAnnouncedRemainingRef.current = null;
     isDyingRef.current = false;
     vignetteAlphaRef.current = 0;
@@ -548,7 +568,7 @@ export default function GameCanvas() {
         <VictoryOverlay floor={hud.floor} onContinue={handleVictoryContinue} />
       )}
 
-      {/* ── Game Over — passes run stats ── */}
+      {/* ── Game Over ── */}
       {isGameOver && !showMenu && state && (
         <GameOverOverlay
           floor={hud.floor}                        room={hud.room}
@@ -556,8 +576,8 @@ export default function GameCanvas() {
           totalGoldEarned={state.totalGoldEarned}
           runStartTime={state.runStartTime}
           playerStats={state.playerStats}
-          onRetry={handleRestart}
-          onQuit={handleRestart}
+          onRetry={handleRaidAgain}
+          onQuit={handleQuitToMenu}
         />
       )}
 
@@ -567,7 +587,7 @@ export default function GameCanvas() {
           hp={hud.hp} maxHp={MAX_HP} gold={gold}
           playerStats={state.playerStats} player={state.player}
           onResume={() => setIsPaused(false)}
-          onQuit={() => { setIsPaused(false); handleRestart(); }}
+          onQuit={() => { setIsPaused(false); handleQuitToMenu(); }}
         />
       )}
 
