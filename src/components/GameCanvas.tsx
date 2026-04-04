@@ -9,7 +9,7 @@ import { RenderSystem }  from "@/engine/systems/RenderSystem";
 import { WORLD_W, WORLD_H, BOSS_WORLD_W, BOSS_WORLD_H } from "@/engine/Camera";
 import {
   RoomState, initialRoomState, advanceRoom,
-  nextFloor, enterBossPhase,
+  nextFloor, enterBossPhase, isFinalFloor, MAX_FLOORS,
 } from "@/engine/RoomManager";
 import { useGameLoop }       from "@/hooks/useGameLoop";
 import HUD                   from "@/components/HUD";
@@ -45,9 +45,20 @@ const REMAINING_MILESTONES = [
   { at: 1, color: "#ef4444" },
 ];
 
+// ============================================================
+// [🧱 BLOCK: HUD State Interface]
+// bossHp/bossMaxHp/bossIsEnraged — fed from state.boss each
+// hudSync tick; all zero/false when no boss is alive.
+// ============================================================
 interface HUDState {
-  hp: number; stamina: number;
-  kills: number; room: number; floor: number;
+  hp:            number;
+  stamina:       number;
+  kills:         number;
+  room:          number;
+  floor:         number;
+  bossHp:        number;
+  bossMaxHp:     number;
+  bossIsEnraged: boolean;
 }
 
 // ============================================================
@@ -120,9 +131,15 @@ export default function GameCanvas() {
   const lastAnnouncedRemainingRef = useRef<number | null>(null);
 
   // ── Death sequence refs ───────────────────────────────────
-  const isDyingRef        = useRef(false);
-  const deathStartRef     = useRef(0);
-  const vignetteAlphaRef  = useRef(0);
+  const isDyingRef       = useRef(false);
+  const deathStartRef    = useRef(0);
+  const vignetteAlphaRef = useRef(0);
+
+  // ── Per-floor stat tracking (reset on each new floor) ─────
+  // Captured into victoryStats state when victory fires so
+  // VictoryOverlay can display them even after state resets.
+  const floorKillsRef = useRef(0);
+  const floorGoldRef  = useRef(0);
 
   // ── React State ───────────────────────────────────────────
   const [showMenu,      setShowMenu]      = useState(true);
@@ -133,8 +150,11 @@ export default function GameCanvas() {
   const [showInventory, setShowInventory] = useState(false);
   const [gold,          setGold]          = useState(0);
   const [hud, setHud] = useState<HUDState>({
-    hp: MAX_HP, stamina: MAX_STAMINA, kills: 0, room: 1, floor: 1,
+    hp: MAX_HP, stamina: MAX_STAMINA,
+    kills: 0, room: 1, floor: 1,
+    bossHp: 0, bossMaxHp: 0, bossIsEnraged: false,
   });
+  const [victoryStats, setVictoryStats] = useState({ kills: 0, gold: 0 });
   const [announcement, setAnnouncement] = useState<{
     show: boolean; message: string; subtext?: string; color?: string;
   }>({ show: false, message: "" });
@@ -199,16 +219,23 @@ export default function GameCanvas() {
     };
     window.addEventListener("resize", onResize);
 
+    // ── HUD sync — polls at 10fps ─────────────────────────
+    // Boss HP fields are zeroed when no boss is present so the
+    // BossHPBar component unmounts cleanly between fights.
     const hudSync = setInterval(() => {
       const s = stateRef.current;
       const r = roomRef.current;
       if (!s) return;
+      const boss = s.boss;
       setHud({
-        hp:      Math.max(0, s.player.hp),
-        stamina: Math.round(s.player.stamina),
-        kills:   s.kills,
-        room:    r.roomDisplay,
-        floor:   r.floor,
+        hp:            Math.max(0, s.player.hp),
+        stamina:       Math.round(s.player.stamina),
+        kills:         s.kills,
+        room:          r.roomDisplay,
+        floor:         r.floor,
+        bossHp:        boss && !boss.isDead ? boss.hp    : 0,
+        bossMaxHp:     boss                 ? boss.maxHp : 0,
+        bossIsEnraged: boss                 ? boss.isEnraged : false,
       });
       setGold(s.gold);
     }, 100);
@@ -225,12 +252,22 @@ export default function GameCanvas() {
   // ============================================================
   // [🧱 BLOCK: Handlers]
   // ============================================================
+  const resetFloorTracking = useCallback(() => {
+    floorKillsRef.current = 0;
+    floorGoldRef.current  = 0;
+  }, []);
+
+  const blankHud: HUDState = {
+    hp: MAX_HP, stamina: MAX_STAMINA, kills: 0, room: 1, floor: 1,
+    bossHp: 0, bossMaxHp: 0, bossIsEnraged: false,
+  };
+
   const handleStart = useCallback(() => {
     const rs = initialRoomState();
     roomRef.current = rs;
     stateRef.current!.reset();
     hordeRef.current.setup(stateRef.current!, rs, WORLD_W, WORLD_H);
-    setHud({ hp: MAX_HP, stamina: MAX_STAMINA, kills: 0, room: 1, floor: 1 });
+    setHud(blankHud);
     setGold(0);
     setIsGameOver(false); setIsVictory(false);
     setShowShop(false);   setIsPaused(false);
@@ -239,9 +276,10 @@ export default function GameCanvas() {
     lastAnnouncedRemainingRef.current = null;
     isDyingRef.current = false;
     vignetteAlphaRef.current = 0;
-  }, []);
+    resetFloorTracking();
+  }, [resetFloorTracking]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ── Raid Again — resets everything and jumps straight into play ──
+  // ── Raid Again — reset and start immediately, no menu ─────
   const handleRaidAgain = useCallback(() => {
     const rs = initialRoomState();
     roomRef.current = rs;
@@ -249,33 +287,35 @@ export default function GameCanvas() {
     hordeRef.current.reset(stateRef.current!);
     bossRef.current.reset(stateRef.current!);
     hordeRef.current.setup(stateRef.current!, rs, WORLD_W, WORLD_H);
-    setHud({ hp: MAX_HP, stamina: MAX_STAMINA, kills: 0, room: 1, floor: 1 });
+    setHud(blankHud);
     setGold(0);
     setIsGameOver(false); setIsVictory(false);
     setShowShop(false);   setIsPaused(false);
     setShowInventory(false);
-    setShowMenu(false);           // ← stay in-game, no menu
+    setShowMenu(false);
     lastAnnouncedRemainingRef.current = null;
     isDyingRef.current = false;
     vignetteAlphaRef.current = 0;
-  }, []);
+    resetFloorTracking();
+  }, [resetFloorTracking]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ── Quit to Menu — resets everything and shows the main menu ──
+  // ── Quit to Menu ──────────────────────────────────────────
   const handleQuitToMenu = useCallback(() => {
     stateRef.current!.reset();
     hordeRef.current.reset(stateRef.current!);
     bossRef.current.reset(stateRef.current!);
     roomRef.current = initialRoomState();
-    setHud({ hp: MAX_HP, stamina: MAX_STAMINA, kills: 0, room: 1, floor: 1 });
+    setHud(blankHud);
     setGold(0);
     setIsGameOver(false); setIsVictory(false);
     setShowShop(false);   setIsPaused(false);
     setShowInventory(false);
-    setShowMenu(true);            // ← back to menu
+    setShowMenu(true);
     lastAnnouncedRemainingRef.current = null;
     isDyingRef.current = false;
     vignetteAlphaRef.current = 0;
-  }, []);
+    resetFloorTracking();
+  }, [resetFloorTracking]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleDoorEnter = useCallback(() => {
     const rs = advanceRoom(roomRef.current);
@@ -297,6 +337,7 @@ export default function GameCanvas() {
     bossRef.current.setup(stateRef.current!, roomRef.current);
   }, []);
 
+  // ── Victory Continue — only used when NOT on final floor ──
   const handleVictoryContinue = useCallback(() => {
     const rs = nextFloor(roomRef.current);
     roomRef.current = rs;
@@ -305,9 +346,10 @@ export default function GameCanvas() {
     setIsVictory(false);
     setShowShop(false);
     lastAnnouncedRemainingRef.current = null;
-  }, []);
+    resetFloorTracking();
+  }, [resetFloorTracking]);
 
-  const handleGoldChange   = useCallback((newGold: number) => {
+  const handleGoldChange = useCallback((newGold: number) => {
     if (stateRef.current) stateRef.current.gold = newGold;
     setGold(newGold);
   }, []);
@@ -391,20 +433,16 @@ export default function GameCanvas() {
 
     // ============================================================
     // [🧱 BLOCK: Death Sequence]
-    // Runs instead of normal loop when isDying is true.
-    // Plays: flash → particles → vignette → overlay.
     // ============================================================
     if (isDyingRef.current) {
       const elapsed = Date.now() - deathStartRef.current;
 
-      // Keep drawing the frozen world underneath
       renderRef.current.clear(ctx, state.screenW, state.screenH);
       state.camera.update(player, worldW, worldH);
       renderRef.current.drawWorld(ctx, state.camera, state.screenW, state.screenH, isBoss);
       if (isBoss) bossRef.current.draw(state, ctx, state.camera, player);
       else        hordeRef.current.draw(state, ctx, state.camera, player);
 
-      // Player rapid white flash (toggle every 80ms for 600ms)
       if (elapsed < DEATH_FLASH_MS) {
         const flashOn = Math.floor(elapsed / 80) % 2 === 0;
         if (flashOn) {
@@ -415,15 +453,9 @@ export default function GameCanvas() {
         }
       }
 
-      // Vignette fade-in starts at DEATH_FLASH_MS
       if (elapsed >= DEATH_FLASH_MS) {
-        const vigProgress = Math.min(
-          (elapsed - DEATH_FLASH_MS) / DEATH_VIGNETTE_MS,
-          1
-        );
+        const vigProgress = Math.min((elapsed - DEATH_FLASH_MS) / DEATH_VIGNETTE_MS, 1);
         vignetteAlphaRef.current = vigProgress;
-
-        // Draw red vignette overlay
         const alpha = vigProgress * 0.85;
         const grad  = ctx.createRadialGradient(
           state.screenW / 2, state.screenH / 2, state.screenH * 0.2,
@@ -433,13 +465,10 @@ export default function GameCanvas() {
         grad.addColorStop(1, `rgba(80, 0, 0, ${alpha})`);
         ctx.fillStyle = grad;
         ctx.fillRect(0, 0, state.screenW, state.screenH);
-
-        // Dark overlay builds on top
         ctx.fillStyle = `rgba(0, 0, 0, ${vigProgress * 0.6})`;
         ctx.fillRect(0, 0, state.screenW, state.screenH);
       }
 
-      // Show overlay after full sequence
       if (elapsed >= DEATH_TOTAL_MS) {
         isDyingRef.current = false;
         setIsGameOver(true);
@@ -450,14 +479,9 @@ export default function GameCanvas() {
 
     // ── Normal player death check ─────────────────────────
     if (player.hp <= 0 && !isDyingRef.current) {
-      // Trigger death sequence
       isDyingRef.current    = true;
       deathStartRef.current = Date.now();
-
-      // Immediate effects
       renderRef.current.shake("heavy");
-
-      // Spawn large death burst at player position
       const px = player.x + player.width  / 2;
       const py = player.y + player.height / 2;
       state.particles.push(...spawnBurst(px, py, "#ef4444", 20, 2.5));
@@ -474,10 +498,18 @@ export default function GameCanvas() {
     player.y = Math.max(0, Math.min(worldH - player.height, player.y));
 
     if (!isBoss) {
-      const prevHp = player.hp;
+      const prevKills = state.totalKills;
+      const prevHp    = player.hp;
       const { event, goldCollected } = hordeRef.current.update(state, player, rs, worldW, worldH);
+
       if (player.hp < prevHp) renderRef.current.shake("light");
-      if (goldCollected > 0)  state.gold += goldCollected;
+      if (goldCollected > 0) {
+        state.gold           += goldCollected;
+        floorGoldRef.current += goldCollected;
+      }
+      const newKills = state.totalKills - prevKills;
+      if (newKills > 0) floorKillsRef.current += newKills;
+
       if (event === "door") { handleDoorEnter(); return; }
 
       const threshold = hordeRef.current.getThreshold(rs.floor);
@@ -501,10 +533,17 @@ export default function GameCanvas() {
     }
 
     if (isBoss) {
-      const prevHp = player.hp;
+      const prevKills = state.totalKills;
+      const prevHp    = player.hp;
       const { event, goldCollected } = bossRef.current.update(state, player, worldW, worldH);
+
       if (player.hp < prevHp) renderRef.current.shake((prevHp - player.hp) >= 25 ? "heavy" : "medium");
-      if (goldCollected > 0) state.gold += goldCollected;
+      if (goldCollected > 0) {
+        state.gold           += goldCollected;
+        floorGoldRef.current += goldCollected;
+      }
+      const newKills = state.totalKills - prevKills;
+      if (newKills > 0) floorKillsRef.current += newKills;
 
       if (event === "enraged") {
         announce("⚡ ENRAGED", "Boss enters rage mode!", "#ef4444");
@@ -512,7 +551,20 @@ export default function GameCanvas() {
       }
 
       if (event === "victory") {
-        announce("BOSS SLAIN", "Victory — floor cleared!", "#4ade80");
+        const isLast = isFinalFloor(rs.floor);
+
+        // Snapshot per-floor stats before any resets fire
+        setVictoryStats({
+          kills: floorKillsRef.current,
+          gold:  floorGoldRef.current,
+        });
+
+        if (isLast) {
+          announce("YOU WIN", `All ${MAX_FLOORS} floors cleared!`, "#4ade80");
+        } else {
+          announce("BOSS SLAIN", "Victory — floor cleared!", "#4ade80");
+        }
+
         roomRef.current = { ...rs, phase: "victory" };
         setTimeout(() => setIsVictory(true), 2000);
         return;
@@ -527,11 +579,12 @@ export default function GameCanvas() {
   // ============================================================
   // [🧱 BLOCK: Derived State]
   // ============================================================
-  const gameActive  = !showMenu && !isGameOver && !isVictory;
-  const isBossPhase = roomRef.current.phase === "boss";
-  const isShopPhase = roomRef.current.phase === "shop";
-  const state       = stateRef.current;
+  const gameActive       = !showMenu && !isGameOver && !isVictory;
+  const isBossPhase      = roomRef.current.phase === "boss";
+  const isShopPhase      = roomRef.current.phase === "shop";
+  const state            = stateRef.current;
   const currentThreshold = hordeRef.current.getThreshold(hud.floor);
+  const floorIsLast      = isFinalFloor(hud.floor);
 
   return (
     <div style={{ width: "100vw", height: "100vh", overflow: "hidden", background: "#0f172a" }}>
@@ -539,9 +592,14 @@ export default function GameCanvas() {
 
       {!showMenu && (
         <HUD
-          hp={hud.hp} maxHp={MAX_HP} stamina={hud.stamina} maxStamina={MAX_STAMINA}
-          kills={hud.kills} killThreshold={currentThreshold}
-          room={hud.room} floor={hud.floor} gold={gold}
+          hp={hud.hp}           maxHp={MAX_HP}
+          stamina={hud.stamina} maxStamina={MAX_STAMINA}
+          kills={hud.kills}     killThreshold={currentThreshold}
+          room={hud.room}       floor={hud.floor}
+          gold={gold}
+          bossHp={hud.bossHp}
+          bossMaxHp={hud.bossMaxHp}
+          bossIsEnraged={hud.bossIsEnraged}
         />
       )}
 
@@ -564,14 +622,23 @@ export default function GameCanvas() {
         />
       )}
 
-      {isVictory && (
-        <VictoryOverlay floor={hud.floor} onContinue={handleVictoryContinue} />
+      {/* ── Victory — floor stats + final-floor flag ── */}
+      {isVictory && state && (
+        <VictoryOverlay
+          floor={hud.floor}
+          kills={victoryStats.kills}
+          goldEarned={victoryStats.gold}
+          runStartTime={state.runStartTime}
+          isFinalFloor={floorIsLast}
+          onContinue={handleVictoryContinue}
+          onQuit={handleQuitToMenu}
+        />
       )}
 
       {/* ── Game Over ── */}
       {isGameOver && !showMenu && state && (
         <GameOverOverlay
-          floor={hud.floor}                        room={hud.room}
+          floor={hud.floor}                   room={hud.room}
           totalKills={state.totalKills}
           totalGoldEarned={state.totalGoldEarned}
           runStartTime={state.runStartTime}

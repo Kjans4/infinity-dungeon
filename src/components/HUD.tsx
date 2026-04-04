@@ -16,6 +16,10 @@ interface HUDProps {
   room:          number;
   floor:         number;
   gold:          number;
+  // Boss bar — only rendered when bossHp > 0
+  bossHp:        number;
+  bossMaxHp:     number;
+  bossIsEnraged: boolean;
 }
 
 // ============================================================
@@ -62,9 +66,9 @@ function KillRing({ kills, threshold }: { kills: number; threshold: number }) {
   const dashOffset    = circumference * (1 - pct);
 
   // Gold tier after threshold
-  const extraKills   = done ? kills - threshold : 0;
-  const tier         = Math.floor(extraKills / 10);
-  const multiplier   = done ? Math.max(0.20, 1.0 - tier * 0.20) : 1.0;
+  const extraKills    = done ? kills - threshold : 0;
+  const tier          = Math.floor(extraKills / 10);
+  const multiplier    = done ? Math.max(0.20, 1.0 - tier * 0.20) : 1.0;
   const multiplierPct = Math.round(multiplier * 100);
 
   // Ring color — dims as gold value reduces
@@ -133,6 +137,60 @@ function KillRing({ kills, threshold }: { kills: number; threshold: number }) {
 }
 
 // ============================================================
+// [🧱 BLOCK: Boss HP Bar]
+// Rendered at top-center of screen during boss phase only.
+// Bar color shifts: green → yellow → red as HP drops.
+// Enraged state adds a pulsing red border and label change.
+// A tick mark at 50% shows the rage threshold.
+// ============================================================
+function BossHPBar({
+  hp, maxHp, isEnraged, floor,
+}: {
+  hp: number; maxHp: number; isEnraged: boolean; floor: number;
+}) {
+  const pct = Math.max(0, Math.min(1, hp / maxHp));
+
+  const barColor =
+    pct > 0.5  ? "#ef4444" :
+    pct > 0.25 ? "#f97316" :
+                 "#fbbf24";
+
+  const nameColor = isEnraged ? "#f87171" : "rgba(239,68,68,0.9)";
+  const nameLabel = isEnraged ? "⚡ ENRAGED" : "BOSS";
+
+  return (
+    <div className={`hud-boss-bar ${isEnraged ? "hud-boss-bar--enraged" : ""}`}>
+
+      {/* ── Header row: name + HP fraction ── */}
+      <div className="hud-boss-bar__header">
+        <span className="hud-boss-bar__name" style={{ color: nameColor }}>
+          {nameLabel}
+        </span>
+        <span className="hud-boss-bar__hp">
+          {Math.ceil(hp)} / {maxHp}
+        </span>
+      </div>
+
+      {/* ── Bar track ── */}
+      <div className="hud-boss-bar__track">
+        <div
+          className="hud-boss-bar__fill"
+          style={{
+            width: `${pct * 100}%`,
+            background: barColor,
+            boxShadow: isEnraged ? `0 0 8px ${barColor}` : "none",
+          }}
+        />
+        {/* Rage threshold marker at 50% — hidden once enraged */}
+        {!isEnraged && <div className="hud-boss-bar__rage-marker" />}
+      </div>
+
+      <span className="hud-boss-bar__floor">Floor {floor} Boss</span>
+    </div>
+  );
+}
+
+// ============================================================
 // [🧱 BLOCK: Divider]
 // ============================================================
 function Divider() {
@@ -145,6 +203,7 @@ function Divider() {
 export default function HUD({
   hp, maxHp, stamina, maxStamina,
   kills, killThreshold, room, floor, gold,
+  bossHp, bossMaxHp, bossIsEnraged,
 }: HUDProps) {
   const hpColor =
     hp / maxHp > 0.5  ? "#4ade80" :
@@ -152,35 +211,48 @@ export default function HUD({
                         "#ef4444";
 
   return (
-    <div className="hud-root">
+    <>
+      {/* ── Boss HP bar — top center, only during boss phase ── */}
+      {bossHp > 0 && (
+        <BossHPBar
+          hp={bossHp}
+          maxHp={bossMaxHp}
+          isEnraged={bossIsEnraged}
+          floor={floor}
+        />
+      )}
 
-      {/* ── HP + Stamina ── */}
-      <div className="hud-bars-group">
-        <ThinBar value={hp}      max={maxHp}      color={hpColor}  label="HP"      />
-        <ThinBar value={stamina} max={maxStamina}  color="#3b82f6"  label="Stamina" />
+      {/* ── Main HUD pill — bottom center ── */}
+      <div className="hud-root">
+
+        {/* ── HP + Stamina ── */}
+        <div className="hud-bars-group">
+          <ThinBar value={hp}      max={maxHp}     color={hpColor} label="HP"      />
+          <ThinBar value={stamina} max={maxStamina} color="#3b82f6" label="Stamina" />
+        </div>
+
+        <Divider />
+
+        {/* ── Room / Floor ── */}
+        <div className="hud-room-group">
+          <span className="hud-floor-label">Floor {floor}</span>
+          <span className="hud-room-number">ROOM {room}</span>
+        </div>
+
+        <Divider />
+
+        {/* ── Gold ── */}
+        <div className="hud-gold-group">
+          <span className="hud-gold-label">Gold</span>
+          <span className="hud-gold-value">💰 {gold}</span>
+        </div>
+
+        <Divider />
+
+        {/* ── Kill Ring ── */}
+        <KillRing kills={kills} threshold={killThreshold} />
+
       </div>
-
-      <Divider />
-
-      {/* ── Room / Floor ── */}
-      <div className="hud-room-group">
-        <span className="hud-floor-label">Floor {floor}</span>
-        <span className="hud-room-number">ROOM {room}</span>
-      </div>
-
-      <Divider />
-
-      {/* ── Gold ── */}
-      <div className="hud-gold-group">
-        <span className="hud-gold-label">Gold</span>
-        <span className="hud-gold-value">💰 {gold}</span>
-      </div>
-
-      <Divider />
-
-      {/* ── Kill Ring ── */}
-      <KillRing kills={kills} threshold={killThreshold} />
-
-    </div>
+    </>
   );
 }

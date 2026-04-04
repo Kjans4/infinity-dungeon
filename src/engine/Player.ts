@@ -4,6 +4,16 @@ import { Camera }       from "./Camera";
 import { Weapon }       from "./items/Weapon";
 import { AttackDef }    from "./items/types";
 
+// ============================================================
+// [🧱 BLOCK: Dash Constants]
+// DASH_DURATION  — how long the dash lasts in ms (matches old setTimeout)
+// DASH_IFRAMES   — invincibility window granted during a dash.
+//                  Slightly shorter than the full dash so the tail end
+//                  of the slide can still be punished.
+// ============================================================
+const DASH_DURATION = 200;
+const DASH_IFRAMES  = 180;
+
 export class Player {
   // [🧱 BLOCK: Properties]
   x: number; y: number;
@@ -24,6 +34,7 @@ export class Player {
 
   // Combat state
   isDashing:        boolean                  = false;
+  dashTimer:        number                   = 0;   // counts down in update()
   isAttacking:      boolean                  = false;
   isHeavyAttacking: boolean                  = false;
   isHit:            boolean                  = false;
@@ -72,13 +83,28 @@ export class Player {
       this.vy *= 0.5;
     }
 
-    // Dash
+    // ── Dash ─────────────────────────────────────────────────
+    // Trigger: C pressed, enough stamina, not already dashing/attacking.
+    // Uses dashTimer (decremented below) instead of setTimeout so the
+    // dash respects pause state and never fires after game-over.
+    // Grants DASH_IFRAMES of invincibility so the player can dodge
+    // through projectiles and melee attacks.
     if (input.movement.dash && this.stamina >= 30 && !this.isDashing && !this.isAttacking) {
-      this.stamina  -= 30;
-      this.isDashing = true;
-      this.vx       *= 4;
-      this.vy       *= 4;
-      setTimeout(() => { this.isDashing = false; }, 200);
+      this.stamina   -= 30;
+      this.isDashing  = true;
+      this.dashTimer  = DASH_DURATION;
+      this.iFrames    = Math.max(this.iFrames, DASH_IFRAMES); // don't shorten existing iframes
+      this.vx        *= 4;
+      this.vy        *= 4;
+    }
+
+    // Tick dash timer
+    if (this.isDashing) {
+      this.dashTimer -= 16;
+      if (this.dashTimer <= 0) {
+        this.isDashing = false;
+        this.dashTimer = 0;
+      }
     }
 
     // Attack timer
@@ -137,6 +163,7 @@ export class Player {
 
   // ============================================================
   // [🧱 BLOCK: Take Hit]
+  // iFrames from a hit do not override a longer dash iFrame window.
   // ============================================================
   takeHit(amount: number): void {
     if (this.iFrames > 0) return;
@@ -148,15 +175,29 @@ export class Player {
 
   // ============================================================
   // [🧱 BLOCK: Draw]
+  // During a dash, render a faint afterimage trail effect by
+  // drawing the player slightly more transparent.
   // ============================================================
   draw(ctx: CanvasRenderingContext2D, camera: Camera): void {
-    // Flicker during i-frames
-    if (!this.isHit && this.iFrames > 0 && Math.floor(Date.now() / 50) % 2 === 0) {
+    // Flicker during hit i-frames (not during dash i-frames —
+    // the dash has its own blue color cue instead)
+    if (!this.isHit && this.iFrames > 0 && !this.isDashing && Math.floor(Date.now() / 50) % 2 === 0) {
       return;
     }
 
     const sx = camera.toScreenX(this.x);
     const sy = camera.toScreenY(this.y);
+
+    // ── Dash afterimage ──────────────────────────────────────
+    // Draw a faded ghost slightly behind the player to sell the
+    // speed of the dodge without any extra data structures.
+    if (this.isDashing) {
+      const progress = this.dashTimer / DASH_DURATION; // 1→0 as dash ends
+      ctx.globalAlpha = 0.25 * progress;
+      ctx.fillStyle   = "#38bdf8";
+      ctx.fillRect(sx - this.vx * 2, sy - this.vy * 2, this.width, this.height);
+      ctx.globalAlpha = 1;
+    }
 
     // Body
     ctx.fillStyle = this.isHit

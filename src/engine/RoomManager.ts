@@ -13,6 +13,17 @@ export interface RoomState {
 }
 
 // ============================================================
+// [🧱 BLOCK: Win Condition]
+// After clearing the boss on MAX_FLOORS the run is won.
+// Raise this number to add more floors — no other code changes needed.
+// ============================================================
+export const MAX_FLOORS = 5;
+
+export function isFinalFloor(floor: number): boolean {
+  return floor >= MAX_FLOORS;
+}
+
+// ============================================================
 // [🧱 BLOCK: Scaling Helpers]
 // Using Floor 1 as the base for all multiplication.
 //
@@ -23,13 +34,13 @@ export interface RoomState {
 // impossible to kite at high floors while still feeling faster.
 // ============================================================
 export function getEnemySpeedScale(floor: number): number {
-  return 1 + (floor - 1) * 0.25;   // ↑ was 0.15
+  return 1 + (floor - 1) * 0.25;
 }
 export function getEnemyHpScale(floor: number): number {
-  return 1 + (floor - 1) * 1.0;    // ↑ was 0.20 — doubles per floor
+  return 1 + (floor - 1) * 1.0;
 }
 export function getBossHpScale(floor: number): number {
-  return 1 + (floor - 1) * 0.50;   // ↑ was 0.30 — boss also hits harder
+  return 1 + (floor - 1) * 0.50;
 }
 
 // ============================================================

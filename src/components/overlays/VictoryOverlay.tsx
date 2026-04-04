@@ -1,55 +1,141 @@
 // src/components/overlays/VictoryOverlay.tsx
 "use client";
 
-import React from "react";
+import React, { useEffect, useState } from "react";
+import "@/styles/victory.css";
+
+// ============================================================
+// [🧱 BLOCK: Props]
+// ============================================================
+interface Props {
+  floor:           number;
+  kills:           number;   // kills earned this floor only
+  goldEarned:      number;   // gold earned this floor only
+  runStartTime:    number;   // Date.now() at run start — for total time on win screen
+  isFinalFloor:    boolean;  // true → show "YOU WIN" instead of "Enter Floor N+1"
+  onContinue:      () => void;
+  onQuit:          () => void; // only shown on final floor
+}
+
+// ============================================================
+// [🧱 BLOCK: Format Time]
+// ============================================================
+function formatTime(ms: number): string {
+  const totalSec = Math.floor(ms / 1000);
+  const mins     = Math.floor(totalSec / 60);
+  const secs     = totalSec % 60;
+  if (mins === 0) return `${secs}s`;
+  return `${mins}m ${secs}s`;
+}
+
+// ============================================================
+// [🧱 BLOCK: Stat Row]
+// ============================================================
+function StatRow({ icon, label, value }: { icon: string; label: string; value: string }) {
+  return (
+    <div className="victory-stat-row">
+      <span className="victory-stat-row__icon">{icon}</span>
+      <span className="victory-stat-row__label">{label}</span>
+      <span className="victory-stat-row__value">{value}</span>
+    </div>
+  );
+}
 
 // ============================================================
 // [🧱 BLOCK: VictoryOverlay]
+// Two modes:
+//   isFinalFloor=false → simple "floor cleared, keep going" card
+//   isFinalFloor=true  → full "YOU WIN" screen with run summary
 // ============================================================
-interface Props {
-  floor:      number;
-  onContinue: () => void;
-}
+export default function VictoryOverlay({
+  floor, kills, goldEarned, runStartTime,
+  isFinalFloor, onContinue, onQuit,
+}: Props) {
+  const [visible, setVisible] = useState(false);
 
-export default function VictoryOverlay({ floor, onContinue }: Props) {
+  useEffect(() => {
+    const t = setTimeout(() => setVisible(true), 80);
+    return () => clearTimeout(t);
+  }, []);
+
+  const elapsed = Date.now() - runStartTime;
+
+  // ── Final floor — full win screen ─────────────────────────
+  if (isFinalFloor) {
+    return (
+      <div className="victory-backdrop">
+        <div className={`victory-card victory-card--win ${visible ? "victory-card--visible" : ""}`}>
+
+          <div className="victory-title-block">
+            <p className="victory-title victory-title--win">YOU WIN</p>
+            <p className="victory-subtitle">All {floor} floors cleared</p>
+          </div>
+
+          <div className="victory-divider" />
+
+          <div className="victory-summary">
+            <p className="victory-summary__label">Run Summary</p>
+            <div className="victory-stats">
+              <StatRow icon="⏱" label="Total Time"  value={formatTime(elapsed)} />
+              <StatRow icon="☠" label="Total Kills"  value={String(kills)}       />
+              <StatRow icon="💰" label="Gold Earned" value={`${goldEarned}g`}    />
+              <StatRow icon="🏆" label="Floors"      value={`${floor} / ${floor}`} />
+            </div>
+          </div>
+
+          <div className="victory-divider" />
+
+          <div className="victory-buttons">
+            <button
+              className="victory-btn victory-btn--primary"
+              onClick={onQuit}
+              onMouseEnter={(e) => (e.currentTarget.style.background = "#86efac")}
+              onMouseLeave={(e) => (e.currentTarget.style.background = "#4ade80")}
+            >
+              ← Main Menu
+            </button>
+          </div>
+
+        </div>
+      </div>
+    );
+  }
+
+  // ── Normal floor clear — compact card ─────────────────────
   return (
-    <div style={{
-      position: "absolute", inset: 0, zIndex: 45,
-      display: "flex", flexDirection: "column",
-      alignItems: "center", justifyContent: "center",
-      background: "rgba(0,0,0,0.85)",
-      fontFamily: "'Courier New', monospace",
-    }}>
-      <p style={{
-        fontSize: 64, fontWeight: 900,
-        color: "#4ade80", letterSpacing: "0.1em",
-        textShadow: "0 0 60px #4ade80", marginBottom: 12,
-      }}>
-        VICTORY
-      </p>
+    <div className="victory-backdrop">
+      <div className={`victory-card ${visible ? "victory-card--visible" : ""}`}>
 
-      <p style={{ fontSize: 14, color: "#475569", marginBottom: 8 }}>
-        Floor {floor} cleared.
-      </p>
+        <div className="victory-title-block">
+          <p className="victory-title">VICTORY</p>
+          <p className="victory-subtitle">Floor {floor} cleared</p>
+        </div>
 
-      <p style={{ fontSize: 12, color: "#334155", marginBottom: 40 }}>
-        Floor {floor + 1} — enemies are stronger.
-      </p>
+        <div className="victory-divider" />
 
-      <button
-        onClick={onContinue}
-        style={{
-          fontFamily: "'Courier New', monospace",
-          fontSize: 15, fontWeight: 700, letterSpacing: "0.2em",
-          color: "#0f172a", backgroundColor: "#4ade80",
-          border: "none", padding: "14px 44px",
-          borderRadius: 4, cursor: "pointer", textTransform: "uppercase",
-        }}
-        onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "#86efac")}
-        onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "#4ade80")}
-      >
-        ▶ Enter Floor {floor + 1}
-      </button>
+        <div className="victory-summary">
+          <div className="victory-stats">
+            <StatRow icon="☠" label="Kills this floor"  value={String(kills)}    />
+            <StatRow icon="💰" label="Gold this floor"  value={`${goldEarned}g`} />
+          </div>
+        </div>
+
+        <p className="victory-warning">Floor {floor + 1} — enemies are stronger.</p>
+
+        <div className="victory-divider" />
+
+        <div className="victory-buttons">
+          <button
+            className="victory-btn victory-btn--primary"
+            onClick={onContinue}
+            onMouseEnter={(e) => (e.currentTarget.style.background = "#86efac")}
+            onMouseLeave={(e) => (e.currentTarget.style.background = "#4ade80")}
+          >
+            ▶ Enter Floor {floor + 1}
+          </button>
+        </div>
+
+      </div>
     </div>
   );
 }

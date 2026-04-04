@@ -201,3 +201,105 @@
   letter-spacing: 0.08em;
   /* color set inline — shifts with gold tier */
 }
+
+/* ============================================================
+   [🧱 BLOCK: Boss HP Bar]
+   Fixed to top-center of viewport. Only rendered during boss phase.
+   Slides down on mount via animation.
+   ============================================================ */
+.hud-boss-bar {
+  position: fixed;
+  top: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 20;
+  pointer-events: none;
+
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 20px 12px;
+  min-width: 340px;
+
+  background: rgba(10, 15, 30, 0.7);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(239, 68, 68, 0.2);
+  border-radius: 10px;
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.5);
+
+  animation: boss-bar-drop 0.35s ease forwards;
+}
+
+@keyframes boss-bar-drop {
+  from { opacity: 0; transform: translateX(-50%) translateY(-12px); }
+  to   { opacity: 1; transform: translateX(-50%) translateY(0);     }
+}
+
+/* Enraged state — red border glow pulses */
+.hud-boss-bar--enraged {
+  border-color: rgba(239, 68, 68, 0.6);
+  box-shadow: 0 0 20px rgba(239, 68, 68, 0.15), 0 4px 24px rgba(0, 0, 0, 0.5);
+  animation: boss-bar-drop 0.35s ease forwards, boss-enrage-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes boss-enrage-pulse {
+  0%, 100% { border-color: rgba(239, 68, 68, 0.4); }
+  50%       { border-color: rgba(239, 68, 68, 0.9); }
+}
+
+.hud-boss-bar__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  width: 100%;
+}
+
+.hud-boss-bar__name {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  /* color set inline — red normal, bright red enraged */
+}
+
+.hud-boss-bar__hp {
+  font-size: 10px;
+  color: rgba(148, 163, 184, 0.6);
+}
+
+.hud-boss-bar__track {
+  width: 100%;
+  height: 8px;
+  background: rgba(30, 41, 59, 0.9);
+  border-radius: 4px;
+  overflow: hidden;
+  position: relative;
+}
+
+.hud-boss-bar__fill {
+  height: 100%;
+  border-radius: 4px;
+  transition: width 0.15s linear;
+  /* background set inline — shifts color as HP drops */
+}
+
+/* Rage threshold marker — vertical tick at 50% */
+.hud-boss-bar__rage-marker {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  width: 2px;
+  height: 100%;
+  background: rgba(255, 255, 255, 0.4);
+  border-radius: 1px;
+}
+
+.hud-boss-bar__floor {
+  font-size: 8px;
+  color: #334155;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  align-self: flex-end;
+}
