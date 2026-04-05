@@ -2,12 +2,15 @@
 import { Player }                          from "../Player";
 import { Camera }                          from "../Camera";
 import { Door }                            from "../Door";
+import { ShopNPC }                         from "../ShopNPC";
+import { ItemDrop }                        from "../ItemDrop";
 import { Grunt, Shooter, Tank, spawnWave } from "../enemy";
 import { RoomState }                       from "../RoomManager";
-import { GameState }                       from "../GameState";
+import { GameState, PENDING_LOOT_CAP }    from "../GameState";
 import { GoldSystem }                      from "./GoldSystem";
 import { WeaponSystem }                    from "./WeaponSystem";
 import { spawnBurst }                      from "../Particle";
+import { getRandomShopItems }              from "../items/ItemPool";
 
 const INITIAL_WAVE           = 8;
 const WAVE_SIZE              = 6;
@@ -17,23 +20,57 @@ const FARMING_SPAWN_INTERVAL = 3000;
 
 // ============================================================
 // [🧱 BLOCK: Separation Constants]
-// SEPARATION_PASSES — how many rounds of pushing per frame.
-//   1 pass is enough for small groups; 2 gives cleaner results
-//   with 8+ enemies without being expensive.
-// SEPARATION_STRENGTH — fraction of overlap to correct each pass.
-//   0.4 feels solid without jitter.
-// TANK_RADIUS_BONUS — tanks take up more social space so smaller
-//   enemies naturally orbit around them.
 // ============================================================
-const SEPARATION_PASSES    = 2;
-const SEPARATION_STRENGTH  = 0.4;
-const TANK_RADIUS_BONUS    = 10;
+const SEPARATION_PASSES   = 2;
+const SEPARATION_STRENGTH = 0.4;
+const TANK_RADIUS_BONUS   = 10;
+
+// ============================================================
+// [🧱 BLOCK: Item Drop Chances]
+// Per-enemy-type drop rates for horde rooms.
+// Boss drops are handled in BossSystem (guaranteed).
+// ============================================================
+const DROP_CHANCE = {
+  grunt:   0.03,
+  shooter: 0.06,
+  tank:    0.12,
+};
 
 function goldMultiplierForKills(kills: number, threshold: number): number {
   if (kills < threshold) return 1.0;
   const extraKills = kills - threshold;
   const tier       = Math.floor(extraKills / 10);
   return Math.max(0.20, 1.0 - tier * 0.20);
+}
+
+// ============================================================
+// [🧱 BLOCK: Roll Item Drop]
+// Returns one random ShopItem the player doesn't own yet,
+// or null if the RNG didn't hit or the pool is exhausted.
+// ============================================================
+function rollItemDrop(
+  state:  GameState,
+  chance: number
+): import("../items/ItemPool").ShopItem | null {
+  if (Math.random() > chance) return null;
+
+  const ownedCharmIds  = state.playerStats.charms.map((c) => c.id);
+  const ownedWeaponId  = state.playerStats.equippedWeaponItem?.id ?? null;
+
+  // Exclude items already sitting in pending loot queue
+  const pendingCharmIds  = state.pendingLoot
+    .filter((i) => i.kind === "charm")
+    .map((i) => i.id);
+  const pendingWeaponId  = state.pendingLoot
+    .find((i) => i.kind === "weapon")?.id ?? null;
+
+  const pool = getRandomShopItems(
+    [...ownedCharmIds, ...pendingCharmIds],
+    ownedWeaponId ?? pendingWeaponId,
+    1
+  );
+
+  return pool[0] ?? null;
 }
 
 export class HordeSystem {
@@ -51,6 +88,7 @@ export class HordeSystem {
 
   // ============================================================
   // [🧱 BLOCK: Setup]
+  // Creates Door and ShopNPC at world-top for every horde room.
   // ============================================================
   setup(state: GameState, rs: RoomState, worldW: number, worldH: number) {
     state.player.x  = worldW / 2;
@@ -63,6 +101,7 @@ export class HordeSystem {
     state.lastSpawn   = 0;
     state.projectiles = [];
     state.goldDrops   = [];
+    state.itemDrops   = [];
     state.particles   = [];
     state.boss        = null;
 
@@ -73,6 +112,7 @@ export class HordeSystem {
 
     state.door          = new Door(worldW);
     state.door.isActive = false;
+    state.shopNpc       = new ShopNPC(worldW);
 
     state.camera.update(state.player, worldW, worldH);
     state.playerStats.applyToPlayer(state.player);
@@ -85,8 +125,10 @@ export class HordeSystem {
     state.enemies     = [];
     state.projectiles = [];
     state.goldDrops   = [];
+    state.itemDrops   = [];
     state.particles   = [];
     state.door        = null;
+    state.shopNpc     = null;
     state.kills       = 0;
     state.alive       = 0;
     state.lastSpawn   = 0;
@@ -94,19 +136,6 @@ export class HordeSystem {
 
   // ============================================================
   // [🧱 BLOCK: Separate Enemies]
-  // Prevents enemies from stacking on the same pixel.
-  //
-  // For every pair (i, j) of living enemies, compute the
-  // overlap between their bounding circles. If they overlap,
-  // push each enemy away from the other by half the overlap
-  // distance scaled by SEPARATION_STRENGTH.
-  //
-  // Effective radius = half the enemy's width, plus a bonus
-  // for Tanks so smaller enemies naturally spread around them.
-  //
-  // Running SEPARATION_PASSES iterations per frame settles
-  // large groups faster without a performance cliff —
-  // complexity is O(n² × passes) which is fine for ≤ ~20 enemies.
   // ============================================================
   private separateEnemies(
     enemies: (Grunt | Shooter | Tank)[],
@@ -135,33 +164,43 @@ export class HordeSystem {
           const dist = Math.sqrt(dx * dx + dy * dy) || 0.01;
           const minD = aRadius + bRadius;
 
-          if (dist >= minD) continue; // no overlap — skip
+          if (dist >= minD) continue;
 
-          // How far they need to move in total
-          const overlap = (minD - dist) * SEPARATION_STRENGTH;
-          const nx      = dx / dist;
-          const ny      = dy / dist;
-
-          // Push each enemy half the correction in opposite directions.
-          // Tanks are heavier — they get pushed less (25%), the lighter
-          // enemy absorbs more (75%).
+          const overlap  = (minD - dist) * SEPARATION_STRENGTH;
+          const nx       = dx / dist;
+          const ny       = dy / dist;
           const aIsHeavy = a instanceof Tank;
           const bIsHeavy = b instanceof Tank;
+          const pushA    = aIsHeavy ? overlap * 0.25 : (bIsHeavy ? overlap * 0.75 : overlap * 0.5);
+          const pushB    = bIsHeavy ? overlap * 0.25 : (aIsHeavy ? overlap * 0.75 : overlap * 0.5);
 
-          const pushA = aIsHeavy ? overlap * 0.25 : (bIsHeavy ? overlap * 0.75 : overlap * 0.5);
-          const pushB = bIsHeavy ? overlap * 0.25 : (aIsHeavy ? overlap * 0.75 : overlap * 0.5);
+          a.x -= nx * pushA; a.y -= ny * pushA;
+          b.x += nx * pushB; b.y += ny * pushB;
 
-          a.x -= nx * pushA;
-          a.y -= ny * pushA;
-          b.x += nx * pushB;
-          b.y += ny * pushB;
-
-          // Keep both inside the world after nudging
           a.x = Math.max(0, Math.min(worldW - a.width,  a.x));
           a.y = Math.max(0, Math.min(worldH - a.height, a.y));
           b.x = Math.max(0, Math.min(worldW - b.width,  b.x));
           b.y = Math.max(0, Math.min(worldH - b.height, b.y));
         }
+      }
+    }
+  }
+
+  // ============================================================
+  // [🧱 BLOCK: Enforce Safe Zone]
+  // Any enemy whose center is north of npc.safeLineY gets
+  // pushed back south and loses all northward velocity.
+  // ============================================================
+  private enforceSafeZone(
+    enemies: (Grunt | Shooter | Tank)[],
+    npc:     ShopNPC
+  ): void {
+    for (const enemy of enemies) {
+      if (enemy.isDead) continue;
+      const cy = enemy.y + enemy.height / 2;
+      if (npc.isSafeZone(cy)) {
+        enemy.y  = npc.safeLineY - enemy.height / 2;
+        if (enemy.vy < 0) enemy.vy = 0;
       }
     }
   }
@@ -175,7 +214,7 @@ export class HordeSystem {
     rs:     RoomState,
     worldW: number,
     worldH: number
-  ): { event: "door" | null; goldCollected: number } {
+  ): { event: "door" | "npc" | null; goldCollected: number } {
     const ps           = state.playerStats;
     const threshold    = this.getThreshold(rs.floor);
     const thresholdMet = state.kills >= threshold;
@@ -186,6 +225,15 @@ export class HordeSystem {
       if (thresholdMet && !state.door.isActive) state.door.activate();
       if (state.door.isCollidingWithPlayer(player)) {
         return { event: "door", goldCollected: 0 };
+      }
+    }
+
+    // ── Shop NPC ───────────────────────────────────────────
+    if (state.shopNpc) {
+      state.shopNpc.update();
+      if (thresholdMet && !state.shopNpc.isActive) state.shopNpc.activate();
+      if (state.shopNpc.isCollidingWithPlayer(player)) {
+        return { event: "npc", goldCollected: 0 };
       }
     }
 
@@ -213,8 +261,13 @@ export class HordeSystem {
       }
     });
 
-    // ── Separation — prevent enemy stacking ───────────────
+    // ── Separation ────────────────────────────────────────
     this.separateEnemies(state.enemies, worldW, worldH);
+
+    // ── Safe zone barrier ─────────────────────────────────
+    if (state.shopNpc?.isActive) {
+      this.enforceSafeZone(state.enemies, state.shopNpc);
+    }
 
     // ── Weapon input + hit resolution ─────────────────────
     this.weaponSystem.processInput(player);
@@ -237,17 +290,12 @@ export class HordeSystem {
     if (isHeavy && ps.hasCharm("executioner")) {
       hitEnemies.forEach((enemy) => {
         if (enemy.isDead) {
-          this.triggerShockwave(
-            state,
-            enemy.x + enemy.width  / 2,
-            enemy.y + enemy.height / 2,
-            25
-          );
+          this.triggerShockwave(state, enemy.x + enemy.width / 2, enemy.y + enemy.height / 2, 25);
         }
       });
     }
 
-    // ── Kill tracking ─────────────────────────────────────
+    // ── Kill tracking + loot rolls ────────────────────────
     const before      = state.enemies.length;
     const deadEnemies = state.enemies.filter((e) => e.isDead);
     state.enemies     = state.enemies.filter((e) => !e.isDead);
@@ -256,7 +304,7 @@ export class HordeSystem {
     if (justKilled > 0) {
       state.kills      += justKilled;
       state.alive      -= justKilled;
-      state.totalKills += justKilled;  // ← run-wide counter
+      state.totalKills += justKilled;
 
       deadEnemies.forEach((enemy) => {
         const type =
@@ -279,12 +327,41 @@ export class HordeSystem {
           enemy.color, 6
         ));
 
+        // ── Item drop roll (only if loot queue has space) ──
+        if (state.pendingLoot.length < PENDING_LOOT_CAP) {
+          const dropped = rollItemDrop(state, DROP_CHANCE[type]);
+          if (dropped) {
+            state.itemDrops.push(new ItemDrop(
+              enemy.x + enemy.width  / 2,
+              enemy.y + enemy.height / 2,
+              dropped
+            ));
+          }
+        }
+
         ps.charms.forEach((charm) => charm.onKill?.(player, ps.modifiers));
         if (ps.healOnKill > 0) {
           player.hp = Math.min(player.maxHp, player.hp + ps.healOnKill);
         }
       });
     }
+
+    // ── Item drop pickup ───────────────────────────────────
+    // Walk over a drop to add it to pendingLoot (if space).
+    // If loot is full the drop stays on the ground.
+    state.itemDrops = state.itemDrops.filter((drop) => {
+      if (drop.collected) return false;
+      if (state.pendingLoot.length >= PENDING_LOOT_CAP) {
+        drop.update(player); // tick timer/elapsed even if full
+        return !drop.collected;
+      }
+      const pickedUp = drop.update(player);
+      if (pickedUp) {
+        state.pendingLoot.push(drop.item);
+        return false;
+      }
+      return !drop.collected;
+    });
 
     // ── Wave spawning ─────────────────────────────────────
     const now = Date.now();
@@ -320,15 +397,12 @@ export class HordeSystem {
 
     // ── Stamina regen ─────────────────────────────────────
     if (player.stamina < player.maxStamina) {
-      player.stamina = Math.min(
-        player.maxStamina,
-        player.stamina + ps.staminaRegenRate
-      );
+      player.stamina = Math.min(player.maxStamina, player.stamina + ps.staminaRegenRate);
     }
 
-    // ── Gold collection — track lifetime earned ───────────
+    // ── Gold collection ───────────────────────────────────
     const goldCollected = this.goldSystem.update(state, player);
-    state.totalGoldEarned += goldCollected;  // ← run-wide counter
+    state.totalGoldEarned += goldCollected;
 
     return { event: null, goldCollected };
   }
@@ -349,14 +423,16 @@ export class HordeSystem {
   // ============================================================
   // [🧱 BLOCK: Draw]
   // ============================================================
-  draw(state: GameState, ctx: CanvasRenderingContext2D, camera: Camera, player: Player) {
+  draw(state: GameState, ctx: CanvasRenderingContext2D, camera: Camera, player: Player, worldW: number) {
     state.door?.draw(ctx, camera);
-    state.enemies.forEach((e)     => e.draw(ctx, camera));
+    state.shopNpc?.draw(ctx, camera, worldW);
+    state.enemies.forEach((e)   => e.draw(ctx, camera));
     state.projectiles.forEach((p) => p.draw(ctx, camera));
+    state.itemDrops.forEach((d)  => d.draw(ctx, camera));
     this.goldSystem.draw(state, ctx, camera);
-    state.particles.forEach((p)   => p.update());
+    state.particles.forEach((p)  => p.update());
     state.particles = state.particles.filter((p) => !p.isDone);
-    state.particles.forEach((p)   => p.draw(ctx, camera));
+    state.particles.forEach((p)  => p.draw(ctx, camera));
     this.weaponSystem.draw(ctx, player, camera);
   }
 }

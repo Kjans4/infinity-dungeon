@@ -22,6 +22,7 @@ import VictoryOverlay        from "@/components/overlays/VictoryOverlay";
 import PauseOverlay          from "@/components/overlays/PauseOverlay";
 import WaveClearAnnouncement from "@/components/overlays/WaveClearAnnouncement";
 import { spawnBurst }        from "@/engine/Particle";
+import { ShopItem }          from "@/engine/items/ItemPool";
 
 import "@/styles/dev-panel.css";
 
@@ -146,6 +147,7 @@ export default function GameCanvas() {
   const [isGameOver,    setIsGameOver]    = useState(false);
   const [isVictory,     setIsVictory]     = useState(false);
   const [showShop,      setShowShop]      = useState(false);
+  const [isMidRoom,     setIsMidRoom]     = useState(false);
   const [isPaused,      setIsPaused]      = useState(false);
   const [showInventory, setShowInventory] = useState(false);
   const [gold,          setGold]          = useState(0);
@@ -271,6 +273,7 @@ export default function GameCanvas() {
     setGold(0);
     setIsGameOver(false); setIsVictory(false);
     setShowShop(false);   setIsPaused(false);
+    setIsMidRoom(false);
     setShowInventory(false);
     setShowMenu(false);
     lastAnnouncedRemainingRef.current = null;
@@ -291,6 +294,7 @@ export default function GameCanvas() {
     setGold(0);
     setIsGameOver(false); setIsVictory(false);
     setShowShop(false);   setIsPaused(false);
+    setIsMidRoom(false);
     setShowInventory(false);
     setShowMenu(false);
     lastAnnouncedRemainingRef.current = null;
@@ -309,6 +313,7 @@ export default function GameCanvas() {
     setGold(0);
     setIsGameOver(false); setIsVictory(false);
     setShowShop(false);   setIsPaused(false);
+    setIsMidRoom(false);
     setShowInventory(false);
     setShowMenu(true);
     lastAnnouncedRemainingRef.current = null;
@@ -334,7 +339,29 @@ export default function GameCanvas() {
   const handleShopContinue = useCallback(() => {
     roomRef.current = enterBossPhase(roomRef.current);
     setShowShop(false);
+    setIsMidRoom(false);
     bossRef.current.setup(stateRef.current!, roomRef.current);
+  }, []);
+
+  // ── NPC shop — open mid-room, no phase advance ────────────
+  const handleNpcOpen = useCallback(() => {
+    stateRef.current!.playerStats.generateShopOptions();
+    setIsMidRoom(true);
+    setShowShop(true);
+  }, []);
+
+  // ── NPC shop close — return to gameplay, room phase unchanged ─
+  const handleNpcClose = useCallback(() => {
+    setShowShop(false);
+    setIsMidRoom(false);
+  }, []);
+
+  // ── Claim a pending loot item — remove from state.pendingLoot ─
+  const handleClaimLoot = useCallback((item: ShopItem) => {
+    const state = stateRef.current;
+    if (!state) return;
+    const idx = state.pendingLoot.findIndex((i) => i.id === item.id);
+    if (idx !== -1) state.pendingLoot.splice(idx, 1);
   }, []);
 
   // ── Victory Continue — only used when NOT on final floor ──
@@ -345,6 +372,7 @@ export default function GameCanvas() {
     hordeRef.current.setup(stateRef.current!, rs, WORLD_W, WORLD_H);
     setIsVictory(false);
     setShowShop(false);
+    setIsMidRoom(false);
     lastAnnouncedRemainingRef.current = null;
     resetFloorTracking();
   }, [resetFloorTracking]);
@@ -441,7 +469,7 @@ export default function GameCanvas() {
       state.camera.update(player, worldW, worldH);
       renderRef.current.drawWorld(ctx, state.camera, state.screenW, state.screenH, isBoss);
       if (isBoss) bossRef.current.draw(state, ctx, state.camera, player);
-      else        hordeRef.current.draw(state, ctx, state.camera, player);
+      else        hordeRef.current.draw(state, ctx, state.camera, player, worldW);
 
       if (elapsed < DEATH_FLASH_MS) {
         const flashOn = Math.floor(elapsed / 80) % 2 === 0;
@@ -511,6 +539,7 @@ export default function GameCanvas() {
       if (newKills > 0) floorKillsRef.current += newKills;
 
       if (event === "door") { handleDoorEnter(); return; }
+      if (event === "npc")  { handleNpcOpen();   return; }
 
       const threshold = hordeRef.current.getThreshold(rs.floor);
       const remaining = threshold - state.kills;
@@ -529,7 +558,7 @@ export default function GameCanvas() {
         announce("ROOM CLEAR", "Gate is open — head north");
       }
 
-      hordeRef.current.draw(state, ctx, state.camera, player);
+      hordeRef.current.draw(state, ctx, state.camera, player, worldW);
     }
 
     if (isBoss) {
@@ -611,7 +640,12 @@ export default function GameCanvas() {
         <Shop
           floor={roomRef.current.floor} room={roomRef.current.roomDisplay}
           gold={gold} playerStats={state.playerStats} player={state.player}
-          onGoldChange={handleGoldChange} onContinue={handleShopContinue}
+          pendingLoot={state.pendingLoot}
+          isMidRoom={isMidRoom}
+          onGoldChange={handleGoldChange}
+          onClaimLoot={handleClaimLoot}
+          onContinue={handleShopContinue}
+          onClose={handleNpcClose}
         />
       )}
 

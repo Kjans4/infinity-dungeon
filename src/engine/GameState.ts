@@ -3,9 +3,19 @@ import { Player }      from "./Player";
 import { Camera, WORLD_W, WORLD_H } from "./Camera";
 import { Door }        from "./Door";
 import { GoldDrop }    from "./GoldDrop";
+import { ItemDrop }    from "./ItemDrop";
+import { ShopNPC }     from "./ShopNPC";
 import { Particle }    from "./Particle";
 import { PlayerStats } from "./PlayerStats";
+import { ShopItem }    from "./items/ItemPool";
 import { Grunt, Shooter, Tank, Boss, Projectile } from "./enemy";
+
+// ============================================================
+// [🧱 BLOCK: Pending Loot Cap]
+// Max items the player can hold between killing enemies and
+// visiting the NPC/shop to claim them.
+// ============================================================
+export const PENDING_LOOT_CAP = 3;
 
 export class GameState {
   // Entities
@@ -14,13 +24,19 @@ export class GameState {
   enemies:     (Grunt | Shooter | Tank)[];
   boss:        Boss | null;
   door:        Door | null;
+  shopNpc:     ShopNPC | null;
   projectiles: Projectile[];
   goldDrops:   GoldDrop[];
+  itemDrops:   ItemDrop[];
   particles:   Particle[];
 
   // Economy
   gold:            number;
   playerStats:     PlayerStats;
+
+  // ── Pending loot — items dropped in world, not yet claimed ──
+  // Capped at PENDING_LOOT_CAP. Claimed for free in the shop.
+  pendingLoot: ShopItem[];
 
   // Horde tracking (resets per room)
   kills:     number;
@@ -28,10 +44,9 @@ export class GameState {
   lastSpawn: number;
 
   // ── Run-wide stats (never reset mid-run) ──────────────────
-  // Used for the death screen summary.
-  totalKills:      number;  // cumulative kills across all rooms
-  totalGoldEarned: number;  // lifetime gold collected (not current balance)
-  runStartTime:    number;  // Date.now() when the run started
+  totalKills:      number;
+  totalGoldEarned: number;
+  runStartTime:    number;
 
   // Screen
   screenW: number;
@@ -46,12 +61,15 @@ export class GameState {
     this.enemies     = [];
     this.boss        = null;
     this.door        = null;
+    this.shopNpc     = null;
     this.projectiles = [];
     this.goldDrops   = [];
+    this.itemDrops   = [];
     this.particles   = [];
 
     this.gold            = 0;
     this.playerStats     = new PlayerStats();
+    this.pendingLoot     = [];
 
     this.kills     = 0;
     this.alive     = 0;
@@ -64,18 +82,24 @@ export class GameState {
     this.playerStats.applyToPlayer(this.player);
   }
 
-  // Full reset — also resets run-wide stats
+  // ============================================================
+  // [🧱 BLOCK: Full Reset]
+  // Also resets run-wide stats and loot.
+  // ============================================================
   reset() {
     this.enemies     = [];
     this.boss        = null;
     this.door        = null;
+    this.shopNpc     = null;
     this.projectiles = [];
     this.goldDrops   = [];
+    this.itemDrops   = [];
     this.particles   = [];
     this.gold        = 0;
     this.kills       = 0;
     this.alive       = 0;
     this.lastSpawn   = 0;
+    this.pendingLoot = [];
 
     this.totalKills      = 0;
     this.totalGoldEarned = 0;
@@ -87,16 +111,21 @@ export class GameState {
     this.playerStats.applyToPlayer(this.player);
   }
 
-  // Room reset — keeps run-wide stats intact
+  // ============================================================
+  // [🧱 BLOCK: Room Reset]
+  // Keeps run-wide stats, pending loot, and playerStats intact.
+  // ============================================================
   resetRoom() {
     this.enemies     = [];
     this.projectiles = [];
     this.goldDrops   = [];
+    this.itemDrops   = [];
     this.particles   = [];
     this.kills       = 0;
     this.alive       = 0;
     this.lastSpawn   = 0;
     this.door        = null;
+    this.shopNpc     = null;
     this.boss        = null;
   }
 

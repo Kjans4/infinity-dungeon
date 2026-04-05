@@ -456,3 +456,51 @@
   border-color: #1e293b;
   cursor: not-allowed;
 }
+
+/* ============================================================
+   [🧱 BLOCK: Pending Loot Section]
+   Highlighted section at top of shop — distinct from normal items.
+   ============================================================ */
+.shop-section--loot {
+  border-color: rgba(167, 139, 250, 0.3);
+  background: rgba(167, 139, 250, 0.04);
+}
+
+.shop-section--loot .shop-section__label {
+  color: #a78bfa;
+}
+
+/* ============================================================
+   [🧱 BLOCK: Loot Card]
+   Like ShopItemCard but with a FREE badge and purple accent.
+   ============================================================ */
+.shop-loot-card {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(167, 139, 250, 0.25);
+  border-radius: 8px;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 150px;
+  flex: 1;
+  position: relative;
+}
+
+.shop-loot-card__badge {
+  position: absolute;
+  top: -8px;
+  right: 8px;
+  font-size: 8px;
+  font-weight: 900;
+  letter-spacing: 0.15em;
+  color: #0f172a;
+  padding: 2px 6px;
+  border-radius: 3px;
+}
+
+.shop-loot-card__replace-warn {
+  font-size: 9px;
+  color: #f97316;
+  text-align: center;
+}

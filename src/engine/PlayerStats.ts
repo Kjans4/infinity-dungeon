@@ -1,6 +1,6 @@
 // src/engine/PlayerStats.ts
 import { Player }        from "./Player";
-import { Charm, CHARM_POOL, PlayerStatModifiers, defaultModifiers, getRandomCharms } from "./CharmRegistry";
+import { Charm, CHARM_POOL, PlayerStatModifiers, defaultModifiers } from "./CharmRegistry";
 import { WeaponItem }    from "./items/types";
 import { Weapon }        from "./items/Weapon";
 import { getCharmById }  from "./CharmRegistry";
@@ -36,6 +36,16 @@ export function statCap(floor: number): number {
 }
 
 // ============================================================
+// [🧱 BLOCK: Reroll Cost Constants]
+// Each reroll within a single shop visit costs more than the
+// last. Resets to base when the shop is opened fresh.
+// 20 → 40 → 60 → 80 → 100 (cap).
+// ============================================================
+const REROLL_BASE      = 20;
+const REROLL_INCREMENT = 20;
+const REROLL_CAP       = 100;
+
+// ============================================================
 // [🧱 BLOCK: PlayerStats Class]
 // ============================================================
 export class PlayerStats {
@@ -53,9 +63,17 @@ export class PlayerStats {
   // Equipped weapon item (null = bare fists)
   equippedWeaponItem: WeaponItem | null = null;
 
-  // Shop state — now mixed items
-  shopOptions:  ShopItem[] = [];
-  rerollCost:   number     = 20;
+  // Shop state
+  shopOptions:      ShopItem[] = [];
+  rerollsThisVisit: number     = 0;  // resets each new shop visit
+
+  // ============================================================
+  // [🧱 BLOCK: Reroll Cost]
+  // Computed from how many rerolls have been done this visit.
+  // ============================================================
+  get rerollCost(): number {
+    return Math.min(REROLL_CAP, REROLL_BASE + this.rerollsThisVisit * REROLL_INCREMENT);
+  }
 
   // ============================================================
   // [🧱 BLOCK: Stat Allocation]
@@ -90,6 +108,16 @@ export class PlayerStats {
     return gold - charm.cost;
   }
 
+  // ── Claim charm from pending loot — free ─────────────────
+  claimCharm(charm: Charm, player: Player): boolean {
+    if (this.charms.length >= this.maxCharms) return false;
+    if (this.charms.some((c) => c.id === charm.id)) return false;
+    charm.onEquip(player, this.modifiers);
+    this.charms.push(charm);
+    this.applyToPlayer(player);
+    return true;
+  }
+
   sellCharm(charmId: string, gold: number, player: Player): number {
     const idx = this.charms.findIndex((c) => c.id === charmId);
     if (idx === -1) return gold;
@@ -113,35 +141,33 @@ export class PlayerStats {
 
   equipWeapon(item: WeaponItem, gold: number, player: Player): number {
     if (!this.canBuyWeapon(item, gold)) return gold;
-
-    // Remove old weapon passive if any
     if (this.equippedWeaponItem) {
       this.removeWeaponPassive(this.equippedWeaponItem, player);
     }
-
-    // Apply new weapon
     this.equippedWeaponItem = item;
     this.applyWeaponPassive(item, player);
-
-    // Update player's equipped weapon attack shape
     player.equippedWeapon = new Weapon(item.weaponType);
-
     this.applyToPlayer(player);
     return gold - item.cost;
   }
 
+  // ── Claim weapon from pending loot — free ────────────────
+  claimWeapon(item: WeaponItem, player: Player): void {
+    if (this.equippedWeaponItem) {
+      this.removeWeaponPassive(this.equippedWeaponItem, player);
+    }
+    this.equippedWeaponItem = item;
+    this.applyWeaponPassive(item, player);
+    player.equippedWeapon = new Weapon(item.weaponType);
+    this.applyToPlayer(player);
+  }
+
   unequipWeapon(gold: number, player: Player): number {
     if (!this.equippedWeaponItem) return gold;
-
-    // Refund 50%
     const refund = Math.ceil(this.equippedWeaponItem.cost * 0.5);
-
     this.removeWeaponPassive(this.equippedWeaponItem, player);
     this.equippedWeaponItem = null;
-
-    // Back to bare fists
     player.equippedWeapon = new Weapon('fists');
-
     this.applyToPlayer(player);
     return gold + refund;
   }
@@ -157,20 +183,24 @@ export class PlayerStats {
   }
 
   // ============================================================
-  // [🧱 BLOCK: Shop Options — Mixed Pool]
+  // [🧱 BLOCK: Shop Options]
+  // Resets reroll counter on each fresh generation.
   // ============================================================
   generateShopOptions() {
     const ownedCharmIds = this.charms.map((c) => c.id);
     const ownedWeaponId = this.equippedWeaponItem?.id ?? null;
-    this.shopOptions    = getRandomShopItems(ownedCharmIds, ownedWeaponId, 3);
+    this.shopOptions      = getRandomShopItems(ownedCharmIds, ownedWeaponId, 3);
+    this.rerollsThisVisit = 0;  // ← reset escalating cost
   }
 
   reroll(gold: number): number {
     if (gold < this.rerollCost) return gold;
+    const cost          = this.rerollCost;
     const ownedCharmIds = this.charms.map((c) => c.id);
     const ownedWeaponId = this.equippedWeaponItem?.id ?? null;
     this.shopOptions    = getRandomShopItems(ownedCharmIds, ownedWeaponId, 3);
-    return gold - this.rerollCost;
+    this.rerollsThisVisit++;
+    return gold - cost;
   }
 
   // ============================================================
@@ -210,17 +240,16 @@ export class PlayerStats {
   // [🧱 BLOCK: Reset]
   // ============================================================
   reset(player: Player) {
-    // Remove weapon passive if any
     if (this.equippedWeaponItem) {
       this.removeWeaponPassive(this.equippedWeaponItem, player);
     }
-    // Remove all charm passives
     this.charms.forEach((c) => c.onRemove(player, this.modifiers));
 
     this.str = 0; this.vit = 0; this.agi = 0; this.end = 0;
     this.charms              = [];
     this.modifiers           = defaultModifiers();
     this.shopOptions         = [];
+    this.rerollsThisVisit    = 0;
     this.equippedWeaponItem  = null;
 
     player.equippedWeapon = new Weapon('fists');
