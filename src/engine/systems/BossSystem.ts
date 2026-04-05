@@ -3,11 +3,13 @@ import { Player }                     from "../Player";
 import { Camera }                     from "../Camera";
 import { Boss }                       from "../enemy/Boss";
 import { RoomState }                  from "../RoomManager";
-import { GameState }                  from "../GameState";
+import { GameState, PENDING_LOOT_CAP } from "../GameState";
 import { BOSS_WORLD_W, BOSS_WORLD_H } from "../Camera";
 import { GoldDrop }                   from "../GoldDrop";
+import { ItemDrop }                   from "../ItemDrop";
 import { spawnBurst }                 from "../Particle";
 import { WeaponSystem }               from "./WeaponSystem";
+import { getRandomShopItems }         from "../items/ItemPool";
 
 const BOSS_GOLD = { min: 80, max: 120 };
 
@@ -21,6 +23,33 @@ function spawnBossGold(state: GameState, x: number, y: number) {
     const ox = (Math.random() - 0.5) * 60;
     const oy = (Math.random() - 0.5) * 60;
     state.goldDrops.push(new GoldDrop(x + ox, y + oy, Math.floor(amount / 5)));
+  }
+}
+
+// ============================================================
+// [🧱 BLOCK: Spawn Boss Item Drop]
+// Guaranteed 1 item drop on boss death — always spawns one
+// item from the pool that the player doesn't already own.
+// Skipped only if pending loot queue is already full.
+// ============================================================
+function spawnBossItemDrop(state: GameState, x: number, y: number) {
+  if (state.pendingLoot.length >= PENDING_LOOT_CAP) return;
+
+  const ownedCharmIds  = state.playerStats.charms.map((c) => c.id);
+  const ownedWeaponId  = state.playerStats.equippedWeaponItem?.id ?? null;
+  const pendingCharmIds = state.pendingLoot
+    .filter((i) => i.kind === "charm").map((i) => i.id);
+  const pendingWeaponId = state.pendingLoot
+    .find((i) => i.kind === "weapon")?.id ?? null;
+
+  const pool = getRandomShopItems(
+    [...ownedCharmIds, ...pendingCharmIds],
+    ownedWeaponId ?? pendingWeaponId,
+    1
+  );
+
+  if (pool[0]) {
+    state.itemDrops.push(new ItemDrop(x, y, pool[0]));
   }
 }
 
@@ -40,9 +69,11 @@ export class BossSystem {
     state.enemies     = [];
     state.projectiles = [];
     state.goldDrops   = [];
+    state.itemDrops   = [];
     state.particles   = [];
     state.kills       = 0;
     state.door        = null;
+    state.shopNpc     = null;
 
     state.boss = new Boss(BOSS_WORLD_W / 2 - 40, 80, rs.floor);
     state.camera.update(state.player, BOSS_WORLD_W, BOSS_WORLD_H);
@@ -55,6 +86,7 @@ export class BossSystem {
   reset(state: GameState) {
     state.boss        = null;
     state.goldDrops   = [];
+    state.itemDrops   = [];
     state.particles   = [];
     state.projectiles = [];
   }
@@ -110,13 +142,10 @@ export class BossSystem {
 
     // ── Stamina regen ─────────────────────────────────────
     if (player.stamina < player.maxStamina) {
-      player.stamina = Math.min(
-        player.maxStamina,
-        player.stamina + ps.staminaRegenRate
-      );
+      player.stamina = Math.min(player.maxStamina, player.stamina + ps.staminaRegenRate);
     }
 
-    // ── Gold collection — track lifetime earned ───────────
+    // ── Gold + item drop collection ───────────────────────
     let goldCollected = 0;
     state.goldDrops.forEach((drop) => {
       const was = drop.collected;
@@ -124,7 +153,22 @@ export class BossSystem {
       if (!was && drop.collected) goldCollected += drop.amount;
     });
     state.goldDrops = state.goldDrops.filter((d) => !d.collected);
-    state.totalGoldEarned += goldCollected;  // ← run-wide counter
+    state.totalGoldEarned += goldCollected;
+
+    // Item drops in boss arena (the guaranteed post-boss drop)
+    state.itemDrops = state.itemDrops.filter((drop) => {
+      if (drop.collected) return false;
+      if (state.pendingLoot.length >= PENDING_LOOT_CAP) {
+        drop.update(player);
+        return !drop.collected;
+      }
+      const pickedUp = drop.update(player);
+      if (pickedUp) {
+        state.pendingLoot.push(drop.item);
+        return false;
+      }
+      return !drop.collected;
+    });
 
     // ── Enrage event ──────────────────────────────────────
     if (boss.justEnragedThisFrame) {
@@ -133,10 +177,11 @@ export class BossSystem {
 
     // ── Boss death ────────────────────────────────────────
     if (boss.isDead) {
-      state.totalKills += 1;  // ← count boss kill in run total
+      state.totalKills += 1;
       const bx = boss.x + boss.width  / 2;
       const by = boss.y + boss.height / 2;
       spawnBossGold(state, bx, by);
+      spawnBossItemDrop(state, bx, by);  // ← guaranteed drop
       state.particles.push(...spawnBurst(bx, by, "#dc2626", 12, 1.8));
       return { event: "victory", goldCollected };
     }
@@ -150,6 +195,7 @@ export class BossSystem {
   draw(state: GameState, ctx: CanvasRenderingContext2D, camera: Camera, player: Player) {
     state.boss?.draw(ctx, camera);
     state.projectiles.forEach((p) => p.draw(ctx, camera));
+    state.itemDrops.forEach((d)   => d.draw(ctx, camera));
     state.goldDrops.forEach((drop) => drop.draw(ctx, camera));
     state.particles.forEach((p)   => p.update());
     state.particles = state.particles.filter((p) => !p.isDone);

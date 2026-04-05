@@ -15,19 +15,21 @@ interface ShopProps {
   gold:         number;
   playerStats:  PlayerStats;
   player:       Player;
+  pendingLoot:  ShopItem[];             // items dropped in world, claimable for free
+  isMidRoom:    boolean;                // true = NPC shop mid-room; false = pre-boss shop
   onGoldChange: (newGold: number) => void;
-  onContinue:   () => void;
+  onClaimLoot:  (item: ShopItem) => void; // removes item from pendingLoot in GameCanvas
+  onContinue:   () => void;             // "Enter Boss Room" (pre-boss only)
+  onClose:      () => void;             // "Close Shop" (NPC shop only)
 }
 
 // ============================================================
 // [🧱 BLOCK: Heal Tiers]
-// Costs scale per floor so healing doesn't trivialise later floors.
-// Formula: baseCost × floor
 // ============================================================
 const HEAL_TIERS = [
   { label: "Small",  hp: 25,  baseCost: 40,  icon: "🩹" },
   { label: "Medium", hp: 50,  baseCost: 75,  icon: "💊" },
-  { label: "Full",   hp: 999, baseCost: 120, icon: "❤️" }, // 999 = full heal (capped at maxHp)
+  { label: "Full",   hp: 999, baseCost: 120, icon: "❤️" },
 ];
 
 // ============================================================
@@ -99,6 +101,73 @@ function StatRow({ statKey, playerStats, player, gold, floor, onSpend }: {
 }
 
 // ============================================================
+// [🧱 BLOCK: Pending Loot Card]
+// Shows a dropped item that can be claimed for free.
+// Weapon claim replaces current weapon (shows warning if so).
+// Charm claim fails if charm slots are full.
+// ============================================================
+function PendingLootCard({ item, playerStats, player, onClaim }: {
+  item:        ShopItem;
+  playerStats: PlayerStats;
+  player:      Player;
+  onClaim:     () => void;
+}) {
+  const isWeapon      = item.kind === "weapon";
+  const accentColor   = isWeapon ? "#38bdf8" : "#a78bfa";
+  const typeLabel     = isWeapon
+    ? `${(item as WeaponItem).weaponType.toUpperCase()} · Weapon Drop`
+    : "Charm Drop";
+
+  const alreadyOwned  = isWeapon
+    ? playerStats.equippedWeaponItem?.id === item.id
+    : playerStats.hasCharm(item.id);
+  const charmsFull    = !isWeapon && playerStats.charms.length >= playerStats.maxCharms;
+  const willReplace   = isWeapon && !!playerStats.equippedWeaponItem;
+  const canClaim      = !alreadyOwned && !charmsFull;
+
+  function handleClaim() {
+    if (!canClaim) return;
+    if (isWeapon) {
+      playerStats.claimWeapon(item as WeaponItem, player);
+    } else {
+      playerStats.claimCharm(item as Charm, player);
+    }
+    onClaim();
+  }
+
+  return (
+    <div className="shop-loot-card">
+      <div className="shop-loot-card__badge" style={{ background: accentColor }}>FREE</div>
+      <div className="shop-item-card__icon">{item.icon}</div>
+      <div className="shop-item-card__type" style={{ color: accentColor }}>{typeLabel}</div>
+      <div className="shop-item-card__name">{item.name}</div>
+      <div className="shop-item-card__desc">{item.description}</div>
+      {item.tradeOff && (
+        <div className="shop-item-card__tradeoff">⚠ {item.tradeOff}</div>
+      )}
+      {willReplace && !alreadyOwned && (
+        <div className="shop-loot-card__replace-warn">
+          Replaces {playerStats.equippedWeaponItem?.name}
+        </div>
+      )}
+      {charmsFull && !isWeapon && (
+        <div className="shop-item-card__full-warning">Sell a charm first</div>
+      )}
+      {alreadyOwned && (
+        <div className="shop-item-card__full-warning">Already owned</div>
+      )}
+      <PillBtn
+        label={canClaim ? "Claim Free" : alreadyOwned ? "Owned" : "Slots Full"}
+        onClick={handleClaim}
+        disabled={!canClaim}
+        color={accentColor}
+        small
+      />
+    </div>
+  );
+}
+
+// ============================================================
 // [🧱 BLOCK: Shop Item Card]
 // ============================================================
 function ShopItemCard({ item, gold, playerStats, player, onBuy }: {
@@ -133,9 +202,7 @@ function ShopItemCard({ item, gold, playerStats, player, onBuy }: {
   return (
     <div className={`shop-item-card ${alreadyOwned ? "shop-item-card--owned" : ""}`}>
       <div className="shop-item-card__icon">{item.icon}</div>
-      <div className="shop-item-card__type" style={{ color: accentColor }}>
-        {typeLabel}
-      </div>
+      <div className="shop-item-card__type" style={{ color: accentColor }}>{typeLabel}</div>
       <div className="shop-item-card__name">{item.name}</div>
       <div className="shop-item-card__desc">{item.description}</div>
       {item.tradeOff && (
@@ -162,7 +229,6 @@ function ShopItemCard({ item, gold, playerStats, player, onBuy }: {
 function OwnedCharmPill({ charm, onSell }: { charm: Charm; onSell: () => void }) {
   const [confirm, setConfirm] = useState(false);
   const refund = Math.ceil(charm.cost * 0.5);
-
   return (
     <div className="shop-owned-pill shop-owned-pill--charm">
       <span className="shop-owned-pill__icon">{charm.icon}</span>
@@ -185,7 +251,6 @@ function OwnedCharmPill({ charm, onSell }: { charm: Charm; onSell: () => void })
 function EquippedWeaponPill({ item, onSell }: { item: WeaponItem; onSell: () => void }) {
   const [confirm, setConfirm] = useState(false);
   const refund = Math.ceil(item.cost * 0.5);
-
   return (
     <div className="shop-owned-pill shop-owned-pill--weapon">
       <span className="shop-owned-pill__icon">{item.icon}</span>
@@ -207,16 +272,9 @@ function EquippedWeaponPill({ item, onSell }: { item: WeaponItem; onSell: () => 
 
 // ============================================================
 // [🧱 BLOCK: Healing Section]
-// Only appears in the shop (before boss room).
-// Three fixed tiers — costs scale with floor number.
-// HP does not restore between rooms — this is the only source
-// of healing in the run outside of charm/weapon passives.
 // ============================================================
 function HealingSection({ player, gold, floor, onHeal }: {
-  player: Player;
-  gold:   number;
-  floor:  number;
-  onHeal: (newGold: number) => void;
+  player: Player; gold: number; floor: number; onHeal: (newGold: number) => void;
 }) {
   const atFullHp = player.hp >= player.maxHp;
   const hpPct    = Math.round((player.hp / player.maxHp) * 100);
@@ -224,13 +282,11 @@ function HealingSection({ player, gold, floor, onHeal }: {
   return (
     <div className="shop-section shop-healing">
       <div className="shop-healing__header">
-        <p className="shop-section__label">⚕ Healing — Before Boss</p>
+        <p className="shop-section__label">⚕ Healing</p>
         <span className="shop-healing__hp-badge">
           ❤️ {Math.round(player.hp)} / {player.maxHp}
         </span>
       </div>
-
-      {/* HP bar */}
       <div className="shop-healing__bar-track">
         <div
           className="shop-healing__bar-fill"
@@ -240,27 +296,23 @@ function HealingSection({ player, gold, floor, onHeal }: {
           }}
         />
       </div>
-
       {atFullHp ? (
         <p className="shop-healing__full-msg">✓ Already at full HP</p>
       ) : (
         <div className="shop-healing__tiers">
           {HEAL_TIERS.map((tier) => {
-            const cost       = tier.baseCost * floor;
-            const healAmt    = Math.min(tier.hp, player.maxHp - player.hp);
-            const wouldHeal  = healAmt > 0;
-            const canAfford  = gold >= cost;
-            const disabled   = !canAfford || !wouldHeal;
-
+            const cost      = tier.baseCost * floor;
+            const healAmt   = Math.min(tier.hp, player.maxHp - player.hp);
+            const wouldHeal = healAmt > 0;
+            const canAfford = gold >= cost;
+            const disabled  = !canAfford || !wouldHeal;
             return (
               <div key={tier.label} className="shop-healing__tier">
                 <div className="shop-healing__tier-info">
                   <span className="shop-healing__tier-icon">{tier.icon}</span>
                   <div>
                     <p className="shop-healing__tier-label">{tier.label} Heal</p>
-                    <p className="shop-healing__tier-sub">
-                      +{healAmt} HP · 💰 {cost}g
-                    </p>
+                    <p className="shop-healing__tier-sub">+{healAmt} HP · 💰 {cost}g</p>
                   </div>
                 </div>
                 <PillBtn
@@ -286,7 +338,9 @@ function HealingSection({ player, gold, floor, onHeal }: {
 // [🧱 BLOCK: Shop Main]
 // ============================================================
 export default function Shop({
-  floor, room, gold, playerStats, player, onGoldChange, onContinue,
+  floor, room, gold, playerStats, player,
+  pendingLoot, isMidRoom,
+  onGoldChange, onClaimLoot, onContinue, onClose,
 }: ShopProps) {
   const [, forceUpdate] = useState(0);
   const refresh = useCallback(() => forceUpdate((n) => n + 1), []);
@@ -303,8 +357,11 @@ export default function Shop({
   const handleSellCharm  = (id: string) => { onGoldChange(playerStats.sellCharm(id, gold, player)); refresh(); };
   const handleSellWeapon = () => { onGoldChange(playerStats.unequipWeapon(gold, player)); refresh(); };
   const handleHeal       = (ng: number) => { onGoldChange(ng); refresh(); };
+  const handleClaim      = (item: ShopItem) => { onClaimLoot(item); refresh(); };
 
-  const cap = statCap(floor);
+  const cap              = statCap(floor);
+  const nextRerollCost   = playerStats.rerollCost;
+  const atRerollCap      = nextRerollCost >= 100;
 
   return (
     <div className="shop-backdrop">
@@ -313,14 +370,36 @@ export default function Shop({
         {/* Header */}
         <div className="shop-header">
           <div>
-            <p className="shop-header__eyebrow">Floor {floor} · Before Boss</p>
-            <p className="shop-header__title">SHOP</p>
+            <p className="shop-header__eyebrow">
+              Floor {floor} · {isMidRoom ? `Room ${room}` : "Before Boss"}
+            </p>
+            <p className="shop-header__title">{isMidRoom ? "SHOP" : "SHOP"}</p>
           </div>
           <div className="shop-header__gold">
             <p className="shop-header__gold-label">Your Gold</p>
             <p className="shop-header__gold-value">💰 {gold}g</p>
           </div>
         </div>
+
+        {/* ── Pending Loot ── */}
+        {pendingLoot.length > 0 && (
+          <div className="shop-section shop-section--loot">
+            <p className="shop-section__label">
+              ✨ Pending Loot — Claim for Free ({pendingLoot.length}/3)
+            </p>
+            <div className="shop-items-row">
+              {pendingLoot.map((item, i) => (
+                <PendingLootCard
+                  key={`${item.id}-${i}`}
+                  item={item}
+                  playerStats={playerStats}
+                  player={player}
+                  onClaim={() => handleClaim(item)}
+                />
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* Main panels */}
         <div className="shop-main">
@@ -345,9 +424,9 @@ export default function Shop({
               <div className="shop-section__items-header">
                 <p className="shop-section__label">Items</p>
                 <PillBtn
-                  label={`Reroll 💰${playerStats.rerollCost}g`}
+                  label={atRerollCap ? `Reroll 💰${nextRerollCost}g (max)` : `Reroll 💰${nextRerollCost}g`}
                   onClick={handleReroll}
-                  disabled={gold < playerStats.rerollCost}
+                  disabled={gold < nextRerollCost}
                   color="#64748b"
                   small
                 />
@@ -404,17 +483,18 @@ export default function Shop({
           </div>
         </div>
 
-        {/* ── Healing Section ── */}
+        {/* Healing */}
         <HealingSection
-          player={player}
-          gold={gold}
-          floor={floor}
-          onHeal={handleHeal}
+          player={player} gold={gold} floor={floor} onHeal={handleHeal}
         />
 
-        {/* Continue */}
+        {/* Footer */}
         <div className="shop-footer">
-          <PillBtn label="▶ Enter Boss Room" onClick={onContinue} color="#facc15" />
+          {isMidRoom ? (
+            <PillBtn label="✕ Close Shop" onClick={onClose} color="#64748b" />
+          ) : (
+            <PillBtn label="▶ Enter Boss Room" onClick={onContinue} color="#facc15" />
+          )}
         </div>
 
       </div>
