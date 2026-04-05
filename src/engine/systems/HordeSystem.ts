@@ -214,7 +214,7 @@ export class HordeSystem {
     rs:     RoomState,
     worldW: number,
     worldH: number
-  ): { event: "door" | null; goldCollected: number } {
+  ): { event: null; goldCollected: number } {
     const ps           = state.playerStats;
     const threshold    = this.getThreshold(rs.floor);
     const thresholdMet = state.kills >= threshold;
@@ -223,9 +223,8 @@ export class HordeSystem {
     if (state.door) {
       state.door.update();
       if (thresholdMet && !state.door.isActive) state.door.activate();
-      if (state.door.isCollidingWithPlayer(player)) {
-        return { event: "door", goldCollected: 0 };
-      }
+      // Update proximity flag — GameCanvas opens next room on F-press.
+      state.door.checkPlayerProximity(player);
     }
 
     // ── Shop NPC ───────────────────────────────────────────

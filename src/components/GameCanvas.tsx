@@ -194,13 +194,22 @@ export default function GameCanvas() {
       if (e.code === "F1") { e.preventDefault(); if (IS_DEV) setDevPanelOpen((p) => !p); return; }
       if (e.code === "Escape") { setShowInventory(false); setIsPaused((p) => !p); return; }
 
-      // KeyF — interact with Shop NPC when nearby
+      // KeyF — interact with Shop NPC or Gate when nearby
       if (e.code === "KeyF" && !e.repeat) {
         const ui = uiActiveRef.current;
         if (ui.menu || ui.shop || ui.gameOver) return;
-        const npc = stateRef.current?.shopNpc;
-        if (npc?.playerIsNear) {
-          stateRef.current!.playerStats.generateShopOptions();
+        const state = stateRef.current;
+        if (!state) return;
+
+        // Gate — enter next room
+        if (state.door?.playerIsNear) {
+          handleDoorEnter();
+          return;
+        }
+
+        // Shop NPC — open mid-room shop
+        if (state.shopNpc?.playerIsNear) {
+          state.playerStats.generateShopOptions();
           setIsMidRoom(true);
           setShowShop(true);
         }
@@ -535,7 +544,7 @@ export default function GameCanvas() {
     if (!isBoss) {
       const prevKills = state.totalKills;
       const prevHp    = player.hp;
-      const { event, goldCollected } = hordeRef.current.update(state, player, rs, worldW, worldH);
+      const { goldCollected } = hordeRef.current.update(state, player, rs, worldW, worldH);
 
       if (player.hp < prevHp) renderRef.current.shake("light");
       if (goldCollected > 0) {
@@ -544,8 +553,6 @@ export default function GameCanvas() {
       }
       const newKills = state.totalKills - prevKills;
       if (newKills > 0) floorKillsRef.current += newKills;
-
-      if (event === "door") { handleDoorEnter(); return; }
 
       const threshold = hordeRef.current.getThreshold(rs.floor);
       const remaining = threshold - state.kills;
@@ -561,7 +568,7 @@ export default function GameCanvas() {
       }
 
       if (state.door?.isActive && state.kills >= threshold && !announcementRef.current) {
-        announce("ROOM CLEAR", "Gate is open — head north");
+        announce("ROOM CLEAR", "Press F at the gate to advance");
       }
 
       hordeRef.current.draw(state, ctx, state.camera, player, worldW);
