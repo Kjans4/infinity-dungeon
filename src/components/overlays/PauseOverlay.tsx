@@ -29,6 +29,7 @@ const CONTROLS = [
   { key: "J",       desc: "Light Attack"  },
   { key: "K",       desc: "Heavy Attack"  },
   { key: "C",       desc: "Dash"          },
+  { key: "F",       desc: "Talk to NPC"   },
   { key: "Escape",  desc: "Pause / Resume"},
 ];
 

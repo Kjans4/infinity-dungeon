@@ -14,12 +14,21 @@ const NPC_H          = 48;
 const NPC_OFFSET_X   = 100;  // px right of door center
 const SAFE_ZONE_HEIGHT = 160; // px below world top (y=0)
 
+// Proximity radius — player must be within this many px of the
+// NPC centre to see the "F" prompt. Generous enough that the
+// player doesn't have to stand on top of the NPC.
+const INTERACT_RADIUS = 70;
+
 export class ShopNPC {
   x:        number;
   y:        number;
   width:    number = NPC_W;
   height:   number = NPC_H;
   isActive: boolean = false;
+
+  // True when player is close enough to interact — updated
+  // every frame by HordeSystem so draw() can show the prompt.
+  playerIsNear: boolean = false;
 
   // Safe zone — enemies cannot enter y < safeLineY
   safeLineY: number;
@@ -59,17 +68,21 @@ export class ShopNPC {
   }
 
   // ============================================================
-  // [🧱 BLOCK: Collision With Player]
-  // AABB — player touching NPC opens the shop.
+  // [🧱 BLOCK: Is Near Player]
+  // Circle proximity check — used by HordeSystem each frame to
+  // set playerIsNear. GameCanvas then watches this flag and opens
+  // the shop only when the player presses F. This prevents the
+  // shop from re-opening the moment it is closed while the player
+  // is still standing next to the NPC.
   // ============================================================
-  isCollidingWithPlayer(player: Player): boolean {
-    if (!this.isActive) return false;
-    return (
-      player.x                  < this.x + this.width  &&
-      player.x + player.width   > this.x               &&
-      player.y                  < this.y + this.height &&
-      player.y + player.height  > this.y
-    );
+  checkPlayerProximity(player: Player): void {
+    if (!this.isActive) { this.playerIsNear = false; return; }
+    const cx  = this.x + this.width  / 2;
+    const cy  = this.y + this.height / 2;
+    const px  = player.x + player.width  / 2;
+    const py  = player.y + player.height / 2;
+    const dist = Math.sqrt((cx - px) ** 2 + (cy - py) ** 2);
+    this.playerIsNear = dist < INTERACT_RADIUS;
   }
 
   // ============================================================
@@ -116,10 +129,16 @@ export class ShopNPC {
     ctx.fillText("SHOP",  sx + this.width / 2, sy + this.height / 2 - 6);
     ctx.fillText("NPC",   sx + this.width / 2, sy + this.height / 2 + 6);
 
-    // ── "TALK" prompt below ────────────────────────────────
-    ctx.font      = "7px 'Courier New'";
-    ctx.fillStyle = "rgba(148,163,184,0.7)";
-    ctx.fillText("▲ TALK", sx + this.width / 2, sy + this.height + 12);
+    // ── "F" interact prompt — only shown when player is close ──
+    if (this.playerIsNear) {
+      ctx.font      = "bold 8px 'Courier New'";
+      ctx.fillStyle = "rgba(248,250,252,0.9)";
+      ctx.fillText("[F] TALK", sx + this.width / 2, sy + this.height + 14);
+    } else {
+      ctx.font      = "7px 'Courier New'";
+      ctx.fillStyle = "rgba(148,163,184,0.5)";
+      ctx.fillText("SHOP", sx + this.width / 2, sy + this.height + 12);
+    }
 
     ctx.textAlign = "left";
   }

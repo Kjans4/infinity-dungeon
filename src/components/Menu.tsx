@@ -96,6 +96,7 @@ const CONTROLS = [
   { key: "C",    desc: "Dash"         },
   { key: "J",    desc: "Light Attack" },
   { key: "K",    desc: "Heavy Attack" },
+  { key: "F",    desc: "Talk to NPC"  },
 ];
 
 // ============================================================

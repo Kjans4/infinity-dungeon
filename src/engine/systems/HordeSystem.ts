@@ -214,7 +214,7 @@ export class HordeSystem {
     rs:     RoomState,
     worldW: number,
     worldH: number
-  ): { event: "door" | "npc" | null; goldCollected: number } {
+  ): { event: "door" | null; goldCollected: number } {
     const ps           = state.playerStats;
     const threshold    = this.getThreshold(rs.floor);
     const thresholdMet = state.kills >= threshold;
@@ -232,9 +232,10 @@ export class HordeSystem {
     if (state.shopNpc) {
       state.shopNpc.update();
       if (thresholdMet && !state.shopNpc.isActive) state.shopNpc.activate();
-      if (state.shopNpc.isCollidingWithPlayer(player)) {
-        return { event: "npc", goldCollected: 0 };
-      }
+      // Update proximity flag — GameCanvas reads this to show
+      // the "F" prompt and opens the shop on keypress, not on
+      // collision, so the shop can't re-open the moment it closes.
+      state.shopNpc.checkPlayerProximity(player);
     }
 
     // ── Enemy update + melee hits ──────────────────────────

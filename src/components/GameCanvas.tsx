@@ -193,6 +193,20 @@ export default function GameCanvas() {
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.code === "F1") { e.preventDefault(); if (IS_DEV) setDevPanelOpen((p) => !p); return; }
       if (e.code === "Escape") { setShowInventory(false); setIsPaused((p) => !p); return; }
+
+      // KeyF — interact with Shop NPC when nearby
+      if (e.code === "KeyF" && !e.repeat) {
+        const ui = uiActiveRef.current;
+        if (ui.menu || ui.shop || ui.gameOver) return;
+        const npc = stateRef.current?.shopNpc;
+        if (npc?.playerIsNear) {
+          stateRef.current!.playerStats.generateShopOptions();
+          setIsMidRoom(true);
+          setShowShop(true);
+        }
+        return;
+      }
+
       if (e.code === "KeyI" && !e.repeat) {
         const ui = uiActiveRef.current;
         if (ui.menu || ui.shop || ui.gameOver) return;
@@ -341,13 +355,6 @@ export default function GameCanvas() {
     setShowShop(false);
     setIsMidRoom(false);
     bossRef.current.setup(stateRef.current!, roomRef.current);
-  }, []);
-
-  // ── NPC shop — open mid-room, no phase advance ────────────
-  const handleNpcOpen = useCallback(() => {
-    stateRef.current!.playerStats.generateShopOptions();
-    setIsMidRoom(true);
-    setShowShop(true);
   }, []);
 
   // ── NPC shop close — return to gameplay, room phase unchanged ─
@@ -539,7 +546,6 @@ export default function GameCanvas() {
       if (newKills > 0) floorKillsRef.current += newKills;
 
       if (event === "door") { handleDoorEnter(); return; }
-      if (event === "npc")  { handleNpcOpen();   return; }
 
       const threshold = hordeRef.current.getThreshold(rs.floor);
       const remaining = threshold - state.kills;
