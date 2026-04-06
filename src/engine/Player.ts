@@ -206,17 +206,5 @@ export class Player {
         ? "#38bdf8"
         : "#f87171";
     ctx.fillRect(sx, sy, this.width, this.height);
-
-    // HP bar
-    ctx.fillStyle = "#1e293b";
-    ctx.fillRect(sx, sy - 15, this.width, 4);
-    ctx.fillStyle = "#ef4444";
-    ctx.fillRect(sx, sy - 15, (this.hp / this.maxHp) * this.width, 4);
-
-    // Stamina bar
-    ctx.fillStyle = "#1e293b";
-    ctx.fillRect(sx, sy - 9, this.width, 4);
-    ctx.fillStyle = "#fbbf24";
-    ctx.fillRect(sx, sy - 9, (this.stamina / this.maxStamina) * this.width, 4);
   }
 }
