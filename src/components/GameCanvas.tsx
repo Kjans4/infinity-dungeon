@@ -303,7 +303,8 @@ export default function GameCanvas() {
     isDyingRef.current = false;
     vignetteAlphaRef.current = 0;
     resetFloorTracking();
-  }, [resetFloorTracking]); // eslint-disable-line react-hooks/exhaustive-deps
+    setTimeout(() => announce("PREPARE!", "Room 1 — enemies incoming", "#38bdf8"), 300);
+  }, [resetFloorTracking, announce]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Raid Again — reset and start immediately, no menu ─────
   const handleRaidAgain = useCallback(() => {
@@ -324,7 +325,8 @@ export default function GameCanvas() {
     isDyingRef.current = false;
     vignetteAlphaRef.current = 0;
     resetFloorTracking();
-  }, [resetFloorTracking]); // eslint-disable-line react-hooks/exhaustive-deps
+    setTimeout(() => announce("PREPARE!", "Room 1 — enemies incoming", "#38bdf8"), 300);
+  }, [resetFloorTracking, announce]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Quit to Menu ──────────────────────────────────────────
   const handleQuitToMenu = useCallback(() => {
@@ -355,7 +357,7 @@ export default function GameCanvas() {
       setTimeout(() => setShowShop(true), 1200);
     } else {
       hordeRef.current.setup(stateRef.current!, rs, WORLD_W, WORLD_H);
-      announce("NEXT ROOM", `Room ${rs.roomDisplay}`, "#38bdf8");
+      announce("PREPARE!", `Room ${rs.roomDisplay} — enemies incoming`, "#38bdf8");
     }
   }, [announce]);
 
@@ -391,7 +393,8 @@ export default function GameCanvas() {
     setIsMidRoom(false);
     lastAnnouncedRemainingRef.current = null;
     resetFloorTracking();
-  }, [resetFloorTracking]);
+    setTimeout(() => announce(`FLOOR ${rs.floor}`, "Enemies incoming", "#f59e0b"), 300);
+  }, [resetFloorTracking, announce]);
 
   const handleGoldChange = useCallback((newGold: number) => {
     if (stateRef.current) stateRef.current.gold = newGold;

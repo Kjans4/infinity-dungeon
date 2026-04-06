@@ -35,6 +35,7 @@ export class Player {
   // Combat state
   isDashing:        boolean                  = false;
   dashTimer:        number                   = 0;   // counts down in update()
+  dashCost:         number                   = 30;  // set by PlayerStats.applyToPlayer()
   isAttacking:      boolean                  = false;
   isHeavyAttacking: boolean                  = false;
   isHit:            boolean                  = false;
@@ -89,8 +90,8 @@ export class Player {
     // dash respects pause state and never fires after game-over.
     // Grants DASH_IFRAMES of invincibility so the player can dodge
     // through projectiles and melee attacks.
-    if (input.movement.dash && this.stamina >= 30 && !this.isDashing && !this.isAttacking) {
-      this.stamina   -= 30;
+    if (input.movement.dash && this.stamina >= this.dashCost && !this.isDashing && !this.isAttacking) {
+      this.stamina   -= this.dashCost;
       this.isDashing  = true;
       this.dashTimer  = DASH_DURATION;
       this.iFrames    = Math.max(this.iFrames, DASH_IFRAMES); // don't shorten existing iframes
@@ -206,5 +207,17 @@ export class Player {
         ? "#38bdf8"
         : "#f87171";
     ctx.fillRect(sx, sy, this.width, this.height);
+
+    // HP bar
+    ctx.fillStyle = "#1e293b";
+    ctx.fillRect(sx, sy - 15, this.width, 4);
+    ctx.fillStyle = "#ef4444";
+    ctx.fillRect(sx, sy - 15, (this.hp / this.maxHp) * this.width, 4);
+
+    // Stamina bar
+    ctx.fillStyle = "#1e293b";
+    ctx.fillRect(sx, sy - 9, this.width, 4);
+    ctx.fillStyle = "#fbbf24";
+    ctx.fillRect(sx, sy - 9, (this.stamina / this.maxStamina) * this.width, 4);
   }
 }
