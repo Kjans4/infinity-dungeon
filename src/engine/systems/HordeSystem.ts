@@ -12,8 +12,7 @@ import { WeaponSystem }                    from "./WeaponSystem";
 import { spawnBurst }                      from "../Particle";
 import { getRandomShopItems }              from "../items/ItemPool";
 
-const INITIAL_WAVE           = 8;
-const WAVE_SIZE              = 6;
+const WAVE_SIZE              = 8;
 const BASE_THRESHOLD         = 20;
 const THRESHOLD_PER_FLOOR    = 5;
 const FARMING_SPAWN_INTERVAL = 3000;
@@ -97,9 +96,9 @@ export class HordeSystem {
     state.player.vx = 0;
     state.player.vy = 0;
 
-    state.kills       = 0;
-    state.alive       = INITIAL_WAVE;
-    state.lastSpawn   = 0;
+    state.kills         = 0;
+    state.alive         = 0;   // enemies array is empty — first wave spawns after grace period
+    state.lastSpawn     = 0;
     state.roomEntryTime = Date.now();
     state.projectiles = [];
     state.goldDrops   = [];
