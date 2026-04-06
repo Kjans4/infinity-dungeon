@@ -211,6 +211,7 @@ export class PlayerStats {
     player.hp         = Math.min(player.hp, player.maxHp);
     player.maxStamina = 100 + (this.end * 5) + this.modifiers.bonusMaxStamina;
     player.maxSpeed   = 5 + (this.agi * 0.3) + this.modifiers.bonusSpeed;
+    player.dashCost   = this.dashCost;
   }
 
   // ============================================================

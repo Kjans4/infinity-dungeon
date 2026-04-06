@@ -17,6 +17,7 @@ const WAVE_SIZE              = 6;
 const BASE_THRESHOLD         = 20;
 const THRESHOLD_PER_FLOOR    = 5;
 const FARMING_SPAWN_INTERVAL = 3000;
+const GRACE_PERIOD_MS        = 1500; // ms before first wave spawns on room entry
 
 // ============================================================
 // [🧱 BLOCK: Separation Constants]
@@ -99,16 +100,13 @@ export class HordeSystem {
     state.kills       = 0;
     state.alive       = INITIAL_WAVE;
     state.lastSpawn   = 0;
+    state.roomEntryTime = Date.now();
     state.projectiles = [];
     state.goldDrops   = [];
     state.itemDrops   = [];
     state.particles   = [];
     state.boss        = null;
-
-    state.enemies = spawnWave(
-      INITIAL_WAVE, worldW, worldH,
-      rs.roomInCycle, rs.floor
-    );
+    state.enemies     = []; // first wave spawns after grace period in update()
 
     state.door          = new Door(worldW);
     state.door.isActive = false;
@@ -364,11 +362,13 @@ export class HordeSystem {
     });
 
     // ── Wave spawning ─────────────────────────────────────
-    const now = Date.now();
+    const now         = Date.now();
+    const graceElapsed = now - state.roomEntryTime;
+    const graceDone    = graceElapsed >= GRACE_PERIOD_MS;
 
     if (!thresholdMet) {
       const killsLeft = threshold - state.kills;
-      if (killsLeft > 0 && state.alive === 0 && now - state.lastSpawn > 1000) {
+      if (killsLeft > 0 && state.alive === 0 && graceDone && now - state.lastSpawn > 1000) {
         const spawnCount = Math.min(WAVE_SIZE, killsLeft);
         const newWave    = spawnWave(spawnCount, worldW, worldH, rs.roomInCycle, rs.floor);
         state.enemies.push(...newWave);

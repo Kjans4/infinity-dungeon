@@ -39,9 +39,10 @@ export class GameState {
   pendingLoot: ShopItem[];
 
   // Horde tracking (resets per room)
-  kills:     number;
-  alive:     number;
-  lastSpawn: number;
+  kills:         number;
+  alive:         number;
+  lastSpawn:     number;
+  roomEntryTime: number; // Date.now() when the room was entered — used for grace period
 
   // ── Run-wide stats (never reset mid-run) ──────────────────
   totalKills:      number;
@@ -71,9 +72,10 @@ export class GameState {
     this.playerStats     = new PlayerStats();
     this.pendingLoot     = [];
 
-    this.kills     = 0;
-    this.alive     = 0;
-    this.lastSpawn = 0;
+    this.kills         = 0;
+    this.alive         = 0;
+    this.lastSpawn     = 0;
+    this.roomEntryTime = 0;
 
     this.totalKills      = 0;
     this.totalGoldEarned = 0;
@@ -96,9 +98,10 @@ export class GameState {
     this.itemDrops   = [];
     this.particles   = [];
     this.gold        = 0;
-    this.kills       = 0;
-    this.alive       = 0;
-    this.lastSpawn   = 0;
+    this.kills         = 0;
+    this.alive         = 0;
+    this.lastSpawn     = 0;
+    this.roomEntryTime = 0;
     this.pendingLoot = [];
 
     this.totalKills      = 0;
@@ -121,9 +124,10 @@ export class GameState {
     this.goldDrops   = [];
     this.itemDrops   = [];
     this.particles   = [];
-    this.kills       = 0;
-    this.alive       = 0;
-    this.lastSpawn   = 0;
+    this.kills         = 0;
+    this.alive         = 0;
+    this.lastSpawn     = 0;
+    this.roomEntryTime = 0;
     this.door        = null;
     this.shopNpc     = null;
     this.boss        = null;
