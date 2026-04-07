@@ -1,9 +1,10 @@
 // src/engine/enemy/Grunt.ts
-import { Player } from "../Player";
-import { Camera } from "../Camera";
-import { BaseEnemy } from "./BaseEnemy";
-import { AttackState } from "./types";
+import { Player }       from "../Player";
+import { Camera }       from "../Camera";
+import { BaseEnemy }    from "./BaseEnemy";
+import { AttackState }  from "./types";
 import { getEnemySpeedScale, getEnemyHpScale } from "../RoomManager";
+import { circleRect, rectCenter }              from "../Collision";
 
 // ============================================================
 // [🧱 BLOCK: Grunt Stats]
@@ -18,12 +19,15 @@ const GRUNT_STATS = {
   meleeWindup:   600,
   meleeDamage:   15,
   meleeCooldown: 1500,
+  // Hitbox circle radius for strike check
+  strikeRadius:  28,
+  strikeOffset:  45,   // how far ahead of center the hitbox spawns
 };
 
 // Dash lunge constants (Floor 3+)
-const DASH_SPEED    = 10;   // px per frame during dash
-const DASH_DURATION = 200;  // ms
-const DASH_RANGE    = 300;  // px — only dash if player is within this range
+const DASH_SPEED    = 10;
+const DASH_DURATION = 200;
+const DASH_RANGE    = 300;
 
 type GruntState = AttackState | 'dash';
 
@@ -31,8 +35,6 @@ type GruntState = AttackState | 'dash';
 // [🧱 BLOCK: Grunt Class]
 // Floor 1-2: chase → windup → strike → cooldown
 // Floor 3+:  chase → dash → windup → strike → cooldown
-//            Grunt dashes toward player before winding up,
-//            making it harder to maintain safe distance.
 // ============================================================
 export class Grunt extends BaseEnemy {
   attackState:    GruntState = 'chase';
@@ -41,10 +43,7 @@ export class Grunt extends BaseEnemy {
   strikeDir: { x: number; y: number } = { x: 0, y: 1 };
   pendingProjectile: null = null;
 
-  // ── Floor stored for behavioral branching ────────────────
   private floor: number;
-
-  // ── Dash trail for visual feedback ───────────────────────
   private dashTrail: { x: number; y: number; alpha: number }[] = [];
 
   constructor(x: number, y: number, floor: number = 1) {
@@ -69,10 +68,8 @@ export class Grunt extends BaseEnemy {
     this.attackTimer    -= 16;
     this.attackCooldown -= 16;
 
-    const pcx  = player.x + player.width  / 2;
-    const pcy  = player.y + player.height / 2;
-    const ecx  = this.x   + this.width    / 2;
-    const ecy  = this.y   + this.height   / 2;
+    const { x: pcx, y: pcy } = rectCenter(player);
+    const { x: ecx, y: ecy } = rectCenter(this);
     const dx   = pcx - ecx;
     const dy   = pcy - ecy;
     const dist = Math.sqrt(dx * dx + dy * dy) || 1;
@@ -92,7 +89,6 @@ export class Grunt extends BaseEnemy {
         this.y += this.vy;
 
         if (dist <= GRUNT_STATS.meleeRange && this.attackCooldown <= 0) {
-          // Floor 3+: dash first if player is far enough to make it worthwhile
           if (this.floor >= 3 && dist > GRUNT_STATS.meleeRange + 20 && dist <= DASH_RANGE) {
             this.attackState = 'dash';
             this.attackTimer = DASH_DURATION;
@@ -107,24 +103,19 @@ export class Grunt extends BaseEnemy {
 
       // ── Dash (Floor 3+ only) ────────────────────────────
       case 'dash': {
-        // Lock dash direction at start, lunge fast toward player
         this.x += this.strikeDir.x * DASH_SPEED;
         this.y += this.strikeDir.y * DASH_SPEED;
         this.clampToWorld(worldW, worldH);
 
-        // Leave a trail
         this.dashTrail.push({
           x: this.x + this.width  / 2,
           y: this.y + this.height / 2,
           alpha: 0.6,
         });
 
-        const distNow = Math.sqrt(
-          (pcx - (this.x + this.width  / 2)) ** 2 +
-          (pcy - (this.y + this.height / 2)) ** 2
-        );
+        const { x: ncx, y: ncy } = rectCenter(this);
+        const distNow = Math.sqrt((pcx - ncx) ** 2 + (pcy - ncy) ** 2);
 
-        // Enter windup when close or timer expires
         if (this.attackTimer <= 0 || distNow <= GRUNT_STATS.meleeRange) {
           this.attackState = 'windup';
           this.attackTimer = GRUNT_STATS.meleeWindup;
@@ -172,19 +163,16 @@ export class Grunt extends BaseEnemy {
   }
 
   // ============================================================
-  // [🧱 BLOCK: Melee Hit Check]
+  // [🧱 BLOCK: Melee Hit Check — uses circleRect from Collision]
+  // The strike hitbox is a circle projected ahead of the grunt
+  // center in the strike direction.
   // ============================================================
   isMeleeHittingPlayer(player: Player): boolean {
     if (this.attackState !== 'strike') return false;
-    const ecx      = this.x + this.width  / 2;
-    const ecy      = this.y + this.height / 2;
-    const hitX     = ecx + this.strikeDir.x * 45;
-    const hitY     = ecy + this.strikeDir.y * 45;
-    const hitSize  = 28;
-    const nearestX = Math.max(player.x, Math.min(hitX, player.x + player.width));
-    const nearestY = Math.max(player.y, Math.min(hitY, player.y + player.height));
-    const distSq   = (hitX - nearestX) ** 2 + (hitY - nearestY) ** 2;
-    return distSq < hitSize * hitSize;
+    const { x: ecx, y: ecy } = rectCenter(this);
+    const hitX = ecx + this.strikeDir.x * GRUNT_STATS.strikeOffset;
+    const hitY = ecy + this.strikeDir.y * GRUNT_STATS.strikeOffset;
+    return circleRect(hitX, hitY, GRUNT_STATS.strikeRadius, player);
   }
 
   get meleeDamage() { return GRUNT_STATS.meleeDamage; }
@@ -233,10 +221,10 @@ export class Grunt extends BaseEnemy {
 
     // ── Strike hitbox ────────────────────────────────────
     if (this.attackState === 'strike') {
-      const hitX = cx + this.strikeDir.x * 45;
-      const hitY = cy + this.strikeDir.y * 45;
+      const hitX = cx + this.strikeDir.x * GRUNT_STATS.strikeOffset;
+      const hitY = cy + this.strikeDir.y * GRUNT_STATS.strikeOffset;
       ctx.beginPath();
-      ctx.arc(hitX, hitY, 20, 0, Math.PI * 2);
+      ctx.arc(hitX, hitY, GRUNT_STATS.strikeRadius, 0, Math.PI * 2);
       ctx.fillStyle = "rgba(249, 115, 22, 0.5)";
       ctx.fill();
     }

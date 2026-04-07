@@ -1,12 +1,13 @@
 // src/engine/Door.ts
-import { Player } from "./Player";
-import { Camera } from "./Camera";
+import { Player }        from "./Player";
+import { Camera }        from "./Camera";
+import { withinRadius, rectOverlap } from "./Collision";
 
 // ============================================================
 // [🧱 BLOCK: Door Class]
 // Placeholder box that appears at top-center of the world
-// once the kill threshold is met. Player walks into it to
-// advance to the next room.
+// once the kill threshold is met. Player presses F nearby
+// to advance to the next room.
 // ============================================================
 export class Door {
   x: number;
@@ -16,14 +17,15 @@ export class Door {
   isActive: boolean = false;
 
   // True when player is close enough to press F.
-  // Updated every frame by HordeSystem.
   playerIsNear: boolean = false;
+
+  // Proximity radius for F-press interaction
+  private static readonly INTERACT_RADIUS = 80;
 
   // Animation
   private pulseTimer: number = 0;
 
   constructor(worldW: number) {
-    // Top center of the world
     this.x = worldW / 2 - this.width / 2;
     this.y = 20;
   }
@@ -44,24 +46,15 @@ export class Door {
   }
 
   // ============================================================
-  // [🧱 BLOCK: Check Player Proximity]
-  // Circle check — sets playerIsNear so GameCanvas can open the
-  // next room on F-press rather than on collision.
+  // [🧱 BLOCK: Check Player Proximity — uses withinRadius]
   // ============================================================
   checkPlayerProximity(player: Player): void {
     if (!this.isActive) { this.playerIsNear = false; return; }
-    const cx   = this.x + this.width  / 2;
-    const cy   = this.y + this.height / 2;
-    const px   = player.x + player.width  / 2;
-    const py   = player.y + player.height / 2;
-    const dist = Math.sqrt((cx - px) ** 2 + (cy - py) ** 2);
-    this.playerIsNear = dist < 80; // slightly larger than the box
+    this.playerIsNear = withinRadius(this, player, Door.INTERACT_RADIUS);
   }
 
   // ============================================================
   // [🧱 BLOCK: Draw]
-  // Inactive = faint gray outline (hinted but not usable).
-  // Active   = glowing green pulsing box + F prompt when nearby.
   // ============================================================
   draw(ctx: CanvasRenderingContext2D, camera: Camera) {
     const sx = camera.toScreenX(this.x);
@@ -95,7 +88,6 @@ export class Door {
     ctx.fillText("NEXT", sx + this.width / 2, sy + this.height / 2 - 6);
     ctx.fillText("ROOM", sx + this.width / 2, sy + this.height / 2 + 8);
 
-    // F prompt — only when player is nearby
     if (this.playerIsNear) {
       ctx.font      = "bold 8px 'Courier New'";
       ctx.fillStyle = "rgba(248,250,252,0.9)";
@@ -106,16 +98,12 @@ export class Door {
   }
 
   // ============================================================
-  // [🧱 BLOCK: Collision Check — kept for legacy safety]
-  // Unused by HordeSystem now but kept in case other code reads it.
+  // [🧱 BLOCK: Legacy Collision Check — uses rectOverlap]
+  // Kept for safety; HordeSystem no longer uses this for
+  // room transitions (F-press is used instead).
   // ============================================================
   isCollidingWithPlayer(player: Player): boolean {
     if (!this.isActive) return false;
-    return (
-      player.x < this.x + this.width  &&
-      player.x + player.width  > this.x &&
-      player.y < this.y + this.height &&
-      player.y + player.height > this.y
-    );
+    return rectOverlap(this, player);
   }
 }

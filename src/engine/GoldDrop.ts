@@ -1,6 +1,7 @@
 // src/engine/GoldDrop.ts
-import { Player } from "./Player";
-import { Camera } from "./Camera";
+import { Player }        from "./Player";
+import { Camera }        from "./Camera";
+import { pickupOverlap } from "./Collision";
 
 // ============================================================
 // [🧱 BLOCK: GoldDrop Class]
@@ -38,12 +39,8 @@ export class GoldDrop {
       return;
     }
 
-    // Pickup check — player center within collection radius
-    const px   = player.x + player.width  / 2;
-    const py   = player.y + player.height / 2;
-    const dist = Math.sqrt((this.x - px) ** 2 + (this.y - py) ** 2);
-
-    if (dist < this.radius + player.width / 2) {
+    // Pickup check — uses shared circleRect helper
+    if (pickupOverlap(this.x, this.y, this.radius, player)) {
       this.collected = true;
     }
   }

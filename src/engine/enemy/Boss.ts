@@ -1,8 +1,9 @@
 // src/engine/enemy/Boss.ts
-import { Player }     from "../Player";
-import { Camera }     from "../Camera";
-import { BaseEnemy }  from "./BaseEnemy";
-import { Projectile } from "./Projectile";
+import { Player }                               from "../Player";
+import { Camera }                               from "../Camera";
+import { BaseEnemy }                            from "./BaseEnemy";
+import { Projectile }                           from "./Projectile";
+import { rectOverlap, circleCircle, rectCenter } from "../Collision";
 
 // ============================================================
 // [🧱 BLOCK: Boss States]
@@ -58,11 +59,14 @@ export class Boss extends BaseEnemy {
   // Charge
   chargeDir: { x: number; y: number } = { x: 0, y: 0 };
 
-  // Slam
+  // Slam — timers replace setTimeout to respect pause state
   slamRadius:  number  = 0;
   slamActive:  boolean = false;
   slam2Radius: number  = 0;
   slam2Active: boolean = false;
+  // How long the slam2 active window lasts (ms)
+  private slam2ActiveTimer: number = 0;
+  private readonly SLAM2_ACTIVE_MS  = 350;
 
   // Projectiles — drained by BossSystem each frame
   pendingProjectiles: Projectile[] = [];
@@ -154,6 +158,8 @@ export class Boss extends BaseEnemy {
 
   // ============================================================
   // [🧱 BLOCK: Update — Boss State Machine]
+  // slam2 active window is now frame-timer based (no setTimeout)
+  // so it correctly pauses with the game loop.
   // ============================================================
   update(player: Player, worldW: number, worldH: number) {
     if (this.isDead) return;
@@ -166,12 +172,19 @@ export class Boss extends BaseEnemy {
     this.indicatorPulse += 16;
     if (this.damageCooldown > 0) this.damageCooldown -= 16;
 
+    // Tick slam2 active window
+    if (this.slam2Active) {
+      this.slam2ActiveTimer -= 16;
+      if (this.slam2ActiveTimer <= 0) {
+        this.slam2Active  = false;
+        this.slam2Radius  = 0;
+      }
+    }
+
     this.checkRage();
 
-    const pcx  = player.x + player.width  / 2;
-    const pcy  = player.y + player.height / 2;
-    const ecx  = this.x   + this.width    / 2;
-    const ecy  = this.y   + this.height   / 2;
+    const { x: pcx, y: pcy } = rectCenter(player);
+    const { x: ecx, y: ecy } = rectCenter(this);
     const dx   = pcx - ecx;
     const dy   = pcy - ecy;
     const dist = Math.sqrt(dx * dx + dy * dy) || 1;
@@ -244,18 +257,16 @@ export class Boss extends BaseEnemy {
         break;
 
       // ── Slamming 2 (Floor 3+) ───────────────────────────
+      // Uses a frame-based timer instead of setTimeout so it
+      // respects game pause and doesn't drift on low FPS.
       case 'slamming2':
         this.slam2Radius = BOSS_STATS.slam2MaxRadius * (1 - this.stateTimer / this.warnDuration);
         if (this.stateTimer <= 0) {
-          this.slam2Active = true;
-          this.slam2Radius = BOSS_STATS.slam2MaxRadius;
-          // Brief active window then cooldown
-          setTimeout(() => {
-            this.slam2Active = false;
-            this.slam2Radius = 0;
-          }, 350);
-          this.bossState  = 'cooldown';
-          this.stateTimer = 1200;
+          this.slam2Active      = true;
+          this.slam2Radius      = BOSS_STATS.slam2MaxRadius;
+          this.slam2ActiveTimer = this.SLAM2_ACTIVE_MS;
+          this.bossState        = 'cooldown';
+          this.stateTimer       = 1200;
         }
         break;
 
@@ -295,33 +306,24 @@ export class Boss extends BaseEnemy {
   }
 
   // ============================================================
-  // [🧱 BLOCK: Collision Checks]
+  // [🧱 BLOCK: Collision Checks — now use Collision helpers]
   // ============================================================
   isCollidingWithPlayer(player: Player): boolean {
     return (
       this.damageCooldown <= 0 &&
       !this.isDead &&
-      this.x < player.x + player.width  &&
-      this.x + this.width  > player.x   &&
-      this.y < player.y + player.height &&
-      this.y + this.height > player.y
+      rectOverlap(this, player)
     );
   }
 
   isSlamHittingPlayer(player: Player): boolean {
-    const cx = this.x + this.width  / 2;
-    const cy = this.y + this.height / 2;
-    const px = player.x + player.width  / 2;
-    const py = player.y + player.height / 2;
-    const d  = Math.sqrt((cx - px) ** 2 + (cy - py) ** 2);
+    const { x: cx, y: cy } = rectCenter(this);
+    const { x: px, y: py } = rectCenter(player);
 
-    if (this.slamActive  && d < this.slamRadius)  return true;
-    if (this.slam2Active && d < this.slam2Radius) return true;
+    if (this.slamActive  && circleCircle(cx, cy, this.slamRadius,  px, py, 1)) return true;
+    if (this.slam2Active && circleCircle(cx, cy, this.slam2Radius, px, py, 1)) return true;
     return false;
   }
-
-  // ── Expose slam2Active for BossSystem ────────────────────
-  
 
   get contactDamage() { return BOSS_STATS.damage;      }
   get slamDamage()    { return BOSS_STATS.slamDamage;  }

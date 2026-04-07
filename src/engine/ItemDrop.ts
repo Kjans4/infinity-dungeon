@@ -1,7 +1,8 @@
 // src/engine/ItemDrop.ts
-import { Player }   from "./Player";
-import { Camera }   from "./Camera";
-import { ShopItem } from "./items/ItemPool";
+import { Player }        from "./Player";
+import { Camera }        from "./Camera";
+import { ShopItem }      from "./items/ItemPool";
+import { pickupOverlap } from "./Collision";
 
 // ============================================================
 // [🧱 BLOCK: ItemDrop Class]
@@ -44,11 +45,8 @@ export class ItemDrop {
       return false;
     }
 
-    const px   = player.x + player.width  / 2;
-    const py   = player.y + player.height / 2;
-    const dist = Math.sqrt((this.x - px) ** 2 + (this.y - py) ** 2);
-
-    if (dist < this.radius + player.width / 2) {
+    // Pickup check — uses shared helper from Collision
+    if (pickupOverlap(this.x, this.y, this.radius, player)) {
       this.collected = true;
       return true; // signal: picked up
     }

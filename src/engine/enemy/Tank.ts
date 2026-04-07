@@ -3,6 +3,7 @@ import { BaseEnemy }  from "./BaseEnemy";
 import { Player }     from "../Player";
 import { Camera }     from "../Camera";
 import { getEnemySpeedScale, getEnemyHpScale } from "../RoomManager";
+import { circleCircle, knockbackDir, rectCenter } from "../Collision";
 
 // ============================================================
 // [🧱 BLOCK: Constants]
@@ -17,10 +18,6 @@ const BASE_DAMAGE     = 30;
 const KNOCKBACK_FORCE = 8;
 const XP_VALUE        = 25;
 
-// Windup durations per floor tier:
-//   Floor 1-2: 1000ms (full warning)
-//   Floor 3:    600ms (reduced warning)
-//   Floor 4+:     0ms (no windup — instant strike)
 const WINDUP_F1 = 1000;
 const WINDUP_F3 =  600;
 
@@ -38,9 +35,6 @@ type TankState = "chase" | "windup" | "strike" | "cooldown";
 
 // ============================================================
 // [🧱 BLOCK: Tank Class]
-// Floor 1-2: chase → windup (1000ms) → strike → cooldown
-// Floor 3:   chase → windup (600ms)  → strike → cooldown
-// Floor 4+:  chase → strike (no windup — telegraphs nothing)
 // ============================================================
 export class Tank extends BaseEnemy {
   private tankState:  TankState = "chase";
@@ -63,7 +57,6 @@ export class Tank extends BaseEnemy {
 
   // ============================================================
   // [🧱 BLOCK: Windup Duration]
-  // Returns 0 on Floor 4+ so the windup state is skipped.
   // ============================================================
   private get windupMs(): number {
     if (this.floor >= 4) return 0;
@@ -79,8 +72,10 @@ export class Tank extends BaseEnemy {
   }
 
   private isFrontHit(fromX: number, fromY: number): boolean {
-    const dx  = fromX - (this.x + SIZE / 2);
-    const dy  = fromY - (this.y + SIZE / 2);
+    const cx  = this.x + SIZE / 2;
+    const cy  = this.y + SIZE / 2;
+    const dx  = fromX - cx;
+    const dy  = fromY - cy;
     const len = Math.sqrt(dx * dx + dy * dy) || 1;
     const dot = (dx / len) * this.facingX + (dy / len) * this.facingY;
     return dot > 0.5;
@@ -121,27 +116,24 @@ export class Tank extends BaseEnemy {
   }
 
   // ============================================================
-  // [🧱 BLOCK: isMeleeHittingPlayer]
+  // [🧱 BLOCK: isMeleeHittingPlayer — uses circleCircle]
   // ============================================================
   isMeleeHittingPlayer(player: Player): boolean {
     if (this.tankState !== "strike" || this.isDead) return false;
-    const cx  = this.x + SIZE / 2;
-    const cy  = this.y + SIZE / 2;
-    const pcx = player.x + player.width  / 2;
-    const pcy = player.y + player.height / 2;
-    return Math.sqrt((cx - pcx) ** 2 + (cy - pcy) ** 2) < MELEE_RANGE + 10;
+    const { x: cx, y: cy } = rectCenter(this);
+    const { x: px, y: py } = rectCenter(player);
+    return circleCircle(cx, cy, MELEE_RANGE + 10, px, py, 1);
   }
 
+  // ============================================================
+  // [🧱 BLOCK: applyKnockback — uses knockbackDir]
+  // ============================================================
   applyKnockback(player: Player): void {
-    const cx  = this.x + SIZE / 2;
-    const cy  = this.y + SIZE / 2;
-    const pcx = player.x + player.width  / 2;
-    const pcy = player.y + player.height / 2;
-    const dx  = pcx - cx;
-    const dy  = pcy - cy;
-    const len = Math.sqrt(dx * dx + dy * dy) || 1;
-    player.vx += (dx / len) * KNOCKBACK_FORCE;
-    player.vy += (dy / len) * KNOCKBACK_FORCE;
+    const { x: cx, y: cy } = rectCenter(this);
+    const { x: px, y: py } = rectCenter(player);
+    const dir = knockbackDir(cx, cy, px, py);
+    player.vx += dir.x * KNOCKBACK_FORCE;
+    player.vy += dir.y * KNOCKBACK_FORCE;
   }
 
   // ============================================================
@@ -152,12 +144,10 @@ export class Tank extends BaseEnemy {
 
     this.tickHitFlash();
 
-    const cx   = this.x + SIZE / 2;
-    const cy   = this.y + SIZE / 2;
-    const pcx  = player.x + player.width  / 2;
-    const pcy  = player.y + player.height / 2;
-    const dx   = pcx - cx;
-    const dy   = pcy - cy;
+    const { x: cx, y: cy } = rectCenter(this);
+    const { x: px, y: py } = rectCenter(player);
+    const dx   = px - cx;
+    const dy   = py - cy;
     const dist = Math.sqrt(dx * dx + dy * dy) || 1;
 
     this.facingX = dx / dist;
@@ -171,11 +161,9 @@ export class Tank extends BaseEnemy {
           this.y += (dy / dist) * this.speed;
           this.clampToWorld(worldW, worldH);
         } else {
-          // Floor 4+: skip windup entirely
           if (this.windupMs === 0) {
             this.tankState  = "strike";
             this.stateTimer = STRIKE_MS;
-            // Lunge
             this.x += (dx / dist) * 12;
             this.y += (dy / dist) * 12;
           } else {
@@ -223,7 +211,7 @@ export class Tank extends BaseEnemy {
     const cx = sx + SIZE / 2;
     const cy = sy + SIZE / 2;
 
-    // ── Windup ring (not shown on Floor 4+ since windup is skipped) ──
+    // ── Windup ring ──────────────────────────────────────
     if (this.tankState === "windup" && this.windupMs > 0) {
       const progress = 1 - this.stateTimer / this.windupMs;
       ctx.beginPath();
@@ -235,7 +223,7 @@ export class Tank extends BaseEnemy {
       ctx.globalAlpha = 1;
     }
 
-    // ── Floor 4+ danger indicator — red pulse during chase ──
+    // ── Floor 4+ danger indicator ────────────────────────
     if (this.floor >= 4 && this.tankState === "chase") {
       ctx.beginPath();
       ctx.arc(cx, cy, SIZE / 2 + 6, 0, Math.PI * 2);
