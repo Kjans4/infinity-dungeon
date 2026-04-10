@@ -1,20 +1,25 @@
 // src/engine/systems/HordeSystem.ts
-import { Player }                          from "../Player";
-import { Camera }                          from "../Camera";
-import { Door }                            from "../Door";
-import { ShopNPC }                         from "../ShopNPC";
-import { ItemDrop }                        from "../ItemDrop";
-import { Grunt, Shooter, Tank, spawnWave } from "../enemy";
-import { RoomState }                       from "../RoomManager";
-import { GameState, PENDING_LOOT_CAP }    from "../GameState";
-import { GoldSystem }                      from "./GoldSystem";
-import { WeaponSystem }                    from "./WeaponSystem";
-import { spawnBurst }                      from "../Particle";
-import { getRandomShopItems }              from "../items/ItemPool";
+import { Player }                               from "../Player";
+import { Camera }                               from "../Camera";
+import { Door }                                 from "../Door";
+import { ShopNPC }                              from "../ShopNPC";
+import { ItemDrop }                             from "../ItemDrop";
+import { Grunt, Shooter, Tank, spawnWave }      from "../enemy";
+import { spawnEliteWave }                       from "../enemy/spawn";
+import { RoomState }                            from "../RoomManager";
+import { GameState, PENDING_LOOT_CAP }          from "../GameState";
+import { GoldSystem }                           from "./GoldSystem";
+import { WeaponSystem }                         from "./WeaponSystem";
+import { spawnBurst }                           from "../Particle";
+import { getRandomShopItems }                   from "../items/ItemPool";
 
 const WAVE_SIZE              = 8;
 const BASE_THRESHOLD         = 20;
 const THRESHOLD_PER_FLOOR    = 5;
+// Elite room threshold multiplier — more enemies need to die
+const ELITE_THRESHOLD_MULT   = 1.5;
+// Elite wave size — 50% larger than a normal wave
+const ELITE_WAVE_MULT        = 1.5;
 const FARMING_SPAWN_INTERVAL = 3000;
 const GRACE_PERIOD_MS        = 1500; // ms before first wave spawns on room entry
 
@@ -28,6 +33,7 @@ const TANK_RADIUS_BONUS   = 10;
 // ============================================================
 // [🧱 BLOCK: Item Drop Chances]
 // Per-enemy-type drop rates for horde rooms.
+// Elite room gets a bonus multiplier on drop chances.
 // Boss drops are handled in BossSystem (guaranteed).
 // ============================================================
 const DROP_CHANCE = {
@@ -35,6 +41,7 @@ const DROP_CHANCE = {
   shooter: 0.06,
   tank:    0.12,
 };
+const ELITE_DROP_MULT = 1.5; // elite room drops are more generous
 
 function goldMultiplierForKills(kills: number, threshold: number): number {
   if (kills < threshold) return 1.0;
@@ -79,16 +86,18 @@ export class HordeSystem {
 
   // ============================================================
   // [🧱 BLOCK: Threshold Helper]
+  // Elite rooms use a higher threshold to match their larger waves.
   // ============================================================
-  getThreshold(floor: number): number {
-    return BASE_THRESHOLD + (floor - 1) * THRESHOLD_PER_FLOOR;
+  getThreshold(floor: number, isElite = false): number {
+    const base = BASE_THRESHOLD + (floor - 1) * THRESHOLD_PER_FLOOR;
+    return isElite ? Math.round(base * ELITE_THRESHOLD_MULT) : base;
   }
 
   get killThreshold(): number { return BASE_THRESHOLD; }
 
   // ============================================================
   // [🧱 BLOCK: Setup]
-  // Creates Door and ShopNPC at world-top for every horde room.
+  // Creates Door and ShopNPC at world-top for every horde/elite room.
   // ============================================================
   setup(state: GameState, rs: RoomState, worldW: number, worldH: number) {
     state.player.x  = worldW / 2;
@@ -97,7 +106,7 @@ export class HordeSystem {
     state.player.vy = 0;
 
     state.kills         = 0;
-    state.alive         = 0;   // enemies array is empty — first wave spawns after grace period
+    state.alive         = 0;
     state.lastSpawn     = 0;
     state.roomEntryTime = Date.now();
     state.projectiles = [];
@@ -105,7 +114,7 @@ export class HordeSystem {
     state.itemDrops   = [];
     state.particles   = [];
     state.boss        = null;
-    state.enemies     = []; // first wave spawns after grace period in update()
+    state.enemies     = [];
 
     state.door          = new Door(worldW);
     state.door.isActive = false;
@@ -204,6 +213,8 @@ export class HordeSystem {
 
   // ============================================================
   // [🧱 BLOCK: Update]
+  // Handles both 'horde' and 'elite' phases — elite uses a
+  // larger threshold and the spawnEliteWave composition.
   // ============================================================
   update(
     state:  GameState,
@@ -212,15 +223,15 @@ export class HordeSystem {
     worldW: number,
     worldH: number
   ): { event: null; goldCollected: number } {
-    const ps           = state.playerStats;
-    const threshold    = this.getThreshold(rs.floor);
+    const ps        = state.playerStats;
+    const isElite   = rs.phase === 'elite';
+    const threshold = this.getThreshold(rs.floor, isElite);
     const thresholdMet = state.kills >= threshold;
 
     // ── Door ───────────────────────────────────────────────
     if (state.door) {
       state.door.update();
       if (thresholdMet && !state.door.isActive) state.door.activate();
-      // Update proximity flag — GameCanvas opens next room on F-press.
       state.door.checkPlayerProximity(player);
     }
 
@@ -228,9 +239,6 @@ export class HordeSystem {
     if (state.shopNpc) {
       state.shopNpc.update();
       if (thresholdMet && !state.shopNpc.isActive) state.shopNpc.activate();
-      // Update proximity flag — GameCanvas reads this to show
-      // the "F" prompt and opens the shop on keypress, not on
-      // collision, so the shop can't re-open the moment it closes.
       state.shopNpc.checkPlayerProximity(player);
     }
 
@@ -324,9 +332,11 @@ export class HordeSystem {
           enemy.color, 6
         ));
 
-        // ── Item drop roll (only if loot queue has space) ──
+        // ── Item drop roll — elite room gets bonus drop chance ──
         if (state.pendingLoot.length < PENDING_LOOT_CAP) {
-          const dropped = rollItemDrop(state, DROP_CHANCE[type]);
+          const baseChance = DROP_CHANCE[type];
+          const chance     = isElite ? baseChance * ELITE_DROP_MULT : baseChance;
+          const dropped    = rollItemDrop(state, chance);
           if (dropped) {
             state.itemDrops.push(new ItemDrop(
               enemy.x + enemy.width  / 2,
@@ -344,12 +354,10 @@ export class HordeSystem {
     }
 
     // ── Item drop pickup ───────────────────────────────────
-    // Walk over a drop to add it to pendingLoot (if space).
-    // If loot is full the drop stays on the ground.
     state.itemDrops = state.itemDrops.filter((drop) => {
       if (drop.collected) return false;
       if (state.pendingLoot.length >= PENDING_LOOT_CAP) {
-        drop.update(player); // tick timer/elapsed even if full
+        drop.update(player);
         return !drop.collected;
       }
       const pickedUp = drop.update(player);
@@ -361,22 +369,33 @@ export class HordeSystem {
     });
 
     // ── Wave spawning ─────────────────────────────────────
-    const now         = Date.now();
+    const now          = Date.now();
     const graceElapsed = now - state.roomEntryTime;
     const graceDone    = graceElapsed >= GRACE_PERIOD_MS;
 
     if (!thresholdMet) {
       const killsLeft = threshold - state.kills;
       if (killsLeft > 0 && state.alive === 0 && graceDone && now - state.lastSpawn > 1000) {
-        const spawnCount = Math.min(WAVE_SIZE, killsLeft);
-        const newWave    = spawnWave(spawnCount, worldW, worldH, rs.roomInCycle, rs.floor);
+        // Elite waves are larger and use the elite spawn function
+        const baseCount  = Math.min(WAVE_SIZE, killsLeft);
+        const spawnCount = isElite
+          ? Math.min(Math.round(WAVE_SIZE * ELITE_WAVE_MULT), killsLeft)
+          : baseCount;
+
+        const newWave = isElite
+          ? spawnEliteWave(spawnCount, worldW, worldH, rs.floor)
+          : spawnWave(spawnCount, worldW, worldH, rs.roomInCycle, rs.floor);
+
         state.enemies.push(...newWave);
         state.alive     = spawnCount;
         state.lastSpawn = now;
       }
     } else {
+      // Post-threshold farming spawns — elite still uses elite composition
       if (now - state.lastSpawn > FARMING_SPAWN_INTERVAL) {
-        const [newEnemy] = spawnWave(1, worldW, worldH, rs.roomInCycle, rs.floor);
+        const [newEnemy] = isElite
+          ? spawnEliteWave(1, worldW, worldH, rs.floor)
+          : spawnWave(1, worldW, worldH, rs.roomInCycle, rs.floor);
         state.enemies.push(newEnemy);
         state.alive    += 1;
         state.lastSpawn = now;
@@ -425,13 +444,13 @@ export class HordeSystem {
   draw(state: GameState, ctx: CanvasRenderingContext2D, camera: Camera, player: Player, worldW: number) {
     state.door?.draw(ctx, camera);
     state.shopNpc?.draw(ctx, camera, worldW);
-    state.enemies.forEach((e)   => e.draw(ctx, camera));
+    state.enemies.forEach((e)    => e.draw(ctx, camera));
     state.projectiles.forEach((p) => p.draw(ctx, camera));
-    state.itemDrops.forEach((d)  => d.draw(ctx, camera));
+    state.itemDrops.forEach((d)   => d.draw(ctx, camera));
     this.goldSystem.draw(state, ctx, camera);
-    state.particles.forEach((p)  => p.update());
+    state.particles.forEach((p)   => p.update());
     state.particles = state.particles.filter((p) => !p.isDone);
-    state.particles.forEach((p)  => p.draw(ctx, camera));
+    state.particles.forEach((p)   => p.draw(ctx, camera));
     this.weaponSystem.draw(ctx, player, camera);
   }
 }

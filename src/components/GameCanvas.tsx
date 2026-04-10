@@ -9,7 +9,7 @@ import { RenderSystem }  from "@/engine/systems/RenderSystem";
 import { WORLD_W, WORLD_H, BOSS_WORLD_W, BOSS_WORLD_H } from "@/engine/Camera";
 import {
   RoomState, initialRoomState, advanceRoom,
-  nextFloor, enterBossPhase, isFinalFloor, MAX_FLOORS,
+  nextFloor, isFinalFloor, MAX_FLOORS,
 } from "@/engine/RoomManager";
 import { useGameLoop }       from "@/hooks/useGameLoop";
 import HUD                   from "@/components/HUD";
@@ -47,9 +47,16 @@ const REMAINING_MILESTONES = [
 ];
 
 // ============================================================
+// [🧱 BLOCK: Blank HUD State]
+// Defined at module scope so it is never re-created on render.
+// ============================================================
+const BLANK_HUD = {
+  hp: MAX_HP, stamina: MAX_STAMINA, kills: 0, room: 1, floor: 1,
+  bossHp: 0, bossMaxHp: 0, bossIsEnraged: false,
+};
+
+// ============================================================
 // [🧱 BLOCK: HUD State Interface]
-// bossHp/bossMaxHp/bossIsEnraged — fed from state.boss each
-// hudSync tick; all zero/false when no boss is alive.
 // ============================================================
 interface HUDState {
   hp:            number;
@@ -67,14 +74,14 @@ interface HUDState {
 // ============================================================
 interface DevPanelProps {
   isOpen: boolean; onToggle: () => void;
-  gameActive: boolean; isBossPhase: boolean; isShopPhase: boolean;
+  gameActive: boolean; isBossPhase: boolean; isElitePhase: boolean;
   onKillAll: () => void; onSkipRoom: () => void;
-  onSkipToShop: () => void; onSkipToBoss: () => void; onAddGold: () => void;
+  onSkipToElite: () => void; onSkipToBoss: () => void; onAddGold: () => void;
 }
 
 function DevPanel({
-  isOpen, onToggle, gameActive, isBossPhase, isShopPhase,
-  onKillAll, onSkipRoom, onSkipToShop, onSkipToBoss, onAddGold,
+  isOpen, onToggle, gameActive, isBossPhase, isElitePhase,
+  onKillAll, onSkipRoom, onSkipToElite, onSkipToBoss, onAddGold,
 }: DevPanelProps) {
   return (
     <>
@@ -90,12 +97,12 @@ function DevPanel({
           </button>
           <div className="dev-panel__divider" />
           <button className="dev-btn dev-btn--blue" onClick={onSkipRoom}
-            disabled={!gameActive || isBossPhase || isShopPhase} title="Skip to next room">
+            disabled={!gameActive || isBossPhase} title="Skip to next room">
             ⏭ Skip Room
           </button>
-          <button className="dev-btn dev-btn--blue" onClick={onSkipToShop}
-            disabled={!gameActive || isBossPhase || isShopPhase} title="Jump to shop">
-            🛒 Skip to Shop
+          <button className="dev-btn dev-btn--blue" onClick={onSkipToElite}
+            disabled={!gameActive || isBossPhase || isElitePhase} title="Jump to elite room">
+            ⚡ Skip to Elite
           </button>
           <button className="dev-btn dev-btn--blue" onClick={onSkipToBoss}
             disabled={!gameActive || isBossPhase} title="Skip to boss">
@@ -136,9 +143,7 @@ export default function GameCanvas() {
   const deathStartRef    = useRef(0);
   const vignetteAlphaRef = useRef(0);
 
-  // ── Per-floor stat tracking (reset on each new floor) ─────
-  // Captured into victoryStats state when victory fires so
-  // VictoryOverlay can display them even after state resets.
+  // ── Per-floor stat tracking ───────────────────────────────
   const floorKillsRef = useRef(0);
   const floorGoldRef  = useRef(0);
 
@@ -151,11 +156,7 @@ export default function GameCanvas() {
   const [isPaused,      setIsPaused]      = useState(false);
   const [showInventory, setShowInventory] = useState(false);
   const [gold,          setGold]          = useState(0);
-  const [hud, setHud] = useState<HUDState>({
-    hp: MAX_HP, stamina: MAX_STAMINA,
-    kills: 0, room: 1, floor: 1,
-    bossHp: 0, bossMaxHp: 0, bossIsEnraged: false,
-  });
+  const [hud, setHud] = useState<HUDState>(BLANK_HUD);
   const [victoryStats, setVictoryStats] = useState({ kills: 0, gold: 0 });
   const [announcement, setAnnouncement] = useState<{
     show: boolean; message: string; subtext?: string; color?: string;
@@ -201,7 +202,7 @@ export default function GameCanvas() {
         const state = stateRef.current;
         if (!state) return;
 
-        // Gate — enter next room
+        // Gate — enter next room / boss
         if (state.door?.playerIsNear) {
           handleDoorEnter();
           return;
@@ -245,8 +246,6 @@ export default function GameCanvas() {
     window.addEventListener("resize", onResize);
 
     // ── HUD sync — polls at 10fps ─────────────────────────
-    // Boss HP fields are zeroed when no boss is present so the
-    // BossHPBar component unmounts cleanly between fights.
     const hudSync = setInterval(() => {
       const s = stateRef.current;
       const r = roomRef.current;
@@ -272,7 +271,7 @@ export default function GameCanvas() {
       window.removeEventListener("keyup",   onKeyUp);
       if (iHoldTimer.current) clearTimeout(iHoldTimer.current);
     };
-  }, []);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ============================================================
   // [🧱 BLOCK: Handlers]
@@ -282,17 +281,12 @@ export default function GameCanvas() {
     floorGoldRef.current  = 0;
   }, []);
 
-  const blankHud: HUDState = {
-    hp: MAX_HP, stamina: MAX_STAMINA, kills: 0, room: 1, floor: 1,
-    bossHp: 0, bossMaxHp: 0, bossIsEnraged: false,
-  };
-
   const handleStart = useCallback(() => {
     const rs = initialRoomState();
     roomRef.current = rs;
     stateRef.current!.reset();
     hordeRef.current.setup(stateRef.current!, rs, WORLD_W, WORLD_H);
-    setHud(blankHud);
+    setHud(BLANK_HUD);
     setGold(0);
     setIsGameOver(false); setIsVictory(false);
     setShowShop(false);   setIsPaused(false);
@@ -306,7 +300,7 @@ export default function GameCanvas() {
     setTimeout(() => announce("PREPARE!", "Room 1 — enemies incoming", "#38bdf8"), 300);
   }, [resetFloorTracking, announce]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ── Raid Again — reset and start immediately, no menu ─────
+  // ── Raid Again ────────────────────────────────────────────
   const handleRaidAgain = useCallback(() => {
     const rs = initialRoomState();
     roomRef.current = rs;
@@ -314,7 +308,7 @@ export default function GameCanvas() {
     hordeRef.current.reset(stateRef.current!);
     bossRef.current.reset(stateRef.current!);
     hordeRef.current.setup(stateRef.current!, rs, WORLD_W, WORLD_H);
-    setHud(blankHud);
+    setHud(BLANK_HUD);
     setGold(0);
     setIsGameOver(false); setIsVictory(false);
     setShowShop(false);   setIsPaused(false);
@@ -334,7 +328,7 @@ export default function GameCanvas() {
     hordeRef.current.reset(stateRef.current!);
     bossRef.current.reset(stateRef.current!);
     roomRef.current = initialRoomState();
-    setHud(blankHud);
+    setHud(BLANK_HUD);
     setGold(0);
     setIsGameOver(false); setIsVictory(false);
     setShowShop(false);   setIsPaused(false);
@@ -347,34 +341,35 @@ export default function GameCanvas() {
     resetFloorTracking();
   }, [resetFloorTracking]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // ── Door Enter — now handles horde → horde → elite → boss ─
+  // No shop phase exists in the cycle anymore.
   const handleDoorEnter = useCallback(() => {
     const rs = advanceRoom(roomRef.current);
     roomRef.current = rs;
     lastAnnouncedRemainingRef.current = null;
-    if (rs.phase === "shop") {
-      stateRef.current!.playerStats.generateShopOptions();
-      announce("WAVE COMPLETE", "Entering the shop...", "#facc15");
-      setTimeout(() => setShowShop(true), 1200);
+
+    if (rs.phase === 'boss') {
+      // Elite room cleared → enter boss
+      bossRef.current.setup(stateRef.current!, rs);
+      announce("BOSS INCOMING", "Prepare yourself!", "#ef4444");
+    } else if (rs.phase === 'elite') {
+      // Room 2 cleared → elite gauntlet
+      hordeRef.current.setup(stateRef.current!, rs, WORLD_W, WORLD_H);
+      announce("⚡ ELITE ROOM", "No Grunts — only the strong survive", "#f97316");
     } else {
+      // Room 1 cleared → normal room 2
       hordeRef.current.setup(stateRef.current!, rs, WORLD_W, WORLD_H);
       announce("PREPARE!", `Room ${rs.roomDisplay} — enemies incoming`, "#38bdf8");
     }
-  }, [announce]);
+  }, [announce]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const handleShopContinue = useCallback(() => {
-    roomRef.current = enterBossPhase(roomRef.current);
-    setShowShop(false);
-    setIsMidRoom(false);
-    bossRef.current.setup(stateRef.current!, roomRef.current);
-  }, []);
-
-  // ── NPC shop close — return to gameplay, room phase unchanged ─
+  // ── NPC shop close — return to gameplay ───────────────────
   const handleNpcClose = useCallback(() => {
     setShowShop(false);
     setIsMidRoom(false);
   }, []);
 
-  // ── Claim a pending loot item — remove from state.pendingLoot ─
+  // ── Claim a pending loot item ──────────────────────────────
   const handleClaimLoot = useCallback((item: ShopItem) => {
     const state = stateRef.current;
     if (!state) return;
@@ -382,7 +377,7 @@ export default function GameCanvas() {
     if (idx !== -1) state.pendingLoot.splice(idx, 1);
   }, []);
 
-  // ── Victory Continue — only used when NOT on final floor ──
+  // ── Victory Continue — not final floor ────────────────────
   const handleVictoryContinue = useCallback(() => {
     const rs = nextFloor(roomRef.current);
     roomRef.current = rs;
@@ -412,8 +407,10 @@ export default function GameCanvas() {
   const handleDevKillAll = useCallback(() => {
     const state = stateRef.current;
     if (!state) return;
+    const isElite   = roomRef.current.phase === 'elite';
+    const threshold = hordeRef.current.getThreshold(roomRef.current.floor, isElite);
     state.enemies = [];
-    state.kills   = hordeRef.current.getThreshold(roomRef.current.floor);
+    state.kills   = threshold;
     state.alive   = 0;
     if (state.door) state.door.activate();
     lastAnnouncedRemainingRef.current = null;
@@ -425,17 +422,16 @@ export default function GameCanvas() {
     announce("DEV: ROOM SKIPPED", undefined, "#38bdf8");
   }, [handleDoorEnter, announce]);
 
-  const handleDevSkipToShop = useCallback(() => {
+  const handleDevSkipToElite = useCallback(() => {
     const state = stateRef.current;
     if (!state) return;
     const rs: RoomState = {
       floor: roomRef.current.floor, roomInCycle: 3,
-      roomDisplay: (roomRef.current.floor - 1) * 3 + 3, phase: "shop",
+      roomDisplay: (roomRef.current.floor - 1) * 3 + 3, phase: 'elite',
     };
     roomRef.current = rs;
-    state.playerStats.generateShopOptions();
-    setShowShop(true);
-    announce("DEV: SKIPPED TO SHOP", undefined, "#facc15");
+    hordeRef.current.setup(state, rs, WORLD_W, WORLD_H);
+    announce("DEV: SKIPPED TO ELITE", undefined, "#f97316");
   }, [announce]);
 
   const handleDevSkipToBoss = useCallback(() => {
@@ -444,7 +440,7 @@ export default function GameCanvas() {
     setShowShop(false);
     const rs: RoomState = {
       floor: roomRef.current.floor, roomInCycle: 3,
-      roomDisplay: (roomRef.current.floor - 1) * 3 + 3, phase: "boss",
+      roomDisplay: (roomRef.current.floor - 1) * 3 + 3, phase: 'boss',
     };
     roomRef.current = rs;
     bossRef.current.setup(state, rs);
@@ -472,11 +468,12 @@ export default function GameCanvas() {
 
     if (showMenu || showShop || isVictory || isGameOver || isPaused || showInventory) return;
 
-    const rs     = roomRef.current;
-    const isBoss = rs.phase === "boss";
-    const worldW = isBoss ? BOSS_WORLD_W : WORLD_W;
-    const worldH = isBoss ? BOSS_WORLD_H : WORLD_H;
-    const player = state.player;
+    const rs      = roomRef.current;
+    const isBoss  = rs.phase === 'boss';
+    const isHorde = rs.phase === 'horde' || rs.phase === 'elite';
+    const worldW  = isBoss ? BOSS_WORLD_W : WORLD_W;
+    const worldH  = isBoss ? BOSS_WORLD_H : WORLD_H;
+    const player  = state.player;
 
     // ============================================================
     // [🧱 BLOCK: Death Sequence]
@@ -544,7 +541,8 @@ export default function GameCanvas() {
     player.x = Math.max(0, Math.min(worldW - player.width,  player.x));
     player.y = Math.max(0, Math.min(worldH - player.height, player.y));
 
-    if (!isBoss) {
+    // ── Horde / Elite phase ───────────────────────────────
+    if (isHorde) {
       const prevKills = state.totalKills;
       const prevHp    = player.hp;
       const { goldCollected } = hordeRef.current.update(state, player, rs, worldW, worldH);
@@ -557,7 +555,8 @@ export default function GameCanvas() {
       const newKills = state.totalKills - prevKills;
       if (newKills > 0) floorKillsRef.current += newKills;
 
-      const threshold = hordeRef.current.getThreshold(rs.floor);
+      const isElite   = rs.phase === 'elite';
+      const threshold = hordeRef.current.getThreshold(rs.floor, isElite);
       const remaining = threshold - state.kills;
 
       if (remaining > 0 && !announcementRef.current) {
@@ -571,12 +570,17 @@ export default function GameCanvas() {
       }
 
       if (state.door?.isActive && state.kills >= threshold && !announcementRef.current) {
-        announce("ROOM CLEAR", "Press F at the gate to advance");
+        const clearMsg = isElite ? "ELITE CLEARED" : "ROOM CLEAR";
+        const clearSub = isElite
+          ? "Press F at the gate — boss awaits"
+          : "Press F at the gate to advance";
+        announce(clearMsg, clearSub, isElite ? "#f97316" : "#4ade80");
       }
 
       hordeRef.current.draw(state, ctx, state.camera, player, worldW);
     }
 
+    // ── Boss phase ────────────────────────────────────────
     if (isBoss) {
       const prevKills = state.totalKills;
       const prevHp    = player.hp;
@@ -598,7 +602,6 @@ export default function GameCanvas() {
       if (event === "victory") {
         const isLast = isFinalFloor(rs.floor);
 
-        // Snapshot per-floor stats before any resets fire
         setVictoryStats({
           kills: floorKillsRef.current,
           gold:  floorGoldRef.current,
@@ -610,7 +613,7 @@ export default function GameCanvas() {
           announce("BOSS SLAIN", "Victory — floor cleared!", "#4ade80");
         }
 
-        roomRef.current = { ...rs, phase: "victory" };
+        roomRef.current = { ...rs, phase: 'victory' };
         setTimeout(() => setIsVictory(true), 2000);
         return;
       }
@@ -624,12 +627,13 @@ export default function GameCanvas() {
   // ============================================================
   // [🧱 BLOCK: Derived State]
   // ============================================================
-  const gameActive       = !showMenu && !isGameOver && !isVictory;
-  const isBossPhase      = roomRef.current.phase === "boss";
-  const isShopPhase      = roomRef.current.phase === "shop";
-  const state            = stateRef.current;
-  const currentThreshold = hordeRef.current.getThreshold(hud.floor);
-  const floorIsLast      = isFinalFloor(hud.floor);
+  const gameActive   = !showMenu && !isGameOver && !isVictory;
+  const isBossPhase  = roomRef.current.phase === 'boss';
+  const isElitePhase = roomRef.current.phase === 'elite';
+  const state        = stateRef.current;
+  const isElite      = roomRef.current.phase === 'elite';
+  const threshold    = hordeRef.current.getThreshold(hud.floor, isElite);
+  const floorIsLast  = isFinalFloor(hud.floor);
 
   return (
     <div style={{ width: "100vw", height: "100vh", overflow: "hidden", background: "#0f172a" }}>
@@ -639,28 +643,30 @@ export default function GameCanvas() {
         <HUD
           hp={hud.hp}           maxHp={MAX_HP}
           stamina={hud.stamina} maxStamina={MAX_STAMINA}
-          kills={hud.kills}     killThreshold={currentThreshold}
+          kills={hud.kills}     killThreshold={threshold}
           room={hud.room}       floor={hud.floor}
           gold={gold}
           bossHp={hud.bossHp}
           bossMaxHp={hud.bossMaxHp}
           bossIsEnraged={hud.bossIsEnraged}
+          isEliteRoom={isElitePhase}
         />
       )}
 
       {!showMenu && !isGameOver && (
-        <Minimap state={stateRef.current} isBoss={roomRef.current.phase === "boss"} />
+        <Minimap state={stateRef.current} isBoss={roomRef.current.phase === 'boss'} />
       )}
 
+      {/* NPC mid-room shop — only shown when player talks to NPC */}
       {showShop && state && (
         <Shop
           floor={roomRef.current.floor} room={roomRef.current.roomDisplay}
           gold={gold} playerStats={state.playerStats} player={state.player}
           pendingLoot={state.pendingLoot}
-          isMidRoom={isMidRoom}
+          isMidRoom={true}
           onGoldChange={handleGoldChange}
           onClaimLoot={handleClaimLoot}
-          onContinue={handleShopContinue}
+          onContinue={handleNpcClose}
           onClose={handleNpcClose}
         />
       )}
@@ -672,7 +678,6 @@ export default function GameCanvas() {
         />
       )}
 
-      {/* ── Victory — floor stats + final-floor flag ── */}
       {isVictory && state && (
         <VictoryOverlay
           floor={hud.floor}
@@ -685,7 +690,6 @@ export default function GameCanvas() {
         />
       )}
 
-      {/* ── Game Over ── */}
       {isGameOver && !showMenu && state && (
         <GameOverOverlay
           floor={hud.floor}                   room={hud.room}
@@ -718,9 +722,9 @@ export default function GameCanvas() {
       {IS_DEV && (
         <DevPanel
           isOpen={devPanelOpen} onToggle={() => setDevPanelOpen((p) => !p)}
-          gameActive={gameActive} isBossPhase={isBossPhase} isShopPhase={isShopPhase}
+          gameActive={gameActive} isBossPhase={isBossPhase} isElitePhase={isElitePhase}
           onKillAll={handleDevKillAll} onSkipRoom={handleDevSkipRoom}
-          onSkipToShop={handleDevSkipToShop} onSkipToBoss={handleDevSkipToBoss}
+          onSkipToElite={handleDevSkipToElite} onSkipToBoss={handleDevSkipToBoss}
           onAddGold={handleDevAddGold}
         />
       )}

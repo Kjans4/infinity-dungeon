@@ -3,7 +3,7 @@
 // ============================================================
 // [🧱 BLOCK: Types]
 // ============================================================
-export type RoomPhase = 'horde' | 'boss' | 'shop' | 'victory';
+export type RoomPhase = 'horde' | 'elite' | 'boss' | 'victory';
 
 export interface RoomState {
   floor:       number;
@@ -66,6 +66,10 @@ export function initialRoomState(): RoomState {
 // ============================================================
 // [🧱 BLOCK: Advance Room]
 // Called when player walks through the door.
+//   Room 1 → Room 2 (horde)
+//   Room 2 → Room 3 (elite)
+//   Room 3 → Boss
+// The pre-boss shop is gone — Room 3 is now the elite gauntlet.
 // ============================================================
 export function advanceRoom(current: RoomState): RoomState {
   const { floor, roomInCycle } = current;
@@ -84,11 +88,12 @@ export function advanceRoom(current: RoomState): RoomState {
       floor,
       roomInCycle: 3,
       roomDisplay: getRoomDisplay(floor, 3),
-      phase:       'shop',
+      phase:       'elite',
     };
   }
 
-  return current;
+  // roomInCycle === 3 (elite cleared) → boss
+  return { ...current, phase: 'boss' };
 }
 
 // ============================================================
@@ -106,6 +111,8 @@ export function nextFloor(current: RoomState): RoomState {
 
 // ============================================================
 // [🧱 BLOCK: Enter Boss Phase]
+// Kept as a utility — used by dev tools to skip directly to boss.
+// Normal flow now goes elite → boss via advanceRoom().
 // ============================================================
 export function enterBossPhase(current: RoomState): RoomState {
   return { ...current, phase: 'boss' };

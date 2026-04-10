@@ -37,6 +37,43 @@
 }
 
 /* ============================================================
+   [🧱 BLOCK: Elite Room Badge]
+   Shown top-center when the player is in the elite room.
+   Drops in like the boss bar but uses orange theming.
+   ============================================================ */
+.hud-elite-badge {
+  position: fixed;
+  top: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 20;
+  pointer-events: none;
+
+  font-family: 'Courier New', monospace;
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: 0.25em;
+  text-transform: uppercase;
+  color: #f97316;
+  text-shadow: 0 0 20px rgba(249, 115, 22, 0.7);
+
+  padding: 8px 20px;
+  background: rgba(10, 15, 30, 0.7);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(249, 115, 22, 0.35);
+  border-radius: 8px;
+  box-shadow: 0 0 16px rgba(249, 115, 22, 0.1), 0 4px 24px rgba(0, 0, 0, 0.5);
+
+  animation: elite-badge-drop 0.35s ease forwards;
+}
+
+@keyframes elite-badge-drop {
+  from { opacity: 0; transform: translateX(-50%) translateY(-12px); }
+  to   { opacity: 1; transform: translateX(-50%) translateY(0);     }
+}
+
+/* ============================================================
    [🧱 BLOCK: Divider]
    ============================================================ */
 .hud-divider {
@@ -91,7 +128,6 @@
   height: 100%;
   border-radius: 3px;
   transition: width 0.1s linear;
-  /* background and box-shadow set inline — dynamic per-bar color */
 }
 
 /* ============================================================
@@ -117,6 +153,7 @@
   line-height: 1;
   color: #f1f5f9;
   letter-spacing: 0.04em;
+  transition: color 0.3s ease;
 }
 
 /* ============================================================
@@ -175,19 +212,16 @@
 .hud-kill-ring-number {
   font-size: 10px;
   font-weight: 900;
-  /* color set inline — dynamic */
 }
 
 .hud-kill-ring-label {
   font-size: 8px;
   letter-spacing: 0.1em;
   text-transform: uppercase;
-  /* color and text-shadow set inline — dynamic */
 }
 
 /* ============================================================
    [🧱 BLOCK: Farming State]
-   Shown after threshold is met — stacked label + gold %.
    ============================================================ */
 .hud-kill-ring-farming {
   display: flex;
@@ -199,13 +233,10 @@
 .hud-kill-ring-bonus {
   font-size: 7px;
   letter-spacing: 0.08em;
-  /* color set inline — shifts with gold tier */
 }
 
 /* ============================================================
    [🧱 BLOCK: Boss HP Bar]
-   Fixed to top-center of viewport. Only rendered during boss phase.
-   Slides down on mount via animation.
    ============================================================ */
 .hud-boss-bar {
   position: fixed;
@@ -237,7 +268,6 @@
   to   { opacity: 1; transform: translateX(-50%) translateY(0);     }
 }
 
-/* Enraged state — red border glow pulses */
 .hud-boss-bar--enraged {
   border-color: rgba(239, 68, 68, 0.6);
   box-shadow: 0 0 20px rgba(239, 68, 68, 0.15), 0 4px 24px rgba(0, 0, 0, 0.5);
@@ -261,7 +291,6 @@
   font-weight: 700;
   letter-spacing: 0.2em;
   text-transform: uppercase;
-  /* color set inline — red normal, bright red enraged */
 }
 
 .hud-boss-bar__hp {
@@ -282,10 +311,8 @@
   height: 100%;
   border-radius: 4px;
   transition: width 0.15s linear;
-  /* background set inline — shifts color as HP drops */
 }
 
-/* Rage threshold marker — vertical tick at 50% */
 .hud-boss-bar__rage-marker {
   position: absolute;
   top: 0;

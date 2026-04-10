@@ -20,6 +20,8 @@ interface HUDProps {
   bossHp:        number;
   bossMaxHp:     number;
   bossIsEnraged: boolean;
+  // Elite room — tints the kill ring orange
+  isEliteRoom:   boolean;
 }
 
 // ============================================================
@@ -53,12 +55,15 @@ function ThinBar({
 
 // ============================================================
 // [🧱 BLOCK: Kill Ring]
-// Before threshold: fills red → green, shows kills/threshold.
-// After threshold:  stays full green, shows +N extra kills
-// and a gold tier indicator so the player knows how much
-// diminished gold they're earning.
+// Before threshold: fills red → green (or orange in elite room).
+// After threshold:  stays full, shows +N extra kills and a
+// gold tier indicator.
 // ============================================================
-function KillRing({ kills, threshold }: { kills: number; threshold: number }) {
+function KillRing({
+  kills, threshold, isElite,
+}: {
+  kills: number; threshold: number; isElite: boolean;
+}) {
   const done          = kills >= threshold;
   const pct           = done ? 1 : Math.min(kills / threshold, 1);
   const radius        = 16;
@@ -71,9 +76,10 @@ function KillRing({ kills, threshold }: { kills: number; threshold: number }) {
   const multiplier    = done ? Math.max(0.20, 1.0 - tier * 0.20) : 1.0;
   const multiplierPct = Math.round(multiplier * 100);
 
-  // Ring color — dims as gold value reduces
+  // Ring color — elite uses orange base instead of red
+  const baseIncompleteColor = isElite ? "#f97316" : "#f87171";
   const ringColor = !done
-    ? "#f87171"
+    ? baseIncompleteColor
     : multiplier >= 1.0  ? "#4ade80"
     : multiplier >= 0.80 ? "#a3e635"
     : multiplier >= 0.60 ? "#facc15"
@@ -127,9 +133,9 @@ function KillRing({ kills, threshold }: { kills: number; threshold: number }) {
       ) : (
         <span
           className="hud-kill-ring-label"
-          style={{ color: "rgba(148,163,184,0.6)" }}
+          style={{ color: isElite ? "rgba(249,115,22,0.7)" : "rgba(148,163,184,0.6)" }}
         >
-          {kills}/{threshold}
+          {isElite ? "⚡ " : ""}{kills}/{threshold}
         </span>
       )}
     </div>
@@ -138,10 +144,6 @@ function KillRing({ kills, threshold }: { kills: number; threshold: number }) {
 
 // ============================================================
 // [🧱 BLOCK: Boss HP Bar]
-// Rendered at top-center of screen during boss phase only.
-// Bar color shifts: green → yellow → red as HP drops.
-// Enraged state adds a pulsing red border and label change.
-// A tick mark at 50% shows the rage threshold.
 // ============================================================
 function BossHPBar({
   hp, maxHp, isEnraged, floor,
@@ -204,6 +206,7 @@ export default function HUD({
   hp, maxHp, stamina, maxStamina,
   kills, killThreshold, room, floor, gold,
   bossHp, bossMaxHp, bossIsEnraged,
+  isEliteRoom,
 }: HUDProps) {
   const hpColor =
     hp / maxHp > 0.5  ? "#4ade80" :
@@ -222,6 +225,13 @@ export default function HUD({
         />
       )}
 
+      {/* ── Elite room indicator — top center, below boss bar ── */}
+      {isEliteRoom && bossHp === 0 && (
+        <div className="hud-elite-badge">
+          ⚡ ELITE ROOM
+        </div>
+      )}
+
       {/* ── Main HUD pill — bottom center ── */}
       <div className="hud-root">
 
@@ -236,7 +246,12 @@ export default function HUD({
         {/* ── Room / Floor ── */}
         <div className="hud-room-group">
           <span className="hud-floor-label">Floor {floor}</span>
-          <span className="hud-room-number">ROOM {room}</span>
+          <span
+            className="hud-room-number"
+            style={isEliteRoom ? { color: "#f97316" } : undefined}
+          >
+            ROOM {room}
+          </span>
         </div>
 
         <Divider />
@@ -250,7 +265,7 @@ export default function HUD({
         <Divider />
 
         {/* ── Kill Ring ── */}
-        <KillRing kills={kills} threshold={killThreshold} />
+        <KillRing kills={kills} threshold={killThreshold} isElite={isEliteRoom} />
 
       </div>
     </>
