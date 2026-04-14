@@ -4,7 +4,7 @@ import React, { useRef, useEffect, useState, useCallback } from "react";
 import { InputHandler }  from "@/engine/Input";
 import { GameState }     from "@/engine/GameState";
 import { HordeSystem }   from "@/engine/systems/HordeSystem";
-import { BossSystem }    from "@/engine/systems/BossSystem";
+import { BossSystem, getBossName } from "@/engine/systems/BossSystem";
 import { RenderSystem }  from "@/engine/systems/RenderSystem";
 import { WORLD_W, WORLD_H, BOSS_WORLD_W, BOSS_WORLD_H } from "@/engine/Camera";
 import {
@@ -341,23 +341,25 @@ export default function GameCanvas() {
     resetFloorTracking();
   }, [resetFloorTracking]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ── Door Enter — now handles horde → horde → elite → boss ─
-  // No shop phase exists in the cycle anymore.
+  // ── Door Enter — horde → horde → elite → boss ─────────────
+  // After setup(), the boss is already spawned in state so we
+  // can read its name immediately for the announcement.
   const handleDoorEnter = useCallback(() => {
     const rs = advanceRoom(roomRef.current);
     roomRef.current = rs;
     lastAnnouncedRemainingRef.current = null;
 
     if (rs.phase === 'boss') {
-      // Elite room cleared → enter boss
       bossRef.current.setup(stateRef.current!, rs);
-      announce("BOSS INCOMING", "Prepare yourself!", "#ef4444");
+      // Read the spawned boss name for a personalized announcement
+      const bossName = stateRef.current?.boss
+        ? getBossName(stateRef.current.boss)
+        : 'BOSS';
+      announce(`${bossName} INCOMING`, "Prepare yourself!", "#ef4444");
     } else if (rs.phase === 'elite') {
-      // Room 2 cleared → elite gauntlet
       hordeRef.current.setup(stateRef.current!, rs, WORLD_W, WORLD_H);
       announce("⚡ ELITE ROOM", "No Grunts — only the strong survive", "#f97316");
     } else {
-      // Room 1 cleared → normal room 2
       hordeRef.current.setup(stateRef.current!, rs, WORLD_W, WORLD_H);
       announce("PREPARE!", `Room ${rs.roomDisplay} — enemies incoming`, "#38bdf8");
     }
@@ -444,7 +446,8 @@ export default function GameCanvas() {
     };
     roomRef.current = rs;
     bossRef.current.setup(state, rs);
-    announce("DEV: SKIPPED TO BOSS", undefined, "#f87171");
+    const bossName = state.boss ? getBossName(state.boss) : 'BOSS';
+    announce(`DEV: ${bossName} SPAWNED`, undefined, "#f87171");
   }, [announce]);
 
   const handleDevAddGold = useCallback(() => {
@@ -595,7 +598,13 @@ export default function GameCanvas() {
       if (newKills > 0) floorKillsRef.current += newKills;
 
       if (event === "enraged") {
-        announce("⚡ ENRAGED", "Boss enters rage mode!", "#ef4444");
+        // Show boss-specific enrage message
+        const bossName = state.boss ? getBossName(state.boss) : 'BOSS';
+        const enrageMsg =
+          bossName === 'PHANTOM'  ? "⚡ UNBOUND"     :
+          bossName === 'COLOSSUS' ? "⚡ UNSHACKLED"  :
+                                    "⚡ ENRAGED";
+        announce(enrageMsg, "Boss enters rage mode!", "#ef4444");
         renderRef.current.shake("heavy");
       }
 

@@ -1,7 +1,10 @@
 // src/engine/systems/BossSystem.ts
 import { Player }                     from "../Player";
 import { Camera }                     from "../Camera";
-import { Boss }                       from "../enemy/Boss";
+import { AnyBoss, selectBoss }        from "../enemy/boss/index";
+import { Brute }                      from "../enemy/boss/Brute";
+import { Phantom }                    from "../enemy/boss/Phantom";
+import { Colossus }                   from "../enemy/boss/Colossus";
 import { RoomState }                  from "../RoomManager";
 import { GameState, PENDING_LOOT_CAP } from "../GameState";
 import { BOSS_WORLD_W, BOSS_WORLD_H } from "../Camera";
@@ -28,19 +31,14 @@ function spawnBossGold(state: GameState, x: number, y: number) {
 
 // ============================================================
 // [🧱 BLOCK: Spawn Boss Item Drop]
-// Guaranteed 1 item drop on boss death — always spawns one
-// item from the pool that the player doesn't already own.
-// Skipped only if pending loot queue is already full.
 // ============================================================
 function spawnBossItemDrop(state: GameState, x: number, y: number) {
   if (state.pendingLoot.length >= PENDING_LOOT_CAP) return;
 
-  const ownedCharmIds  = state.playerStats.charms.map((c) => c.id);
-  const ownedWeaponId  = state.playerStats.equippedWeaponItem?.id ?? null;
-  const pendingCharmIds = state.pendingLoot
-    .filter((i) => i.kind === "charm").map((i) => i.id);
-  const pendingWeaponId = state.pendingLoot
-    .find((i) => i.kind === "weapon")?.id ?? null;
+  const ownedCharmIds   = state.playerStats.charms.map((c) => c.id);
+  const ownedWeaponId   = state.playerStats.equippedWeaponItem?.id ?? null;
+  const pendingCharmIds = state.pendingLoot.filter((i) => i.kind === "charm").map((i) => i.id);
+  const pendingWeaponId = state.pendingLoot.find((i) => i.kind === "weapon")?.id ?? null;
 
   const pool = getRandomShopItems(
     [...ownedCharmIds, ...pendingCharmIds],
@@ -48,17 +46,30 @@ function spawnBossItemDrop(state: GameState, x: number, y: number) {
     1
   );
 
-  if (pool[0]) {
-    state.itemDrops.push(new ItemDrop(x, y, pool[0]));
-  }
+  if (pool[0]) state.itemDrops.push(new ItemDrop(x, y, pool[0]));
 }
 
+// ============================================================
+// [🧱 BLOCK: Boss Name Helper]
+// Returns the display name for the current boss, used in
+// announcements so GameCanvas doesn't need to know boss types.
+// ============================================================
+export function getBossName(boss: AnyBoss): string {
+  if (boss instanceof Brute)    return 'BRUTE';
+  if (boss instanceof Phantom)  return 'PHANTOM';
+  if (boss instanceof Colossus) return 'COLOSSUS';
+  return 'BOSS';
+}
+
+// ============================================================
+// [🧱 BLOCK: BossSystem]
+// ============================================================
 export class BossSystem {
   private weaponSystem = new WeaponSystem();
 
   // ============================================================
   // [🧱 BLOCK: Setup]
-  // NOTE: player.hp is intentionally NOT reset here.
+  // selectBoss() picks Brute | Phantom | Colossus by floor.
   // ============================================================
   setup(state: GameState, rs: RoomState) {
     state.player.x  = BOSS_WORLD_W / 2;
@@ -75,7 +86,7 @@ export class BossSystem {
     state.door        = null;
     state.shopNpc     = null;
 
-    state.boss = new Boss(BOSS_WORLD_W / 2 - 40, 80, rs.floor);
+    state.boss = selectBoss(BOSS_WORLD_W / 2 - 50, 80, rs.floor);
     state.camera.update(state.player, BOSS_WORLD_W, BOSS_WORLD_H);
     state.playerStats.applyToPlayer(state.player);
   }
@@ -93,6 +104,9 @@ export class BossSystem {
 
   // ============================================================
   // [🧱 BLOCK: Update]
+  // Handles all three boss types through the AnyBoss union.
+  // Type-specific checks (isArmored, isIntangible) are done
+  // with instanceof so new boss types only need additions here.
   // ============================================================
   update(
     state:  GameState,
@@ -100,7 +114,7 @@ export class BossSystem {
     worldW: number,
     worldH: number
   ): { event: "victory" | "enraged" | null; goldCollected: number } {
-    const boss = state.boss;
+    const boss = state.boss as AnyBoss | null;
     if (!boss) return { event: null, goldCollected: 0 };
 
     const ps = state.playerStats;
@@ -127,10 +141,11 @@ export class BossSystem {
     if (boss.isCollidingWithPlayer(player) && player.iFrames <= 0) {
       const final = Math.round(boss.contactDamage * (1 - ps.damageReduction));
       player.takeHit(final);
-      boss.damageCooldown = 800;
+      // damageCooldown is on boss — access via cast since all bosses have it
+      (boss as Brute | Colossus).damageCooldown = 800;
     }
 
-    // ── Boss slam AoE ─────────────────────────────────────
+    // ── Boss slam / stomp AoE ─────────────────────────────
     if (boss.isSlamHittingPlayer(player) && player.iFrames <= 0) {
       const final = Math.round(boss.slamDamage * (1 - ps.damageReduction));
       player.takeHit(final);
@@ -138,7 +153,7 @@ export class BossSystem {
 
     // ── Weapon input + hit vs boss ────────────────────────
     this.weaponSystem.processInput(player);
-    this.weaponSystem.resolveHitBoss(player, boss, ps.atkBonus);
+    this.resolveWeaponHit(player, boss, ps.atkBonus);
 
     // ── Stamina regen ─────────────────────────────────────
     if (player.stamina < player.maxStamina) {
@@ -155,18 +170,13 @@ export class BossSystem {
     state.goldDrops = state.goldDrops.filter((d) => !d.collected);
     state.totalGoldEarned += goldCollected;
 
-    // Item drops in boss arena (the guaranteed post-boss drop)
     state.itemDrops = state.itemDrops.filter((drop) => {
       if (drop.collected) return false;
       if (state.pendingLoot.length >= PENDING_LOOT_CAP) {
-        drop.update(player);
-        return !drop.collected;
+        drop.update(player); return !drop.collected;
       }
       const pickedUp = drop.update(player);
-      if (pickedUp) {
-        state.pendingLoot.push(drop.item);
-        return false;
-      }
+      if (pickedUp) { state.pendingLoot.push(drop.item); return false; }
       return !drop.collected;
     });
 
@@ -181,12 +191,43 @@ export class BossSystem {
       const bx = boss.x + boss.width  / 2;
       const by = boss.y + boss.height / 2;
       spawnBossGold(state, bx, by);
-      spawnBossItemDrop(state, bx, by);  // ← guaranteed drop
-      state.particles.push(...spawnBurst(bx, by, "#dc2626", 12, 1.8));
+      spawnBossItemDrop(state, bx, by);
+      state.particles.push(...spawnBurst(bx, by, boss.color, 12, 1.8));
       return { event: "victory", goldCollected };
     }
 
     return { event: null, goldCollected };
+  }
+
+  // ============================================================
+  // [🧱 BLOCK: Resolve Weapon Hit]
+  // Routes to boss-specific takeDamage variant when needed.
+  // Colossus has armor that responds to heavy attacks.
+  // Phantom ignores hits while intangible (handled in its own
+  // takeDamage override — no special casing needed here).
+  // ============================================================
+  private resolveWeaponHit(player: Player, boss: AnyBoss, atkBonus: number): void {
+    if (!player.isAttacking || !player.equippedWeapon || !player.attackType) return;
+
+    const weapon  = player.equippedWeapon;
+    const mode    = player.attackType;
+    const atk     = weapon.getAttack(mode);
+    const damage  = atk.damage + atkBonus;
+    const isHeavy = mode === 'heavy';
+    const facing  = (isHeavy && player.lockedFacing) ? player.lockedFacing : player.facing;
+
+    const px = player.x + player.width  / 2;
+    const py = player.y + player.height / 2;
+    const bx = boss.x   + boss.width    / 2;
+    const by = boss.y   + boss.height   / 2;
+
+    if (weapon.hitTest(px, py, facing, mode, bx, by, boss.width, boss.height)) {
+      if (boss instanceof Colossus) {
+        boss.takeDamage(damage, isHeavy);
+      } else {
+        boss.takeDamage(damage);
+      }
+    }
   }
 
   // ============================================================

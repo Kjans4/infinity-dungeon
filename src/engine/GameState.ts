@@ -8,12 +8,11 @@ import { ShopNPC }     from "./ShopNPC";
 import { Particle }    from "./Particle";
 import { PlayerStats } from "./PlayerStats";
 import { ShopItem }    from "./items/ItemPool";
-import { Grunt, Shooter, Tank, Boss, Projectile } from "./enemy";
+import { Grunt, Shooter, Tank, Projectile } from "./enemy";
+import { AnyBoss }     from "./enemy/boss/index";
 
 // ============================================================
 // [🧱 BLOCK: Pending Loot Cap]
-// Max items the player can hold between killing enemies and
-// visiting the NPC/shop to claim them.
 // ============================================================
 export const PENDING_LOOT_CAP = 3;
 
@@ -22,7 +21,7 @@ export class GameState {
   player:      Player;
   camera:      Camera;
   enemies:     (Grunt | Shooter | Tank)[];
-  boss:        Boss | null;
+  boss:        AnyBoss | null;
   door:        Door | null;
   shopNpc:     ShopNPC | null;
   projectiles: Projectile[];
@@ -31,20 +30,19 @@ export class GameState {
   particles:   Particle[];
 
   // Economy
-  gold:            number;
-  playerStats:     PlayerStats;
+  gold:        number;
+  playerStats: PlayerStats;
 
-  // ── Pending loot — items dropped in world, not yet claimed ──
-  // Capped at PENDING_LOOT_CAP. Claimed for free in the shop.
+  // ── Pending loot ─────────────────────────────────────────
   pendingLoot: ShopItem[];
 
   // Horde tracking (resets per room)
   kills:         number;
   alive:         number;
   lastSpawn:     number;
-  roomEntryTime: number; // Date.now() when the room was entered — used for grace period
+  roomEntryTime: number;
 
-  // ── Run-wide stats (never reset mid-run) ──────────────────
+  // ── Run-wide stats ────────────────────────────────────────
   totalKills:      number;
   totalGoldEarned: number;
   runStartTime:    number;
@@ -68,9 +66,9 @@ export class GameState {
     this.itemDrops   = [];
     this.particles   = [];
 
-    this.gold            = 0;
-    this.playerStats     = new PlayerStats();
-    this.pendingLoot     = [];
+    this.gold        = 0;
+    this.playerStats = new PlayerStats();
+    this.pendingLoot = [];
 
     this.kills         = 0;
     this.alive         = 0;
@@ -86,7 +84,6 @@ export class GameState {
 
   // ============================================================
   // [🧱 BLOCK: Full Reset]
-  // Also resets run-wide stats and loot.
   // ============================================================
   reset() {
     this.enemies     = [];
@@ -116,7 +113,6 @@ export class GameState {
 
   // ============================================================
   // [🧱 BLOCK: Room Reset]
-  // Keeps run-wide stats, pending loot, and playerStats intact.
   // ============================================================
   resetRoom() {
     this.enemies     = [];

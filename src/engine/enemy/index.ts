@@ -1,8 +1,9 @@
 // src/engine/enemy/index.ts
 // ============================================================
+// [🧱 BLOCK: Enemy Exports]
 // Single import point for all enemy-related code.
-// GameCanvas.tsx only needs:
-//   import { Grunt, Shooter, Boss, Tank, Projectile, spawnWave } from "@/engine/enemy";
+// NOTE: imports use "./boss/index" explicitly to avoid the
+// Windows case-insensitive conflict with the old Boss.ts file.
 // ============================================================
 
 export type { EnemyType, AttackState, EnemyStats } from "./types";
@@ -11,5 +12,11 @@ export { Projectile }  from "./Projectile";
 export { Grunt }       from "./Grunt";
 export { Shooter }     from "./Shooter";
 export { Tank }        from "./Tank";
-export { Boss }        from "./Boss";
 export { spawnWave }   from "./spawn";
+
+// ── Boss system ──────────────────────────────────────────────
+export type { AnyBoss }                          from "./boss/index";
+export { Brute, Phantom, Colossus, selectBoss }  from "./boss/index";
+
+// Legacy alias — any remaining "Boss" imports still compile.
+export { Brute as Boss } from "./boss/index";
