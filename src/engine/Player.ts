@@ -5,17 +5,45 @@ import { Weapon }       from "./items/Weapon";
 import { AttackDef }    from "./items/types";
 
 // ============================================================
-// [🧱 BLOCK: Dash Constants]
-// DASH_DURATION  — how long the dash lasts in ms (matches old setTimeout)
-// DASH_IFRAMES   — invincibility window granted during a dash.
-//                  Slightly shorter than the full dash so the tail end
-//                  of the slide can still be punished.
+// [🧱 BLOCK: Constants]
 // ============================================================
 const DASH_DURATION = 200;
 const DASH_IFRAMES  = 180;
 
+// Charge thresholds (ms of key held before "charged" state)
+const CHARGE_LIGHT_THRESHOLD = 400;  // J held → charged light
+const CHARGE_HEAVY_THRESHOLD = 600;  // K held → charged heavy
+
+// Speed penalty while charging light (J held, can still move)
+const CHARGE_LIGHT_SPEED_MULT = 0.60;
+
+// Block / Parry timing
+const PARRY_TAP_MAX_MS   = 180;   // press under this → parry on release
+const PARRY_WINDOW_MS    = 300;   // active parry hitbox window
+const PARRY_COOLDOWN_MS  = 800;   // lockout after any parry attempt
+const BLOCK_STAMINA_COST = 8;     // stamina drained per hit while blocking
+
+// ============================================================
+// [🧱 BLOCK: Combat State Types]
+// ============================================================
+export type ChargeState =
+  | 'none'
+  | 'charging_light'   // J held, not yet threshold — can move
+  | 'charged_light'    // J held past threshold — release fires big light
+  | 'charging_heavy'   // K held, not yet threshold — player halted
+  | 'charged_heavy';   // K held past threshold — release fires big heavy
+
+export type BlockState =
+  | 'none'
+  | 'parry_startup'    // L just pressed, waiting to classify
+  | 'parrying'         // active parry window (300ms)
+  | 'parry_cooldown'   // 800ms lockout
+  | 'blocking';        // L held > PARRY_TAP_MAX_MS
+
+// ============================================================
+// [🧱 BLOCK: Player Class]
+// ============================================================
 export class Player {
-  // [🧱 BLOCK: Properties]
   x: number; y: number;
   width:  number = 32;
   height: number = 32;
@@ -32,83 +60,152 @@ export class Player {
   maxStamina: number = 100;
   stamina:    number = 100;
 
-  // Combat state
+  // ── Normal attack state ──────────────────────────────────
   isDashing:        boolean                  = false;
-  dashTimer:        number                   = 0;   // counts down in update()
-  dashCost:         number                   = 30;  // set by PlayerStats.applyToPlayer()
+  dashTimer:        number                   = 0;
+  dashCost:         number                   = 30;
   isAttacking:      boolean                  = false;
   isHeavyAttacking: boolean                  = false;
   isHit:            boolean                  = false;
   hitFlashTimer:    number                   = 0;
-  attackType:       'light' | 'heavy' | null = null;
+  attackType:       'light' | 'heavy' | 'charged_light' | 'charged_heavy' | null = null;
   attackTimer:      number                   = 0;
   heavyCooldown:    number                   = 0;
   iFrames:          number                   = 0;
   facing:           { x: number; y: number } = { x: 0, y: 1 };
   lockedFacing:     { x: number; y: number } | null = null;
 
-  // Weapon — initialized in constructor to avoid Turbopack issues
+  // ── Charge state ─────────────────────────────────────────
+  chargeState:     ChargeState = 'none';
+  chargeTimer:     number      = 0;   // how long key has been held
+  chargeVisual:    number      = 0;   // pulse timer for glow ring
+
+  // ── Block / Parry state ───────────────────────────────────
+  blockState:      BlockState  = 'none';
+  blockTimer:      number      = 0;   // multipurpose: startup → parry → cooldown
+  parrySuccess:    boolean     = false; // true on the frame a parry lands
+
+  // Weapon
   equippedWeapon: Weapon;
   lastInput:      InputHandler | null = null;
+
+  // ── Internal key tracking (edge detection) ───────────────
+  private prevLight: boolean = false;
+  private prevHeavy: boolean = false;
+  private prevBlock: boolean = false;
 
   constructor(x: number, y: number) {
     this.x = x;
     this.y = y;
-    // Default bare fists — no weapon equipped
     this.equippedWeapon = new Weapon('fists');
+  }
+
+  // ============================================================
+  // [🧱 BLOCK: Derived Helpers]
+  // ============================================================
+  get isBlocking(): boolean {
+    return this.blockState === 'blocking';
+  }
+
+  get isParrying(): boolean {
+    return this.blockState === 'parrying';
+  }
+
+  get isChargingLight(): boolean {
+    return this.chargeState === 'charging_light' || this.chargeState === 'charged_light';
+  }
+
+  get isChargingHeavy(): boolean {
+    return this.chargeState === 'charging_heavy' || this.chargeState === 'charged_heavy';
+  }
+
+  // Returns true when a charged-light is ready to fire
+  get chargedLightReady(): boolean {
+    return this.chargeState === 'charged_light';
+  }
+
+  // Returns true when a charged-heavy is ready to fire
+  get chargedHeavyReady(): boolean {
+    return this.chargeState === 'charged_heavy';
   }
 
   // ============================================================
   // [🧱 BLOCK: Update]
   // ============================================================
   update(input: InputHandler) {
-    this.lastInput = input;
+    this.lastInput   = input;
+    this.parrySuccess = false;
 
-    // Movement
+    const mov        = input.movement;
+    const lightDown  = mov.light;
+    const heavyDown  = mov.heavy;
+    const blockDown  = mov.block;
+
+    const lightJustPressed  = lightDown  && !this.prevLight;
+    const lightJustReleased = !lightDown && this.prevLight;
+    const heavyJustPressed  = heavyDown  && !this.prevHeavy;
+    const heavyJustReleased = !heavyDown && this.prevHeavy;
+    const blockJustPressed  = blockDown  && !this.prevBlock;
+    const blockJustReleased = !blockDown && this.prevBlock;
+
+    // ── Block / Parry state machine ───────────────────────
+    this.updateBlockParry(blockDown, blockJustPressed, blockJustReleased);
+
+    // ── Charge state machine ──────────────────────────────
+    this.updateCharge(
+      lightDown, lightJustPressed, lightJustReleased,
+      heavyDown, heavyJustPressed, heavyJustReleased
+    );
+
+    // ── Determine effective speed cap ─────────────────────
+    // Blocking/parrying slows to 30%, charging light slows to 60%
+    let speedMult = 1.0;
+    if (this.isBlocking || this.isParrying) speedMult = 0.30;
+    else if (this.isChargingLight)          speedMult = CHARGE_LIGHT_SPEED_MULT;
+
+    // ── Movement (blocked during charged heavy & normal heavy) ─
+    const movementLocked = this.isHeavyAttacking || this.isChargingHeavy;
+
     let inputX = 0; let inputY = 0;
-    if (input.movement.up)    inputY -= 1;
-    if (input.movement.down)  inputY += 1;
-    if (input.movement.left)  inputX -= 1;
-    if (input.movement.right) inputX += 1;
+    if (!movementLocked) {
+      if (mov.up)    inputY -= 1;
+      if (mov.down)  inputY += 1;
+      if (mov.left)  inputX -= 1;
+      if (mov.right) inputX += 1;
+    }
 
-    if (!this.isHeavyAttacking) {
-      if (inputX !== 0 || inputY !== 0) {
-        const len   = Math.sqrt(inputX * inputX + inputY * inputY);
-        inputX /= len; inputY /= len;
-        this.vx += inputX * this.accel;
-        this.vy += inputY * this.accel;
+    if (inputX !== 0 || inputY !== 0) {
+      const len = Math.sqrt(inputX * inputX + inputY * inputY);
+      inputX /= len; inputY /= len;
+      this.vx += inputX * this.accel;
+      this.vy += inputY * this.accel;
+      // Only update facing when not in a locked-facing situation
+      if (!this.isHeavyAttacking && !this.isChargingHeavy) {
         this.facing = { x: inputX, y: inputY };
       }
-    } else {
+    } else if (movementLocked) {
       this.vx *= 0.5;
       this.vy *= 0.5;
     }
 
-    // ── Dash ─────────────────────────────────────────────────
-    // Trigger: C pressed, enough stamina, not already dashing/attacking.
-    // Uses dashTimer (decremented below) instead of setTimeout so the
-    // dash respects pause state and never fires after game-over.
-    // Grants DASH_IFRAMES of invincibility so the player can dodge
-    // through projectiles and melee attacks.
-    if (input.movement.dash && this.stamina >= this.dashCost && !this.isDashing && !this.isAttacking) {
+    // ── Dash — allowed even while charging (cancels charge) ─
+    if (mov.dash && this.stamina >= this.dashCost && !this.isDashing && !this.isAttacking) {
+      // Cancel any charge on dash
+      if (this.chargeState !== 'none') this.chargeState = 'none';
       this.stamina   -= this.dashCost;
       this.isDashing  = true;
       this.dashTimer  = DASH_DURATION;
-      this.iFrames    = Math.max(this.iFrames, DASH_IFRAMES); // don't shorten existing iframes
+      this.iFrames    = Math.max(this.iFrames, DASH_IFRAMES);
       this.vx        *= 4;
       this.vy        *= 4;
     }
 
-    // Tick dash timer
     if (this.isDashing) {
       this.dashTimer -= 16;
-      if (this.dashTimer <= 0) {
-        this.isDashing = false;
-        this.dashTimer = 0;
-      }
+      if (this.dashTimer <= 0) { this.isDashing = false; this.dashTimer = 0; }
     }
 
-    // Attack timer
+    // ── Attack timer tick ────────────────────────────────
     if (this.isAttacking) {
       this.attackTimer -= 16;
       if (this.attackTimer <= 0) {
@@ -119,11 +216,11 @@ export class Player {
       }
     }
 
-    // Physics
+    // ── Physics ──────────────────────────────────────────
     this.vx *= this.friction;
     this.vy *= this.friction;
     const speed    = Math.sqrt(this.vx * this.vx + this.vy * this.vy);
-    const topSpeed = this.isDashing ? 20 : this.maxSpeed;
+    const topSpeed = this.isDashing ? 20 : this.maxSpeed * speedMult;
     if (speed > topSpeed) {
       this.vx = (this.vx / speed) * topSpeed;
       this.vy = (this.vy / speed) * topSpeed;
@@ -131,7 +228,7 @@ export class Player {
     this.x += this.vx;
     this.y += this.vy;
 
-    // Resources
+    // ── Resources ────────────────────────────────────────
     if (this.stamina < this.maxStamina) this.stamina += 0.4;
     if (this.heavyCooldown > 0) this.heavyCooldown  -= 16;
     if (this.iFrames       > 0) this.iFrames        -= 16;
@@ -139,11 +236,203 @@ export class Player {
       this.hitFlashTimer -= 16;
       if (this.hitFlashTimer <= 0) this.isHit = false;
     }
+
+    // ── Charge visual pulse ───────────────────────────────
+    if (this.chargeState !== 'none') this.chargeVisual += 16;
+    else                              this.chargeVisual  = 0;
+
+    // ── Store prev key state ──────────────────────────────
+    this.prevLight = lightDown;
+    this.prevHeavy = heavyDown;
+    this.prevBlock = blockDown;
+  }
+
+  // ============================================================
+  // [🧱 BLOCK: Block / Parry State Machine]
+  // ============================================================
+  private updateBlockParry(
+    blockDown:        boolean,
+    blockJustPressed: boolean,
+    blockJustReleased:boolean
+  ): void {
+    switch (this.blockState) {
+
+      case 'none':
+        if (blockJustPressed && !this.isAttacking && !this.isDashing) {
+          this.blockState = 'parry_startup';
+          this.blockTimer = 0;
+        }
+        break;
+
+      case 'parry_startup':
+        this.blockTimer += 16;
+        if (blockJustReleased) {
+          // Tap — activate parry
+          if (this.blockTimer <= PARRY_TAP_MAX_MS) {
+            this.blockState = 'parrying';
+            this.blockTimer = 0;
+          } else {
+            // Held too long but released — just go to cooldown
+            this.blockState = 'parry_cooldown';
+            this.blockTimer = PARRY_COOLDOWN_MS;
+          }
+        } else if (this.blockTimer > PARRY_TAP_MAX_MS) {
+          // Still held past tap window → enter block
+          this.blockState = 'blocking';
+          this.blockTimer = 0;
+        }
+        break;
+
+      case 'parrying':
+        this.blockTimer += 16;
+        if (this.blockTimer >= PARRY_WINDOW_MS) {
+          // Parry window expired
+          this.blockState = 'parry_cooldown';
+          this.blockTimer = PARRY_COOLDOWN_MS;
+        }
+        break;
+
+      case 'parry_cooldown':
+        this.blockTimer -= 16;
+        if (this.blockTimer <= 0) {
+          this.blockState = 'none';
+          this.blockTimer = 0;
+        }
+        break;
+
+      case 'blocking':
+        if (!blockDown) {
+          this.blockState = 'none';
+          this.blockTimer = 0;
+        }
+        break;
+    }
+  }
+
+  // ============================================================
+  // [🧱 BLOCK: Charge State Machine]
+  // ============================================================
+  private updateCharge(
+    lightDown:        boolean,
+    lightJustPressed: boolean,
+    lightJustReleased:boolean,
+    heavyDown:        boolean,
+    heavyJustPressed: boolean,
+    heavyJustReleased:boolean
+  ): void {
+    // Don't charge while blocking/parrying or already attacking
+    const blocked = this.isBlocking || this.isParrying || this.isAttacking || this.isDashing;
+
+    switch (this.chargeState) {
+
+      case 'none':
+        if (!blocked) {
+          if (lightJustPressed) {
+            this.chargeState = 'charging_light';
+            this.chargeTimer = 0;
+          } else if (heavyJustPressed && this.heavyCooldown <= 0) {
+            this.chargeState = 'charging_heavy';
+            this.chargeTimer = 0;
+          }
+        }
+        break;
+
+      // ── Charging Light (J held) ───────────────────────────
+      case 'charging_light':
+        this.chargeTimer += 16;
+        if (!lightDown) {
+          // Released before threshold — normal tap light attack
+          this.fireNormalAttack('light');
+          this.chargeState = 'none';
+          this.chargeTimer = 0;
+        } else if (this.chargeTimer >= CHARGE_LIGHT_THRESHOLD) {
+          this.chargeState = 'charged_light';
+        }
+        break;
+
+      case 'charged_light':
+        this.chargeTimer += 16;
+        if (!lightDown) {
+          // Release — fire charged light
+          this.fireChargedAttack('light');
+          this.chargeState = 'none';
+          this.chargeTimer = 0;
+        }
+        break;
+
+      // ── Charging Heavy (K held) ───────────────────────────
+      case 'charging_heavy':
+        this.chargeTimer += 16;
+        if (!heavyDown) {
+          // Released before threshold — normal heavy
+          if (this.heavyCooldown <= 0) {
+            this.fireNormalAttack('heavy');
+          }
+          this.chargeState = 'none';
+          this.chargeTimer = 0;
+        } else if (this.chargeTimer >= CHARGE_HEAVY_THRESHOLD) {
+          this.chargeState = 'charged_heavy';
+        }
+        break;
+
+      case 'charged_heavy':
+        this.chargeTimer += 16;
+        if (!heavyDown) {
+          // Release — fire charged heavy
+          this.fireChargedAttack('heavy');
+          this.chargeState = 'none';
+          this.chargeTimer = 0;
+        }
+        break;
+    }
+  }
+
+  // ============================================================
+  // [🧱 BLOCK: Fire Normal Attack]
+  // (same as old WeaponSystem.processInput path)
+  // ============================================================
+  private fireNormalAttack(mode: 'light' | 'heavy'): void {
+    if (!this.equippedWeapon) return;
+    const atk = this.equippedWeapon.getAttack(mode);
+    if (this.stamina < atk.staminaCost) return;
+    this.startWeaponAttack(mode, atk);
+  }
+
+  // ============================================================
+  // [🧱 BLOCK: Fire Charged Attack]
+  // Stamina cost = 1.5× normal. Damage/hitbox scaled in WeaponSystem.
+  // ============================================================
+  private fireChargedAttack(mode: 'light' | 'heavy'): void {
+    if (!this.equippedWeapon) return;
+    const atk = this.equippedWeapon.getAttack(mode);
+    const cost = Math.round(atk.staminaCost * 1.5);
+    if (this.stamina < cost) {
+      // Not enough stamina — fire normal instead as fallback
+      this.fireNormalAttack(mode);
+      return;
+    }
+    this.stamina -= cost;
+    this.isAttacking   = true;
+    this.attackType    = mode === 'light' ? 'charged_light' : 'charged_heavy';
+    // Charged attacks last slightly longer for the bigger visual
+    this.attackTimer   = Math.round(atk.duration * 1.4);
+
+    if (mode === 'heavy') {
+      this.heavyCooldown    = atk.cooldown;
+      this.isHeavyAttacking = true;
+      this.lockedFacing     = { ...this.facing };
+    }
+    if (mode === 'light') {
+      // Small lunge on charged light too
+      this.vx += this.facing.x * 4;
+      this.vy += this.facing.y * 4;
+    }
   }
 
   // ============================================================
   // [🧱 BLOCK: Start Weapon Attack]
-  // Called by WeaponSystem.processInput() only.
+  // Called by WeaponSystem.processInput() for tap attacks,
+  // and internally for charged attacks.
   // ============================================================
   startWeaponAttack(mode: 'light' | 'heavy', atk: AttackDef): void {
     this.stamina      -= atk.staminaCost;
@@ -163,8 +452,34 @@ export class Player {
   }
 
   // ============================================================
+  // [🧱 BLOCK: Parry Hit — called by HordeSystem / BossSystem]
+  // Returns true if parry was active and successfully triggered.
+  // Sets parrySuccess flag for one-frame VFX.
+  // ============================================================
+  tryParry(): boolean {
+    if (this.blockState !== 'parrying') return false;
+    this.parrySuccess = true;
+    // Transition straight to cooldown — parry consumed
+    this.blockState = 'parry_cooldown';
+    this.blockTimer = PARRY_COOLDOWN_MS;
+    return true;
+  }
+
+  // ============================================================
+  // [🧱 BLOCK: Block Hit — called by HordeSystem / BossSystem]
+  // Returns final damage after block reduction.
+  // Drains stamina; if stamina is 0, block breaks.
+  // ============================================================
+  applyBlockedHit(rawDamage: number): number {
+    if (this.blockState !== 'blocking') return rawDamage;
+    // 65% damage reduction while blocking
+    const reduced = Math.round(rawDamage * 0.35);
+    this.stamina  = Math.max(0, this.stamina - BLOCK_STAMINA_COST);
+    return reduced;
+  }
+
+  // ============================================================
   // [🧱 BLOCK: Take Hit]
-  // iFrames from a hit do not override a longer dash iFrame window.
   // ============================================================
   takeHit(amount: number): void {
     if (this.iFrames > 0) return;
@@ -176,45 +491,112 @@ export class Player {
 
   // ============================================================
   // [🧱 BLOCK: Draw]
-  // During a dash, render a faint afterimage trail effect by
-  // drawing the player slightly more transparent.
   // ============================================================
   draw(ctx: CanvasRenderingContext2D, camera: Camera): void {
-    // Flicker during hit i-frames (not during dash i-frames —
-    // the dash has its own blue color cue instead)
     if (!this.isHit && this.iFrames > 0 && !this.isDashing && Math.floor(Date.now() / 50) % 2 === 0) {
       return;
     }
 
     const sx = camera.toScreenX(this.x);
     const sy = camera.toScreenY(this.y);
+    const cx = sx + this.width  / 2;
+    const cy = sy + this.height / 2;
 
     // ── Dash afterimage ──────────────────────────────────────
-    // Draw a faded ghost slightly behind the player to sell the
-    // speed of the dodge without any extra data structures.
     if (this.isDashing) {
-      const progress = this.dashTimer / DASH_DURATION; // 1→0 as dash ends
+      const progress = this.dashTimer / DASH_DURATION;
       ctx.globalAlpha = 0.25 * progress;
       ctx.fillStyle   = "#38bdf8";
       ctx.fillRect(sx - this.vx * 2, sy - this.vy * 2, this.width, this.height);
       ctx.globalAlpha = 1;
     }
 
-    // Body
-    ctx.fillStyle = this.isHit
-      ? "#ffffff"
-      : this.isDashing
-        ? "#38bdf8"
-        : "#f87171";
+    // ── Charge glow ring ─────────────────────────────────────
+    if (this.chargeState !== 'none') {
+      const isLight  = this.chargeState === 'charging_light' || this.chargeState === 'charged_light';
+      const isReady  = this.chargeState === 'charged_light'  || this.chargeState === 'charged_heavy';
+      const pulse    = Math.sin(this.chargeVisual / (isReady ? 60 : 120)) * 0.35 + 0.65;
+      const progress = isLight
+        ? Math.min(this.chargeTimer / CHARGE_LIGHT_THRESHOLD, 1)
+        : Math.min(this.chargeTimer / CHARGE_HEAVY_THRESHOLD, 1);
+      const radius   = 24 + progress * 18;
+
+      const color = isLight ? `rgba(255,255,255,${pulse * 0.85})` : `rgba(251,191,36,${pulse * 0.9})`;
+
+      // Outer glow
+      ctx.beginPath();
+      ctx.arc(cx, cy, radius + 6, 0, Math.PI * 2);
+      ctx.strokeStyle = isLight ? `rgba(255,255,255,${pulse * 0.25})` : `rgba(251,191,36,${pulse * 0.25})`;
+      ctx.lineWidth   = 6;
+      ctx.stroke();
+
+      // Main ring
+      ctx.beginPath();
+      ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+      ctx.strokeStyle = color;
+      ctx.lineWidth   = isReady ? 3 : 2;
+      ctx.stroke();
+
+      // Fill flash when ready
+      if (isReady) {
+        ctx.beginPath();
+        ctx.arc(cx, cy, radius - 4, 0, Math.PI * 2);
+        ctx.fillStyle = isLight ? `rgba(255,255,255,${pulse * 0.08})` : `rgba(251,191,36,${pulse * 0.10})`;
+        ctx.fill();
+      }
+    }
+
+    // ── Block / Parry visual ──────────────────────────────────
+    if (this.blockState === 'parrying') {
+      const progress = this.blockTimer / PARRY_WINDOW_MS;
+      const pulse    = 1 - progress;  // fades out as window closes
+      ctx.beginPath();
+      ctx.arc(cx, cy, 28, 0, Math.PI * 2);
+      ctx.strokeStyle = `rgba(56,189,248,${0.9 * pulse})`;
+      ctx.lineWidth   = 3;
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(cx, cy, 22, 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(56,189,248,${0.15 * pulse})`;
+      ctx.fill();
+    }
+
+    if (this.blockState === 'blocking') {
+      const pulse = Math.sin(Date.now() / 200) * 0.2 + 0.6;
+      ctx.beginPath();
+      ctx.arc(cx, cy, 26, 0, Math.PI * 2);
+      ctx.strokeStyle = `rgba(148,163,184,${pulse})`;
+      ctx.lineWidth   = 2;
+      ctx.stroke();
+    }
+
+    // ── Parry success flash ───────────────────────────────────
+    if (this.parrySuccess) {
+      ctx.beginPath();
+      ctx.arc(cx, cy, 40, 0, Math.PI * 2);
+      ctx.fillStyle = "rgba(56,189,248,0.35)";
+      ctx.fill();
+    }
+
+    // ── Body ─────────────────────────────────────────────────
+    ctx.fillStyle =
+      this.isHit                            ? "#ffffff"  :
+      this.isDashing                        ? "#38bdf8"  :
+      this.blockState === 'parrying'        ? "#7dd3fc"  :
+      this.blockState === 'blocking'        ? "#94a3b8"  :
+      this.chargeState === 'charged_light'  ? "#e2e8f0"  :
+      this.chargeState === 'charged_heavy'  ? "#fde68a"  :
+      this.isChargingLight || this.isChargingHeavy ? "#fca5a5" :
+      "#f87171";
     ctx.fillRect(sx, sy, this.width, this.height);
 
-    // HP bar
+    // ── HP bar ───────────────────────────────────────────────
     ctx.fillStyle = "#1e293b";
     ctx.fillRect(sx, sy - 15, this.width, 4);
     ctx.fillStyle = "#ef4444";
     ctx.fillRect(sx, sy - 15, (this.hp / this.maxHp) * this.width, 4);
 
-    // Stamina bar
+    // ── Stamina bar ───────────────────────────────────────────
     ctx.fillStyle = "#1e293b";
     ctx.fillRect(sx, sy - 9, this.width, 4);
     ctx.fillStyle = "#fbbf24";

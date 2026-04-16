@@ -92,11 +92,11 @@ function BackgroundCanvas() {
 // [🧱 BLOCK: Controls Reference]
 // ============================================================
 const CONTROLS = [
-  { key: "WASD", desc: "Move"         },
-  { key: "C",    desc: "Dash"         },
-  { key: "J",    desc: "Light Attack" },
-  { key: "K",    desc: "Heavy Attack" },
-  { key: "F",    desc: "Talk to NPC"  },
+  { key: "WASD",  desc: "Move"         },
+  { key: "C",     desc: "Dash"         },
+  { key: "J",     desc: "Light/Charge" },
+  { key: "K",     desc: "Heavy/Charge" },
+  { key: "L",     desc: "Parry/Block"  },
 ];
 
 // ============================================================
@@ -115,15 +115,12 @@ export default function Menu({ onStart }: MenuProps) {
     <div className="menu-root">
       <BackgroundCanvas />
 
-      {/* Content layer */}
       <div className={`menu-content ${visible ? "menu-content--visible" : ""}`}>
 
-        {/* ── Eyebrow ── */}
         <p className={`menu-eyebrow ${visible ? "menu-eyebrow--visible" : ""}`}>
           ▸ Enter if you dare
         </p>
 
-        {/* ── Title ── */}
         <h1 className={`menu-title menu-title--white ${visible ? "menu-title--visible-1" : ""}`}>
           INFINITY
         </h1>
@@ -131,12 +128,10 @@ export default function Menu({ onStart }: MenuProps) {
           DUNGEON
         </h1>
 
-        {/* ── Tagline ── */}
         <p className={`menu-tagline ${visible ? "menu-tagline--visible" : ""}`}>
           Kill. Descend. Repeat.
         </p>
 
-        {/* ── RAID Button ── */}
         <button
           onClick={onStart}
           onMouseEnter={() => setHovered(true)}
@@ -146,7 +141,6 @@ export default function Menu({ onStart }: MenuProps) {
           ▶ &nbsp;RAID
         </button>
 
-        {/* ── Controls ── */}
         <div className={`menu-controls ${visible ? "menu-controls--visible" : ""}`}>
           {CONTROLS.map(({ key, desc }) => (
             <div key={key} className="menu-control-item">
@@ -158,7 +152,6 @@ export default function Menu({ onStart }: MenuProps) {
 
       </div>
 
-      {/* ── Version tag ── */}
       <p className="menu-version">ALPHA v0.1</p>
     </div>
   );
