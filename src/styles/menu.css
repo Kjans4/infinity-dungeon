@@ -1,200 +1,387 @@
 /* ============================================================
    Menu — src/styles/menu.css
-   All styles for the Menu component (Menu.tsx)
+   Fantasy RPG dark & grim two-panel main menu
    ============================================================ */
 
-/* ============================================================
-   [🧱 BLOCK: Animated Background Canvas]
-   ============================================================ */
-.menu-bg-canvas {
-  position: absolute;
-  inset: 0;
-  display: block;
+@import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700&family=Cinzel+Decorative:wght@400;700&family=IM+Fell+English:ital@0;1&display=swap');
+
+/* ── Shared font defaults ── */
+.menu-root,
+.menu-root * {
+  font-family: 'Cinzel', serif;
+  box-sizing: border-box;
 }
 
 /* ============================================================
-   [🧱 BLOCK: Menu Root]
+   [🧱 BLOCK: Root — Two-Panel Grid]
+   Full-screen fixed wrapper. Fades + scales in on mount.
    ============================================================ */
 .menu-root {
   position: fixed;
   inset: 0;
+  z-index: 50;
+  display: grid;
+  grid-template-columns: 1fr 340px;
+  background: #050302;
+  opacity: 0;
+  transform: scale(0.98);
+  transition: opacity 0.8s ease, transform 0.8s ease;
+}
+
+.menu-root--visible {
+  opacity: 1;
+  transform: scale(1);
+}
+
+/* ============================================================
+   [🧱 BLOCK: Left Panel — Stone Illustration Area]
+   ============================================================ */
+.menu-left {
+  position: relative;
+  background: #0a0804;
+  overflow: hidden;
+}
+
+/* Stone tile grid texture */
+.menu-stone-bg {
+  position: absolute;
+  inset: 0;
+  background:
+    repeating-linear-gradient(
+      0deg,
+      rgba(255, 255, 255, 0.012) 0px,
+      rgba(255, 255, 255, 0.012) 1px,
+      transparent 1px,
+      transparent 44px
+    ),
+    repeating-linear-gradient(
+      90deg,
+      rgba(255, 255, 255, 0.012) 0px,
+      rgba(255, 255, 255, 0.012) 1px,
+      transparent 1px,
+      transparent 66px
+    ),
+    radial-gradient(ellipse at 38% 50%, #231608 0%, #0a0804 65%);
+}
+
+/* Dark radial vignette for depth */
+.menu-vignette {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(ellipse at 50% 50%, transparent 30%, rgba(0, 0, 0, 0.72) 100%);
+  pointer-events: none;
+}
+
+/* Stone crack SVG overlay */
+.menu-cracks {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0.16;
+  pointer-events: none;
+}
+
+/* Centered sigil + lore text column */
+.menu-left-content {
+  position: relative;
+  z-index: 2;
+  height: 100%;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  overflow: hidden;
-  font-family: 'Courier New', monospace;
+  padding: 3rem;
+  gap: 2rem;
 }
 
 /* ============================================================
-   [🧱 BLOCK: Content Layer]
-   Fade + slide up on mount via --visible modifier.
+   [🧱 BLOCK: Sigil / Crest]
+   Pulsing glow animation on the SVG crest.
    ============================================================ */
-.menu-content {
-  position: relative;
-  z-index: 10;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 0;
-  opacity: 0;
-  transform: translateY(16px);
-  transition: opacity 0.6s ease, transform 0.6s ease;
+.menu-sigil {
+  width: clamp(120px, 20vw, 180px);
+  height: clamp(120px, 20vw, 180px);
+  opacity: 0.9;
+  animation: sigilGlow 4s ease-in-out infinite alternate;
 }
 
-.menu-content--visible {
-  opacity: 1;
-  transform: translateY(0);
+@keyframes sigilGlow {
+  from { filter: drop-shadow(0 0 4px rgba(180, 120, 20, 0.15)); }
+  to   { filter: drop-shadow(0 0 14px rgba(200, 150, 30, 0.40)); }
 }
 
 /* ============================================================
-   [🧱 BLOCK: Eyebrow]
+   [🧱 BLOCK: Lore Text]
+   IM Fell English italic — aged parchment feel.
    ============================================================ */
-.menu-eyebrow {
-  font-size: 10px;
-  letter-spacing: 0.4em;
-  color: rgba(239, 68, 68, 0.7);
-  text-transform: uppercase;
-  margin-bottom: 16px;
-  opacity: 0;
-  transition: opacity 0.6s ease 0.1s;
+.menu-lore {
+  font-family: 'IM Fell English', serif;
+  font-style: italic;
+  font-size: 13px;
+  color: #4a3818;
+  text-align: center;
+  line-height: 1.95;
+  max-width: 280px;
 }
 
-.menu-eyebrow--visible {
-  opacity: 1;
+.menu-lore em {
+  color: #7a6030;
+  font-style: normal;
 }
 
 /* ============================================================
-   [🧱 BLOCK: Title]
-   Two <h1> tags stacked — white "INFINITY", red "DUNGEON".
+   [🧱 BLOCK: Vertical Divider]
+   Gold gradient line with a gem at center.
    ============================================================ */
-.menu-title {
-  font-size: clamp(8vw, 96px, 96vw);
-  font-weight: 900;
-  letter-spacing: -0.02em;
-  line-height: 0.9;
-  margin: 0;
-  opacity: 0;
-}
-
-.menu-title--white {
-  margin-bottom: 6px;
-  color: #f1f5f9;
-  text-shadow:
-    0 0 80px rgba(239, 68, 68, 0.3),
-    0 2px 4px rgba(0, 0, 0, 0.8);
-  transition: opacity 0.6s ease 0.15s;
-}
-
-.menu-title--red {
-  margin-bottom: 32px;
-  color: #ef4444;
-  text-shadow: 0 0 60px rgba(239, 68, 68, 0.6);
-  transition: opacity 0.6s ease 0.2s;
-}
-
-.menu-title--visible-1,
-.menu-title--visible-2 {
-  opacity: 1;
-}
-
-/* ============================================================
-   [🧱 BLOCK: Tagline]
-   ============================================================ */
-.menu-tagline {
-  font-size: 11px;
-  letter-spacing: 0.2em;
-  color: rgba(100, 116, 139, 0.9);
-  text-transform: uppercase;
-  margin-bottom: 48px;
-  opacity: 0;
-  transition: opacity 0.6s ease 0.25s;
-}
-
-.menu-tagline--visible {
-  opacity: 1;
-}
-
-/* ============================================================
-   [🧱 BLOCK: RAID Button]
-   ============================================================ */
-.menu-raid-btn {
-  font-family: 'Courier New', monospace;
-  font-size: 18px;
-  font-weight: 900;
-  letter-spacing: 0.35em;
-  text-transform: uppercase;
-  color: #ef4444;
-  background-color: transparent;
-  border: 2px solid #ef4444;
-  padding: 16px 56px;
-  border-radius: 4px;
-  cursor: pointer;
-  margin-bottom: 48px;
-  transition: all 0.15s ease;
-  box-shadow: 0 0 20px rgba(239, 68, 68, 0.15);
-  opacity: 0;
-}
-
-.menu-raid-btn--visible {
-  opacity: 1;
-}
-
-.menu-raid-btn--hovered {
-  color: #0f172a;
-  background-color: #ef4444;
-  box-shadow: 0 0 40px rgba(239, 68, 68, 0.5);
-}
-
-/* ============================================================
-   [🧱 BLOCK: Controls Reference]
-   ============================================================ */
-.menu-controls {
-  display: flex;
-  gap: 24px;
-  opacity: 0;
-  transition: opacity 0.6s ease 0.35s;
-}
-
-.menu-controls--visible {
-  opacity: 0.5;
-}
-
-.menu-control-item {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 4px;
-}
-
-.menu-control-key {
-  font-size: 10px;
-  font-weight: 700;
-  color: #f1f5f9;
-  background: rgba(255, 255, 255, 0.08);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 4px;
-  padding: 3px 8px;
-  letter-spacing: 0.05em;
-}
-
-.menu-control-desc {
-  font-size: 9px;
-  color: rgba(100, 116, 139, 0.8);
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-}
-
-/* ============================================================
-   [🧱 BLOCK: Version Tag]
-   ============================================================ */
-.menu-version {
+.menu-vert-divider {
   position: absolute;
-  bottom: 16px;
-  right: 20px;
+  left: calc(100% - 340px);
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: linear-gradient(
+    to bottom,
+    transparent 0%,
+    #5a4010 15%,
+    #8B6914 50%,
+    #5a4010 85%,
+    transparent 100%
+  );
   z-index: 10;
+}
+
+.menu-vert-gem {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%) rotate(45deg);
+  width: 10px;
+  height: 10px;
+  background: #8B6914;
+  border: 1px solid #c0860c;
+}
+
+/* ============================================================
+   [🧱 BLOCK: Right Panel — Menu]
+   Dark parchment panel with inner border frame.
+   ============================================================ */
+.menu-right {
+  background: #110d06;
+  border-left: 1px solid #2e2008;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  overflow: hidden;
+}
+
+/* Double inner border */
+.menu-right::before {
+  content: '';
+  position: absolute;
+  inset: 8px;
+  border: 1px solid #1e1608;
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* ============================================================
+   [🧱 BLOCK: Corner Ornaments]
+   ============================================================ */
+.menu-corner {
+  position: absolute;
+  width: 30px;
+  height: 30px;
+  z-index: 6;
+  display: block;
+}
+
+.menu-corner svg { width: 30px; height: 30px; }
+
+.menu-corner--tl { top: 0;    left: 0;  }
+.menu-corner--tr { top: 0;    right: 0; transform: scaleX(-1); }
+.menu-corner--bl { bottom: 0; left: 0;  transform: scaleY(-1); }
+.menu-corner--br { bottom: 0; right: 0; transform: scale(-1, -1); }
+
+/* ============================================================
+   [🧱 BLOCK: Title Block]
+   Cinzel Decorative for the main title — gold glow.
+   ============================================================ */
+.menu-title-block {
+  padding: 2.2rem 2rem 0.6rem;
+  text-align: center;
+  position: relative;
+  z-index: 1;
+}
+
+.menu-title {
+  font-family: 'Cinzel Decorative', serif;
+  font-size: clamp(18px, 2.5vw, 24px);
+  font-weight: 700;
+  color: #f0c040;
+  letter-spacing: 2px;
+  line-height: 1.2;
+  text-shadow: 0 0 14px rgba(240, 192, 64, 0.22);
+  margin: 0;
+}
+
+.menu-subtitle {
+  font-family: 'Cinzel', serif;
   font-size: 9px;
-  color: rgba(71, 85, 105, 0.6);
-  letter-spacing: 0.15em;
-  font-family: 'Courier New', monospace;
+  color: #7a5c22;
+  letter-spacing: 4px;
+  text-transform: uppercase;
+  margin-top: 6px;
+}
+
+/* ============================================================
+   [🧱 BLOCK: Horizontal Rule]
+   Three-segment rule with two diamond gems.
+   ============================================================ */
+.menu-hrule {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0.9rem 2rem;
+  position: relative;
+  z-index: 1;
+}
+
+.menu-hrule__line {
+  flex: 1;
+  height: 1px;
+  background: #2e2008;
+}
+
+.menu-hrule__gem {
+  width: 7px;
+  height: 7px;
+  background: #6a4c10;
+  border: 1px solid #8B6914;
+  transform: rotate(45deg);
+  flex-shrink: 0;
+}
+
+/* ============================================================
+   [🧱 BLOCK: Nav — Menu Buttons]
+   ============================================================ */
+.menu-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 0 1.6rem 1rem;
+  flex: 1;
+  position: relative;
+  z-index: 1;
+}
+
+.menu-nav__divider {
+  height: 1px;
+  background: #1e1608;
+  margin: 0.3rem 0;
+}
+
+.menu-item-btn {
+  font-family: 'Cinzel', serif;
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 2.5px;
+  text-transform: uppercase;
+  color: #9a7030;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 2px;
+  padding: 11px 14px;
+  cursor: pointer;
+  text-align: left;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  transition: background 0.18s ease, border-color 0.18s ease, color 0.18s ease;
+}
+
+.menu-item-btn:hover {
+  background: rgba(140, 90, 10, 0.14);
+  border-color: #5a3c10;
+  color: #e8b840;
+}
+
+.menu-item-btn--active {
+  background: rgba(140, 90, 10, 0.2);
+  border-color: #8a6418;
+  color: #f5d060;
+}
+
+/* Danger variant — exit button */
+.menu-item-btn--danger {
+  color: #6a2a18;
+}
+
+.menu-item-btn--danger:hover {
+  color: #c04030;
+  border-color: #5a1e0e;
+  background: rgba(100, 25, 15, 0.15);
+}
+
+/* Icon slot */
+.menu-item-btn__icon {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+  opacity: 0.7;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.menu-item-btn__icon svg {
+  width: 18px;
+  height: 18px;
+}
+
+.menu-item-btn:hover .menu-item-btn__icon,
+.menu-item-btn--active .menu-item-btn__icon {
+  opacity: 1;
+}
+
+/* Arrow chevron — fades in on hover */
+.menu-item-btn__arrow {
+  margin-left: auto;
+  color: #3a2808;
+  font-size: 10px;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+.menu-item-btn:hover .menu-item-btn__arrow {
+  opacity: 1;
+  color: #8a6418;
+}
+
+/* ============================================================
+   [🧱 BLOCK: Footer]
+   ============================================================ */
+.menu-footer {
+  border-top: 1px solid #1e1608;
+  padding: 0.7rem 2rem;
+  position: relative;
+  z-index: 1;
+}
+
+.menu-footer__quote {
+  font-family: 'IM Fell English', serif;
+  font-style: italic;
+  font-size: 10px;
+  color: #2e2008;
+  text-align: center;
+}
+
+.menu-footer__version {
+  font-family: 'Cinzel', serif;
+  font-size: 8px;
+  color: #201808;
+  letter-spacing: 3px;
+  text-align: center;
+  margin-top: 4px;
 }
