@@ -16,12 +16,18 @@ import { getRandomShopItems }                   from "../items/ItemPool";
 const WAVE_SIZE              = 8;
 const BASE_THRESHOLD         = 20;
 const THRESHOLD_PER_FLOOR    = 5;
-// Elite room threshold multiplier — more enemies need to die
 const ELITE_THRESHOLD_MULT   = 1.5;
-// Elite wave size — 50% larger than a normal wave
 const ELITE_WAVE_MULT        = 1.5;
 const FARMING_SPAWN_INTERVAL = 3000;
-const GRACE_PERIOD_MS        = 1500; // ms before first wave spawns on room entry
+const GRACE_PERIOD_MS        = 1500;
+
+// ============================================================
+// [🧱 BLOCK: Parry Constants]
+// ============================================================
+const PARRY_STUN_MS          = 1200;  // horde enemy stun duration
+const PARRY_STUN_BOSS_MS     = 600;   // boss stagger duration
+// During parry stun window the enemy takes bonus damage
+const PARRY_VULN_MULT        = 1.5;
 
 // ============================================================
 // [🧱 BLOCK: Separation Constants]
@@ -32,16 +38,13 @@ const TANK_RADIUS_BONUS   = 10;
 
 // ============================================================
 // [🧱 BLOCK: Item Drop Chances]
-// Per-enemy-type drop rates for horde rooms.
-// Elite room gets a bonus multiplier on drop chances.
-// Boss drops are handled in BossSystem (guaranteed).
 // ============================================================
 const DROP_CHANCE = {
   grunt:   0.03,
   shooter: 0.06,
   tank:    0.12,
 };
-const ELITE_DROP_MULT = 1.5; // elite room drops are more generous
+const ELITE_DROP_MULT = 1.5;
 
 function goldMultiplierForKills(kills: number, threshold: number): number {
   if (kills < threshold) return 1.0;
@@ -50,33 +53,20 @@ function goldMultiplierForKills(kills: number, threshold: number): number {
   return Math.max(0.20, 1.0 - tier * 0.20);
 }
 
-// ============================================================
-// [🧱 BLOCK: Roll Item Drop]
-// Returns one random ShopItem the player doesn't own yet,
-// or null if the RNG didn't hit or the pool is exhausted.
-// ============================================================
 function rollItemDrop(
   state:  GameState,
   chance: number
 ): import("../items/ItemPool").ShopItem | null {
   if (Math.random() > chance) return null;
-
-  const ownedCharmIds  = state.playerStats.charms.map((c) => c.id);
-  const ownedWeaponId  = state.playerStats.equippedWeaponItem?.id ?? null;
-
-  // Exclude items already sitting in pending loot queue
-  const pendingCharmIds  = state.pendingLoot
-    .filter((i) => i.kind === "charm")
-    .map((i) => i.id);
-  const pendingWeaponId  = state.pendingLoot
-    .find((i) => i.kind === "weapon")?.id ?? null;
-
+  const ownedCharmIds   = state.playerStats.charms.map((c) => c.id);
+  const ownedWeaponId   = state.playerStats.equippedWeaponItem?.id ?? null;
+  const pendingCharmIds = state.pendingLoot.filter((i) => i.kind === "charm").map((i) => i.id);
+  const pendingWeaponId = state.pendingLoot.find((i) => i.kind === "weapon")?.id ?? null;
   const pool = getRandomShopItems(
     [...ownedCharmIds, ...pendingCharmIds],
     ownedWeaponId ?? pendingWeaponId,
     1
   );
-
   return pool[0] ?? null;
 }
 
@@ -86,7 +76,6 @@ export class HordeSystem {
 
   // ============================================================
   // [🧱 BLOCK: Threshold Helper]
-  // Elite rooms use a higher threshold to match their larger waves.
   // ============================================================
   getThreshold(floor: number, isElite = false): number {
     const base = BASE_THRESHOLD + (floor - 1) * THRESHOLD_PER_FLOOR;
@@ -97,7 +86,6 @@ export class HordeSystem {
 
   // ============================================================
   // [🧱 BLOCK: Setup]
-  // Creates Door and ShopNPC at world-top for every horde/elite room.
   // ============================================================
   setup(state: GameState, rs: RoomState, worldW: number, worldH: number) {
     state.player.x  = worldW / 2;
@@ -152,7 +140,6 @@ export class HordeSystem {
       for (let i = 0; i < enemies.length; i++) {
         const a = enemies[i];
         if (a.isDead) continue;
-
         const aRadius = a.width / 2 + (a instanceof Tank ? TANK_RADIUS_BONUS : 0);
         const acx     = a.x + a.width  / 2;
         const acy     = a.y + a.height / 2;
@@ -160,7 +147,6 @@ export class HordeSystem {
         for (let j = i + 1; j < enemies.length; j++) {
           const b = enemies[j];
           if (b.isDead) continue;
-
           const bRadius = b.width / 2 + (b instanceof Tank ? TANK_RADIUS_BONUS : 0);
           const bcx     = b.x + b.width  / 2;
           const bcy     = b.y + b.height / 2;
@@ -169,7 +155,6 @@ export class HordeSystem {
           const dy   = bcy - acy;
           const dist = Math.sqrt(dx * dx + dy * dy) || 0.01;
           const minD = aRadius + bRadius;
-
           if (dist >= minD) continue;
 
           const overlap  = (minD - dist) * SEPARATION_STRENGTH;
@@ -194,8 +179,6 @@ export class HordeSystem {
 
   // ============================================================
   // [🧱 BLOCK: Enforce Safe Zone]
-  // Any enemy whose center is north of npc.safeLineY gets
-  // pushed back south and loses all northward velocity.
   // ============================================================
   private enforceSafeZone(
     enemies: (Grunt | Shooter | Tank)[],
@@ -212,9 +195,32 @@ export class HordeSystem {
   }
 
   // ============================================================
+  // [🧱 BLOCK: Resolve Parry vs Melee Enemy]
+  // Called when player and enemy are in contact.
+  // Returns true if a parry was triggered (enemy stunned).
+  // ============================================================
+  private tryResolveParry(player: Player, enemy: Grunt | Shooter | Tank): boolean {
+    if (!player.isParrying) return false;
+    const hit = player.tryParry();
+    if (!hit) return false;
+
+    enemy.applyStun(PARRY_STUN_MS);
+
+    // Visual burst
+    return true;
+  }
+
+  // ============================================================
+  // [🧱 BLOCK: Resolve Block vs Hit]
+  // Returns the final damage after block reduction (or full if not blocking).
+  // ============================================================
+  private resolveBlock(player: Player, rawDamage: number): number {
+    if (player.isBlocking) return player.applyBlockedHit(rawDamage);
+    return rawDamage;
+  }
+
+  // ============================================================
   // [🧱 BLOCK: Update]
-  // Handles both 'horde' and 'elite' phases — elite uses a
-  // larger threshold and the spawnEliteWave composition.
   // ============================================================
   update(
     state:  GameState,
@@ -228,66 +234,103 @@ export class HordeSystem {
     const threshold = this.getThreshold(rs.floor, isElite);
     const thresholdMet = state.kills >= threshold;
 
-    // ── Door ───────────────────────────────────────────────
+    // ── Door ─────────────────────────────────────────────────
     if (state.door) {
       state.door.update();
       if (thresholdMet && !state.door.isActive) state.door.activate();
       state.door.checkPlayerProximity(player);
     }
 
-    // ── Shop NPC ───────────────────────────────────────────
+    // ── Shop NPC ─────────────────────────────────────────────
     if (state.shopNpc) {
       state.shopNpc.update();
       if (thresholdMet && !state.shopNpc.isActive) state.shopNpc.activate();
       state.shopNpc.checkPlayerProximity(player);
     }
 
-    // ── Enemy update + melee hits ──────────────────────────
+    // ── Enemy update + melee hits ─────────────────────────────
     state.enemies.forEach((enemy) => {
-      enemy.update(player, worldW, worldH);
+      // Stunned enemies skip their AI but still get ticked
+      if (!enemy.isStunned) {
+        enemy.update(player, worldW, worldH);
+      } else {
+        // tickStun is called inside update() normally, but since we skip
+        // update() we tick it manually here
+        (enemy as any).stunTimer -= 16;
+        if ((enemy as any).stunTimer < 0) (enemy as any).stunTimer = 0;
+        enemy.vx = 0;
+        enemy.vy = 0;
+      }
 
+      // Projectile drain for shooters
       if (enemy instanceof Shooter && enemy.pendingProjectiles.length > 0) {
         state.projectiles.push(...enemy.pendingProjectiles);
         enemy.pendingProjectiles = [];
       }
 
-      if (enemy.isMeleeHittingPlayer(player) && player.iFrames <= 0) {
+      // ── Melee contact ────────────────────────────────────
+      if (enemy.isMeleeHittingPlayer(player)) {
+        // Skip damage if enemy is stunned
+        if (enemy.isStunned) return;
+
+        // Parry check — must happen before damage
+        const parried = this.tryResolveParry(player, enemy);
+        if (parried) {
+          // Spawn parry flash particles
+          state.particles.push(...spawnBurst(
+            player.x + player.width  / 2,
+            player.y + player.height / 2,
+            "#38bdf8", 8, 1.2
+          ));
+          return; // no damage on successful parry
+        }
+
+        if (player.iFrames > 0) return;
+
+        let rawDmg: number;
         if (enemy instanceof Tank) {
-          const finalDmg = Math.round(enemy.meleeDamage * (1 - ps.damageReduction));
-          player.takeHit(finalDmg);
-          enemy.applyKnockback(player);
+          rawDmg = Math.round(enemy.meleeDamage * (1 - ps.damageReduction));
+          rawDmg = this.resolveBlock(player, rawDmg);
+          if (rawDmg > 0) {
+            player.takeHit(rawDmg);
+            enemy.applyKnockback(player);
+          }
         } else if (enemy instanceof Shooter) {
-          const finalDmg = Math.round(8 * (1 - ps.damageReduction));
-          player.takeHit(finalDmg);
+          rawDmg = Math.round(8 * (1 - ps.damageReduction));
+          rawDmg = this.resolveBlock(player, rawDmg);
+          if (rawDmg > 0) player.takeHit(rawDmg);
         } else {
-          const finalDmg = Math.round(15 * (1 - ps.damageReduction));
-          player.takeHit(finalDmg);
+          rawDmg = Math.round(15 * (1 - ps.damageReduction));
+          rawDmg = this.resolveBlock(player, rawDmg);
+          if (rawDmg > 0) player.takeHit(rawDmg);
         }
       }
     });
 
-    // ── Separation ────────────────────────────────────────
+    // ── Separation ────────────────────────────────────────────
     this.separateEnemies(state.enemies, worldW, worldH);
 
-    // ── Safe zone barrier ─────────────────────────────────
+    // ── Safe zone barrier ─────────────────────────────────────
     if (state.shopNpc?.isActive) {
       this.enforceSafeZone(state.enemies, state.shopNpc);
     }
 
-    // ── Weapon input + hit resolution ─────────────────────
+    // ── Weapon input + hit resolution ─────────────────────────
     this.weaponSystem.processInput(player);
 
     const playerCX = player.x + player.width  / 2;
     const playerCY = player.y + player.height / 2;
-    const isHeavy  = player.attackType === "heavy";
+    const isHeavy  = player.attackType === "heavy" || player.attackType === "charged_heavy";
 
     const hitEnemies = this.weaponSystem.resolveHitsCustom(
       player, state.enemies, ps.atkBonus,
       (enemy, amount) => {
+        // Bonus damage vs stunned enemy (parry vulnerable window)
+        const finalAmt = enemy.isStunned ? Math.round(amount * PARRY_VULN_MULT) : amount;
         if (enemy instanceof Tank) {
-          enemy.takeDamageFrom(amount, playerCX, playerCY, isHeavy);
+          enemy.takeDamageFrom(finalAmt, playerCX, playerCY, isHeavy);
         } else {
-          enemy.takeDamage(amount);
+          enemy.takeDamage(finalAmt);
         }
       }
     );
@@ -300,7 +343,7 @@ export class HordeSystem {
       });
     }
 
-    // ── Kill tracking + loot rolls ────────────────────────
+    // ── Kill tracking + loot rolls ────────────────────────────
     const before      = state.enemies.length;
     const deadEnemies = state.enemies.filter((e) => e.isDead);
     state.enemies     = state.enemies.filter((e) => !e.isDead);
@@ -332,7 +375,6 @@ export class HordeSystem {
           enemy.color, 6
         ));
 
-        // ── Item drop roll — elite room gets bonus drop chance ──
         if (state.pendingLoot.length < PENDING_LOOT_CAP) {
           const baseChance = DROP_CHANCE[type];
           const chance     = isElite ? baseChance * ELITE_DROP_MULT : baseChance;
@@ -353,7 +395,7 @@ export class HordeSystem {
       });
     }
 
-    // ── Item drop pickup ───────────────────────────────────
+    // ── Item drop pickup ──────────────────────────────────────
     state.itemDrops = state.itemDrops.filter((drop) => {
       if (drop.collected) return false;
       if (state.pendingLoot.length >= PENDING_LOOT_CAP) {
@@ -361,14 +403,11 @@ export class HordeSystem {
         return !drop.collected;
       }
       const pickedUp = drop.update(player);
-      if (pickedUp) {
-        state.pendingLoot.push(drop.item);
-        return false;
-      }
+      if (pickedUp) { state.pendingLoot.push(drop.item); return false; }
       return !drop.collected;
     });
 
-    // ── Wave spawning ─────────────────────────────────────
+    // ── Wave spawning ─────────────────────────────────────────
     const now          = Date.now();
     const graceElapsed = now - state.roomEntryTime;
     const graceDone    = graceElapsed >= GRACE_PERIOD_MS;
@@ -376,7 +415,6 @@ export class HordeSystem {
     if (!thresholdMet) {
       const killsLeft = threshold - state.kills;
       if (killsLeft > 0 && state.alive === 0 && graceDone && now - state.lastSpawn > 1000) {
-        // Elite waves are larger and use the elite spawn function
         const baseCount  = Math.min(WAVE_SIZE, killsLeft);
         const spawnCount = isElite
           ? Math.min(Math.round(WAVE_SIZE * ELITE_WAVE_MULT), killsLeft)
@@ -391,7 +429,6 @@ export class HordeSystem {
         state.lastSpawn = now;
       }
     } else {
-      // Post-threshold farming spawns — elite still uses elite composition
       if (now - state.lastSpawn > FARMING_SPAWN_INTERVAL) {
         const [newEnemy] = isElite
           ? spawnEliteWave(1, worldW, worldH, rs.floor)
@@ -402,23 +439,38 @@ export class HordeSystem {
       }
     }
 
-    // ── Projectiles ───────────────────────────────────────
+    // ── Projectiles (parry deflects, block absorbs) ───────────
     state.projectiles.forEach((proj) => {
       proj.update();
-      if (proj.isHittingPlayer(player) && player.iFrames <= 0) {
-        const finalDmg = Math.round(proj.damage * (1 - ps.damageReduction));
-        player.takeHit(finalDmg);
-        proj.isDone = true;
+      if (!proj.isHittingPlayer(player)) return;
+
+      // Parry deflects projectiles
+      if (player.isParrying) {
+        const parried = player.tryParry();
+        if (parried) {
+          proj.isDone = true;
+          state.particles.push(...spawnBurst(
+            proj.x, proj.y, "#38bdf8", 6, 1.0
+          ));
+          return;
+        }
       }
+
+      if (player.iFrames > 0) { proj.isDone = true; return; }
+
+      let rawDmg = Math.round(proj.damage * (1 - ps.damageReduction));
+      rawDmg = this.resolveBlock(player, rawDmg);
+      if (rawDmg > 0) player.takeHit(rawDmg);
+      proj.isDone = true;
     });
     state.projectiles = state.projectiles.filter((p) => !p.isDone);
 
-    // ── Stamina regen ─────────────────────────────────────
+    // ── Stamina regen ─────────────────────────────────────────
     if (player.stamina < player.maxStamina) {
       player.stamina = Math.min(player.maxStamina, player.stamina + ps.staminaRegenRate);
     }
 
-    // ── Gold collection ───────────────────────────────────
+    // ── Gold collection ───────────────────────────────────────
     const goldCollected = this.goldSystem.update(state, player);
     state.totalGoldEarned += goldCollected;
 

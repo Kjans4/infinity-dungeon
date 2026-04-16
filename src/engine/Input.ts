@@ -6,12 +6,10 @@ export class InputHandler {
   constructor() {
     this.keys = new Set();
 
-    // Listen for key presses
     window.addEventListener("keydown", (e) => {
-      this.keys.add(e.code); // e.g., 'KeyW', 'KeyA', 'KeyJ'
+      this.keys.add(e.code);
     });
 
-    // Listen for key releases
     window.addEventListener("keyup", (e) => {
       this.keys.delete(e.code);
     });
@@ -21,17 +19,22 @@ export class InputHandler {
     return this.keys.has(code);
   }
 
-  // Helper to check for specific actions
+  // ============================================================
+  // [🧱 BLOCK: Movement Snapshot]
+  // Called every frame by Player.update().
+  // block (L) — held for blocking / tapped for parry
+  // ============================================================
   get movement() {
     return {
-      up: this.isPressed("KeyW"),
-      down: this.isPressed("KeyS"),
-      left: this.isPressed("KeyA"),
+      up:    this.isPressed("KeyW"),
+      down:  this.isPressed("KeyS"),
+      left:  this.isPressed("KeyA"),
       right: this.isPressed("KeyD"),
-      dash: this.isPressed("KeyC"),
-      jump: this.isPressed("Space"),
+      dash:  this.isPressed("KeyC"),
+      jump:  this.isPressed("Space"),
       light: this.isPressed("KeyJ"),
       heavy: this.isPressed("KeyK"),
+      block: this.isPressed("KeyL"),
     };
   }
 }

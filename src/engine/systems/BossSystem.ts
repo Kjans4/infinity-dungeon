@@ -16,6 +16,14 @@ import { spawnBurst }                  from "../Particle";
 import { WeaponSystem }                from "./WeaponSystem";
 import { getRandomShopItems }          from "../items/ItemPool";
 
+// ============================================================
+// [🧱 BLOCK: Parry / Stagger Constants]
+// Bosses cannot be fully stunned — they stagger instead.
+// During stagger they freeze briefly and take bonus damage.
+// ============================================================
+const BOSS_STAGGER_MS    = 600;   // freeze duration
+const BOSS_PARRY_VULN_MULT = 1.5; // damage bonus during stagger
+
 const BOSS_GOLD = { min: 80, max: 120 };
 
 function randInt(min: number, max: number): number {
@@ -31,9 +39,6 @@ function spawnBossGold(state: GameState, x: number, y: number) {
   }
 }
 
-// ============================================================
-// [🧱 BLOCK: Spawn Boss Item Drop]
-// ============================================================
 function spawnBossItemDrop(state: GameState, x: number, y: number) {
   if (state.pendingLoot.length >= PENDING_LOOT_CAP) return;
   const ownedCharmIds   = state.playerStats.charms.map((c) => c.id);
@@ -50,7 +55,6 @@ function spawnBossItemDrop(state: GameState, x: number, y: number) {
 
 // ============================================================
 // [🧱 BLOCK: getBossName]
-// Returns display name for announcement strings.
 // ============================================================
 export function getBossName(boss: AnyBoss): string {
   if (boss instanceof Brute)    return 'BRUTE';
@@ -62,10 +66,21 @@ export function getBossName(boss: AnyBoss): string {
 }
 
 // ============================================================
+// [🧱 BLOCK: Boss Stagger State]
+// Stored locally since boss classes don't own this state.
+// ============================================================
+interface BossStagger {
+  timer: number;   // ms remaining
+}
+
+// ============================================================
 // [🧱 BLOCK: BossSystem]
 // ============================================================
 export class BossSystem {
   private weaponSystem = new WeaponSystem();
+  private stagger: BossStagger = { timer: 0 };
+
+  get isBossStaggered(): boolean { return this.stagger.timer > 0; }
 
   // ============================================================
   // [🧱 BLOCK: Setup]
@@ -86,6 +101,7 @@ export class BossSystem {
     state.shopNpc     = null;
 
     state.boss = selectBoss(BOSS_WORLD_W / 2 - 50, 80, rs.floor);
+    this.stagger = { timer: 0 };
     state.camera.update(state.player, BOSS_WORLD_W, BOSS_WORLD_H);
     state.playerStats.applyToPlayer(state.player);
   }
@@ -99,6 +115,7 @@ export class BossSystem {
     state.itemDrops   = [];
     state.particles   = [];
     state.projectiles = [];
+    this.stagger      = { timer: 0 };
   }
 
   // ============================================================
@@ -114,66 +131,114 @@ export class BossSystem {
     if (!boss) return { event: null, goldCollected: 0 };
 
     const ps = state.playerStats;
-    boss.update(player, worldW, worldH);
 
-    // ── Drain boss projectiles ────────────────────────────
+    // ── Tick stagger ──────────────────────────────────────────
+    if (this.stagger.timer > 0) {
+      this.stagger.timer -= 16;
+      if (this.stagger.timer < 0) this.stagger.timer = 0;
+      // Boss is frozen — skip its update
+    } else {
+      boss.update(player, worldW, worldH);
+    }
+
+    // ── Drain boss projectiles ─────────────────────────────────
     if (boss.pendingProjectiles.length > 0) {
       state.projectiles.push(...boss.pendingProjectiles);
       boss.pendingProjectiles = [];
     }
 
-    // ── Mage: check fake projectile hits on player ────────
-    // Fakes push projectiles into boss.pendingProjectiles
-    // during boss.update() above, so they're already drained.
-    // We also need to hit-test fakes against player weapon.
+    // ── Mage fakes ────────────────────────────────────────────
     if (boss instanceof Mage) {
       this.resolveWeaponHitMageFakes(player, boss, ps.atkBonus);
     }
 
-    // ── Projectile hits on player ─────────────────────────
+    // ── Projectile hits on player ─────────────────────────────
     state.projectiles.forEach((proj) => {
       proj.update();
-      if (proj.isHittingPlayer(player) && player.iFrames <= 0) {
-        const finalDmg = Math.round(proj.damage * (1 - ps.damageReduction));
-        player.takeHit(finalDmg);
-        proj.isDone = true;
+      if (!proj.isHittingPlayer(player)) return;
+
+      // Parry deflects boss projectiles too
+      if (player.isParrying) {
+        const parried = player.tryParry();
+        if (parried) {
+          proj.isDone = true;
+          state.particles.push(...spawnBurst(proj.x, proj.y, "#38bdf8", 6, 1.0));
+          return;
+        }
       }
+
+      if (player.iFrames > 0) { proj.isDone = true; return; }
+
+      let rawDmg = Math.round(proj.damage * (1 - ps.damageReduction));
+      if (player.isBlocking) rawDmg = player.applyBlockedHit(rawDmg);
+      if (rawDmg > 0) player.takeHit(rawDmg);
+      proj.isDone = true;
     });
     state.projectiles = state.projectiles.filter((p) => !p.isDone);
 
-    // ── Boss contact damage ───────────────────────────────
-    if (boss.isCollidingWithPlayer(player) && player.iFrames <= 0) {
-      const final = Math.round(boss.contactDamage * (1 - ps.damageReduction));
-      player.takeHit(final);
-      if (boss instanceof Brute || boss instanceof Colossus || boss instanceof Shade) {
-        boss.damageCooldown = 800;
+    // ── Boss contact damage ───────────────────────────────────
+    if (boss.isCollidingWithPlayer(player) && player.iFrames <= 0 && !this.isBossStaggered) {
+
+      // Parry check vs contact
+      if (player.isParrying) {
+        const parried = player.tryParry();
+        if (parried) {
+          this.stagger.timer = BOSS_STAGGER_MS;
+          state.particles.push(...spawnBurst(
+            player.x + player.width  / 2,
+            player.y + player.height / 2,
+            "#38bdf8", 10, 1.4
+          ));
+        }
+      } else {
+        let rawDmg = Math.round(boss.contactDamage * (1 - ps.damageReduction));
+        if (player.isBlocking) rawDmg = player.applyBlockedHit(rawDmg);
+        if (rawDmg > 0) player.takeHit(rawDmg);
+        if (boss instanceof Brute || boss instanceof Colossus || boss instanceof Shade) {
+          boss.damageCooldown = 800;
+        }
       }
     }
 
-    // ── Shade: lunge hit check ────────────────────────────
-    if (boss instanceof Shade) {
+    // ── Shade lunge ───────────────────────────────────────────
+    if (boss instanceof Shade && !this.isBossStaggered) {
       if (boss.isLungeHittingPlayer(player) && player.iFrames <= 0) {
-        const final = Math.round(boss.lungeDamage * (1 - ps.damageReduction));
-        player.takeHit(final);
+        // Parry vs lunge
+        if (player.isParrying) {
+          const parried = player.tryParry();
+          if (parried) {
+            this.stagger.timer = BOSS_STAGGER_MS;
+            state.particles.push(...spawnBurst(
+              player.x + player.width  / 2,
+              player.y + player.height / 2,
+              "#38bdf8", 10, 1.4
+            ));
+          }
+        } else {
+          let rawDmg = Math.round(boss.lungeDamage * (1 - ps.damageReduction));
+          if (player.isBlocking) rawDmg = player.applyBlockedHit(rawDmg);
+          if (rawDmg > 0) player.takeHit(rawDmg);
+        }
       }
     }
 
-    // ── Boss slam / stomp AoE ─────────────────────────────
-    if (boss.isSlamHittingPlayer(player) && player.iFrames <= 0) {
-      const final = Math.round(boss.slamDamage * (1 - ps.damageReduction));
-      player.takeHit(final);
+    // ── Slam / stomp AoE — block reduces, parry doesn't apply ──
+    if (boss.isSlamHittingPlayer(player) && player.iFrames <= 0 && !this.isBossStaggered) {
+      let rawDmg = Math.round(boss.slamDamage * (1 - ps.damageReduction));
+      if (player.isBlocking) rawDmg = player.applyBlockedHit(rawDmg);
+      if (rawDmg > 0) player.takeHit(rawDmg);
     }
 
-    // ── Weapon input + hit vs boss ────────────────────────
+    // ── Weapon input + hit vs boss ─────────────────────────────
     this.weaponSystem.processInput(player);
     this.resolveWeaponHit(player, boss, ps.atkBonus);
 
-    // ── Stamina regen ─────────────────────────────────────
+    // ── Stamina regen ─────────────────────────────────────────
     if (player.stamina < player.maxStamina) {
       player.stamina = Math.min(player.maxStamina, player.stamina + ps.staminaRegenRate);
     }
 
-    // ── Gold + item drop collection ───────────────────────
+    // ── Gold + item drop collection ───────────────────────────
     let goldCollected = 0;
     state.goldDrops.forEach((drop) => {
       const was = drop.collected;
@@ -193,12 +258,12 @@ export class BossSystem {
       return !drop.collected;
     });
 
-    // ── Enrage event ──────────────────────────────────────
+    // ── Enrage event ──────────────────────────────────────────
     if (boss.justEnragedThisFrame) {
       return { event: "enraged", goldCollected };
     }
 
-    // ── Boss death ────────────────────────────────────────
+    // ── Boss death ────────────────────────────────────────────
     if (boss.isDead) {
       state.totalKills += 1;
       const bx = boss.x + boss.width  / 2;
@@ -214,15 +279,23 @@ export class BossSystem {
 
   // ============================================================
   // [🧱 BLOCK: Resolve Weapon Hit vs Boss]
-  // Routes to boss-specific takeDamage when needed.
+  // Applies stagger vulnerability bonus if active.
   // ============================================================
   private resolveWeaponHit(player: Player, boss: AnyBoss, atkBonus: number): void {
     if (!player.isAttacking || !player.equippedWeapon || !player.attackType) return;
 
     const weapon  = player.equippedWeapon;
-    const mode    = player.attackType;
+    const mode    = player.attackType === 'charged_light' ? 'light' : 'heavy';
     const atk     = weapon.getAttack(mode);
-    const damage  = atk.damage + atkBonus;
+    let   damage  = atk.damage + atkBonus;
+
+    // Charged multipliers
+    if (player.attackType === 'charged_light') damage = Math.round(damage * 2.5);
+    if (player.attackType === 'charged_heavy') damage = Math.round(damage * 2.0);
+
+    // Stagger vulnerability
+    if (this.isBossStaggered) damage = Math.round(damage * BOSS_PARRY_VULN_MULT);
+
     const isHeavy = mode === 'heavy';
     const facing  = (isHeavy && player.lockedFacing) ? player.lockedFacing : player.facing;
 
@@ -242,17 +315,18 @@ export class BossSystem {
 
   // ============================================================
   // [🧱 BLOCK: Resolve Weapon Hit vs Mage Fakes]
-  // Checks player weapon against each live fake.
-  // Fakes die in one hit regardless of damage amount.
   // ============================================================
   private resolveWeaponHitMageFakes(player: Player, mage: Mage, atkBonus: number): void {
     if (!player.isAttacking || !player.equippedWeapon || !player.attackType) return;
     if (mage.fakes.length === 0) return;
 
     const weapon  = player.equippedWeapon;
-    const mode    = player.attackType;
+    const mode    = player.attackType === 'charged_light' ? 'light' : 'heavy';
     const atk     = weapon.getAttack(mode);
-    const damage  = atk.damage + atkBonus;
+    let   damage  = atk.damage + atkBonus;
+    if (player.attackType === 'charged_light') damage = Math.round(damage * 2.5);
+    if (player.attackType === 'charged_heavy') damage = Math.round(damage * 2.0);
+
     const isHeavy = mode === 'heavy';
     const facing  = (isHeavy && player.lockedFacing) ? player.lockedFacing : player.facing;
     const px = player.x + player.width  / 2;
@@ -270,8 +344,20 @@ export class BossSystem {
 
   // ============================================================
   // [🧱 BLOCK: Draw]
+  // Staggered boss gets a cyan flash overlay.
   // ============================================================
   draw(state: GameState, ctx: CanvasRenderingContext2D, camera: Camera, player: Player) {
+    // Boss stagger visual — cyan tint on boss
+    if (state.boss && this.isBossStaggered) {
+      const progress = this.stagger.timer / BOSS_STAGGER_MS;
+      const sx = camera.toScreenX(state.boss.x);
+      const sy = camera.toScreenY(state.boss.y);
+      ctx.globalAlpha = 0.3 * progress * (Math.floor(Date.now() / 80) % 2 === 0 ? 1 : 0.3);
+      ctx.fillStyle   = "#38bdf8";
+      ctx.fillRect(sx, sy, state.boss.width, state.boss.height);
+      ctx.globalAlpha = 1;
+    }
+
     state.boss?.draw(ctx, camera);
     state.projectiles.forEach((p) => p.draw(ctx, camera));
     state.itemDrops.forEach((d)   => d.draw(ctx, camera));

@@ -25,17 +25,18 @@ interface Props {
 // [🧱 BLOCK: Controls Reference]
 // ============================================================
 const CONTROLS = [
-  { key: "W A S D", desc: "Move"          },
-  { key: "J",       desc: "Light Attack"  },
-  { key: "K",       desc: "Heavy Attack"  },
-  { key: "C",       desc: "Dash"          },
-  { key: "F",       desc: "Talk to NPC"   },
-  { key: "Escape",  desc: "Pause / Resume"},
+  { key: "W A S D", desc: "Move"                  },
+  { key: "J",       desc: "Light Attack / Charge"  },
+  { key: "K",       desc: "Heavy Attack / Charge"  },
+  { key: "L (tap)", desc: "Parry"                  },
+  { key: "L (hold)",desc: "Block"                  },
+  { key: "C",       desc: "Dash"                   },
+  { key: "F",       desc: "Talk to NPC"            },
+  { key: "Escape",  desc: "Pause / Resume"         },
 ];
 
 // ============================================================
 // [🧱 BLOCK: Stats Panel]
-// Shows current HP, gold, stat levels, weapon, charms.
 // ============================================================
 function StatsPanel({ hp, maxHp, gold, playerStats }: {
   hp: number; maxHp: number; gold: number; playerStats: PlayerStats;
@@ -46,7 +47,6 @@ function StatsPanel({ hp, maxHp, gold, playerStats }: {
   return (
     <div className="pause-stats">
 
-      {/* ── HP bar ── */}
       <div className="pause-stats__section">
         <div className="pause-stats__row-spread">
           <span className="pause-stats__label">❤️ HP</span>
@@ -62,13 +62,11 @@ function StatsPanel({ hp, maxHp, gold, playerStats }: {
         </div>
       </div>
 
-      {/* ── Gold ── */}
       <div className="pause-stats__row-spread">
         <span className="pause-stats__label">💰 Gold</span>
         <span className="pause-stats__value" style={{ color: "#facc15" }}>{gold}g</span>
       </div>
 
-      {/* ── Stat levels ── */}
       <div className="pause-stats__section">
         <p className="pause-stats__sublabel">Stats</p>
         <div className="pause-stats__stat-grid">
@@ -82,7 +80,6 @@ function StatsPanel({ hp, maxHp, gold, playerStats }: {
         </div>
       </div>
 
-      {/* ── Weapon ── */}
       <div className="pause-stats__section">
         <p className="pause-stats__sublabel">Weapon</p>
         {playerStats.equippedWeaponItem ? (
@@ -104,7 +101,6 @@ function StatsPanel({ hp, maxHp, gold, playerStats }: {
         )}
       </div>
 
-      {/* ── Charms ── */}
       <div className="pause-stats__section">
         <p className="pause-stats__sublabel">
           Charms ({playerStats.charms.length}/{playerStats.maxCharms})
@@ -140,7 +136,6 @@ export default function PauseOverlay({
     <div className="pause-backdrop">
       <div className="pause-card">
 
-        {/* ── Title ── */}
         <div className="pause-title-block">
           <p className="pause-location">Floor {floor} · Room {room}</p>
           <p className="pause-title">PAUSED</p>
@@ -148,16 +143,13 @@ export default function PauseOverlay({
 
         <div className="pause-divider" />
 
-        {/* ── Two-column layout: Stats | Controls ── */}
         <div className="pause-columns">
 
-          {/* Stats */}
           <StatsPanel
             hp={hp} maxHp={maxHp}
             gold={gold} playerStats={playerStats}
           />
 
-          {/* Controls */}
           <div className="pause-controls">
             <p className="pause-controls__label">Controls</p>
             {CONTROLS.map(({ key, desc }) => (
@@ -172,7 +164,6 @@ export default function PauseOverlay({
 
         <div className="pause-divider" />
 
-        {/* ── Buttons ── */}
         <div className="pause-buttons">
           <button
             onClick={onResume}
