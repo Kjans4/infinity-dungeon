@@ -12,6 +12,7 @@ import { GoldSystem }                           from "./GoldSystem";
 import { WeaponSystem }                         from "./WeaponSystem";
 import { spawnBurst }                           from "../Particle";
 import { getRandomShopItems }                   from "../items/ItemPool";
+import { circleCircle, rectCenter }             from "../Collision";
 
 const WAVE_SIZE              = 8;
 const BASE_THRESHOLD         = 20;
@@ -24,10 +25,13 @@ const GRACE_PERIOD_MS        = 1500;
 // ============================================================
 // [🧱 BLOCK: Parry Constants]
 // ============================================================
-const PARRY_STUN_MS          = 1200;  // horde enemy stun duration
-const PARRY_STUN_BOSS_MS     = 600;   // boss stagger duration
-// During parry stun window the enemy takes bonus damage
-const PARRY_VULN_MULT        = 1.5;
+const PARRY_STUN_MS   = 1200;  // horde enemy stun duration on successful parry
+const PARRY_VULN_MULT = 1.5;   // damage bonus vs stunned (parry-vulnerable) enemy
+
+// Radius within which an enemy in windup also counts as
+// "in range" for a player parry. Slightly larger than melee
+// range so the player doesn't have to be pixel-perfect.
+const PARRY_WINDUP_RADIUS = 80;
 
 // ============================================================
 // [🧱 BLOCK: Separation Constants]
@@ -195,24 +199,43 @@ export class HordeSystem {
   }
 
   // ============================================================
-  // [🧱 BLOCK: Resolve Parry vs Melee Enemy]
-  // Called when player and enemy are in contact.
-  // Returns true if a parry was triggered (enemy stunned).
+  // [🧱 BLOCK: Is Enemy In Parry Range]
+  // Returns true when an enemy's center is within PARRY_WINDUP_RADIUS
+  // of the player's center. Used to check windup-phase parries.
   // ============================================================
-  private tryResolveParry(player: Player, enemy: Grunt | Shooter | Tank): boolean {
+  private isEnemyInParryRange(player: Player, enemy: Grunt | Shooter | Tank): boolean {
+    const { x: px, y: py } = rectCenter(player);
+    const { x: ex, y: ey } = rectCenter(enemy);
+    return circleCircle(px, py, PARRY_WINDUP_RADIUS, ex, ey, 1);
+  }
+
+  // ============================================================
+  // [🧱 BLOCK: Resolve Parry]
+  // Unified parry resolution used for both windup proximity and
+  // direct melee contact. Stuns the enemy and spawns VFX.
+  // Returns true if parry was triggered.
+  // ============================================================
+  private resolveParry(
+    player:  Player,
+    enemy:   Grunt | Shooter | Tank,
+    state:   GameState
+  ): boolean {
     if (!player.isParrying) return false;
     const hit = player.tryParry();
     if (!hit) return false;
 
     enemy.applyStun(PARRY_STUN_MS);
-
-    // Visual burst
+    state.particles.push(...spawnBurst(
+      player.x + player.width  / 2,
+      player.y + player.height / 2,
+      "#38bdf8", 10, 1.3
+    ));
     return true;
   }
 
   // ============================================================
-  // [🧱 BLOCK: Resolve Block vs Hit]
-  // Returns the final damage after block reduction (or full if not blocking).
+  // [🧱 BLOCK: Resolve Block]
+  // Returns final damage after block reduction (or full if not blocking).
   // ============================================================
   private resolveBlock(player: Player, rawDamage: number): number {
     if (player.isBlocking) return player.applyBlockedHit(rawDamage);
@@ -248,62 +271,74 @@ export class HordeSystem {
       state.shopNpc.checkPlayerProximity(player);
     }
 
-    // ── Enemy update + melee hits ─────────────────────────────
+    // ── Enemy update + combat resolution ─────────────────────
     state.enemies.forEach((enemy) => {
-      // Stunned enemies skip their AI but still get ticked
+
+      // Stunned enemies freeze AI but still tick stun timer
       if (!enemy.isStunned) {
         enemy.update(player, worldW, worldH);
       } else {
-        // tickStun is called inside update() normally, but since we skip
-        // update() we tick it manually here
         (enemy as any).stunTimer -= 16;
         if ((enemy as any).stunTimer < 0) (enemy as any).stunTimer = 0;
         enemy.vx = 0;
         enemy.vy = 0;
       }
 
-      // Projectile drain for shooters
+      // Drain projectiles from Shooters
       if (enemy instanceof Shooter && enemy.pendingProjectiles.length > 0) {
         state.projectiles.push(...enemy.pendingProjectiles);
         enemy.pendingProjectiles = [];
       }
 
+      // ── Windup-phase parry window ─────────────────────────
+      // If the player taps parry while an enemy is winding up
+      // AND within range, count it as a valid parry — this is
+      // the core fix: parry no longer requires waiting for the
+      // strike hitbox to land, which was nearly impossible.
+      if (!enemy.isStunned && !enemy.isDead) {
+        const isWindingUp =
+          (enemy instanceof Grunt    && (enemy as any).attackState === 'windup') ||
+          (enemy instanceof Shooter  && (enemy as any).attackState === 'windup') ||
+          (enemy instanceof Tank     && (enemy as any).tankState   === 'windup');
+
+        if (isWindingUp && this.isEnemyInParryRange(player, enemy)) {
+          // Attempt parry — resolveParry handles the isParrying check
+          this.resolveParry(player, enemy, state);
+          // Note: if parry fires here we don't return — the strike
+          // contact check below will be skipped anyway because the
+          // enemy is now stunned.
+        }
+      }
+
       // ── Melee contact ────────────────────────────────────
-      if (enemy.isMeleeHittingPlayer(player)) {
-        // Skip damage if enemy is stunned
-        if (enemy.isStunned) return;
+      if (!enemy.isMeleeHittingPlayer(player)) return;
+      if (enemy.isStunned) return;  // stunned enemy can't deal contact damage
 
-        // Parry check — must happen before damage
-        const parried = this.tryResolveParry(player, enemy);
-        if (parried) {
-          // Spawn parry flash particles
-          state.particles.push(...spawnBurst(
-            player.x + player.width  / 2,
-            player.y + player.height / 2,
-            "#38bdf8", 8, 1.2
-          ));
-          return; // no damage on successful parry
+      // Parry check on direct contact (fallback for fast enemies
+      // or cases the windup check missed)
+      if (player.isParrying) {
+        const parried = this.resolveParry(player, enemy, state);
+        if (parried) return;
+      }
+
+      if (player.iFrames > 0) return;
+
+      let rawDmg: number;
+      if (enemy instanceof Tank) {
+        rawDmg = Math.round(enemy.meleeDamage * (1 - ps.damageReduction));
+        rawDmg = this.resolveBlock(player, rawDmg);
+        if (rawDmg > 0) {
+          player.takeHit(rawDmg);
+          enemy.applyKnockback(player);
         }
-
-        if (player.iFrames > 0) return;
-
-        let rawDmg: number;
-        if (enemy instanceof Tank) {
-          rawDmg = Math.round(enemy.meleeDamage * (1 - ps.damageReduction));
-          rawDmg = this.resolveBlock(player, rawDmg);
-          if (rawDmg > 0) {
-            player.takeHit(rawDmg);
-            enemy.applyKnockback(player);
-          }
-        } else if (enemy instanceof Shooter) {
-          rawDmg = Math.round(8 * (1 - ps.damageReduction));
-          rawDmg = this.resolveBlock(player, rawDmg);
-          if (rawDmg > 0) player.takeHit(rawDmg);
-        } else {
-          rawDmg = Math.round(15 * (1 - ps.damageReduction));
-          rawDmg = this.resolveBlock(player, rawDmg);
-          if (rawDmg > 0) player.takeHit(rawDmg);
-        }
+      } else if (enemy instanceof Shooter) {
+        rawDmg = Math.round(8 * (1 - ps.damageReduction));
+        rawDmg = this.resolveBlock(player, rawDmg);
+        if (rawDmg > 0) player.takeHit(rawDmg);
+      } else {
+        rawDmg = Math.round(15 * (1 - ps.damageReduction));
+        rawDmg = this.resolveBlock(player, rawDmg);
+        if (rawDmg > 0) player.takeHit(rawDmg);
       }
     });
 
@@ -325,7 +360,7 @@ export class HordeSystem {
     const hitEnemies = this.weaponSystem.resolveHitsCustom(
       player, state.enemies, ps.atkBonus,
       (enemy, amount) => {
-        // Bonus damage vs stunned enemy (parry vulnerable window)
+        // Parry-stunned enemies take bonus damage
         const finalAmt = enemy.isStunned ? Math.round(amount * PARRY_VULN_MULT) : amount;
         if (enemy instanceof Tank) {
           enemy.takeDamageFrom(finalAmt, playerCX, playerCY, isHeavy);
@@ -444,14 +479,11 @@ export class HordeSystem {
       proj.update();
       if (!proj.isHittingPlayer(player)) return;
 
-      // Parry deflects projectiles
       if (player.isParrying) {
         const parried = player.tryParry();
         if (parried) {
           proj.isDone = true;
-          state.particles.push(...spawnBurst(
-            proj.x, proj.y, "#38bdf8", 6, 1.0
-          ));
+          state.particles.push(...spawnBurst(proj.x, proj.y, "#38bdf8", 6, 1.0));
           return;
         }
       }
