@@ -1,12 +1,13 @@
 /* ============================================================
    PauseOverlay — src/styles/pause.css
-   All styles for the PauseOverlay component
+   Fantasy RPG redesign — matches menu right-panel aesthetic
    ============================================================ */
 
-/* ── Shared font ── */
+@import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700&family=Cinzel+Decorative:wght@400;700&family=IM+Fell+English:ital@0;1&display=swap');
+
 .pause-backdrop,
 .pause-backdrop * {
-  font-family: 'Courier New', monospace;
+  font-family: 'Cinzel', serif;
 }
 
 /* ============================================================
@@ -20,66 +21,149 @@
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  background: rgba(0, 0, 0, 0.75);
-  backdrop-filter: blur(6px);
-  -webkit-backdrop-filter: blur(6px);
+  background: rgba(0, 0, 0, 0.80);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
 }
 
 /* ============================================================
-   [🧱 BLOCK: Card]
+   [🧱 BLOCK: Card — Stone Panel]
+   Mirrors the menu right panel.
    ============================================================ */
 .pause-card {
-  background: rgba(10, 15, 30, 0.9);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 12px;
-  padding: 36px 48px;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 24px;
-  width: min(700px, 95vw);
+  position: relative;
+  background:
+    repeating-linear-gradient(
+      0deg,
+      rgba(255,255,255,0.008) 0px, rgba(255,255,255,0.008) 1px,
+      transparent 1px, transparent 44px
+    ),
+    repeating-linear-gradient(
+      90deg,
+      rgba(255,255,255,0.008) 0px, rgba(255,255,255,0.008) 1px,
+      transparent 1px, transparent 66px
+    ),
+    linear-gradient(180deg, #1a1208 0%, #110d06 40%, #0e0b06 60%, #1a1208 100%);
+
+  border: 1px solid #2e2008;
+  box-shadow:
+    0 0 0 1px #1e1608,
+    0 24px 60px rgba(0,0,0,0.8),
+    inset 0 1px 0 rgba(140,90,10,0.12);
+
+  padding: 0;
+  width: min(720px, 95vw);
   max-height: 90vh;
   overflow-y: auto;
 }
 
+/* ── Corner ornaments ── */
+.pause-card::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0;
+  width: 20px; height: 20px;
+  border-top:  2px solid #8B6914;
+  border-left: 2px solid #8B6914;
+  pointer-events: none;
+  z-index: 2;
+}
+.pause-card::after {
+  content: '';
+  position: absolute;
+  top: 0; right: 0;
+  width: 20px; height: 20px;
+  border-top:   2px solid #8B6914;
+  border-right: 2px solid #8B6914;
+  pointer-events: none;
+  z-index: 2;
+}
+
+/* Inner double-border */
+.pause-card-inner {
+  position: relative;
+  padding: 32px 40px 28px;
+  border: 1px solid #1e1608;
+  margin: 6px;
+}
+
+/* Bottom corners on inner */
+.pause-card-inner::before {
+  content: '';
+  position: absolute;
+  bottom: 0; left: 0;
+  width: 16px; height: 16px;
+  border-bottom: 1px solid #5a4010;
+  border-left:   1px solid #5a4010;
+}
+.pause-card-inner::after {
+  content: '';
+  position: absolute;
+  bottom: 0; right: 0;
+  width: 16px; height: 16px;
+  border-bottom: 1px solid #5a4010;
+  border-right:  1px solid #5a4010;
+}
+
 /* ============================================================
-   [🧱 BLOCK: Title]
+   [🧱 BLOCK: Title Block]
    ============================================================ */
 .pause-title-block {
   text-align: center;
+  margin-bottom: 4px;
 }
 
 .pause-location {
+  font-family: 'Cinzel', serif;
   font-size: 9px;
-  color: #475569;
-  letter-spacing: 0.3em;
+  color: #5a4010;
+  letter-spacing: 0.35em;
   text-transform: uppercase;
   margin-bottom: 6px;
 }
 
 .pause-title {
-  font-size: 32px;
-  font-weight: 900;
-  color: #f1f5f9;
-  letter-spacing: 0.1em;
+  font-family: 'Cinzel Decorative', serif;
+  font-size: 28px;
+  font-weight: 700;
+  color: #f0c040;
+  letter-spacing: 0.12em;
+  text-shadow: 0 0 20px rgba(240,192,64,0.25);
 }
 
 /* ============================================================
-   [🧱 BLOCK: Divider]
+   [🧱 BLOCK: Divider — Gem Rule]
+   Matches menu HRule exactly.
    ============================================================ */
 .pause-divider {
-  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 16px 0;
+}
+
+.pause-divider::before,
+.pause-divider::after {
+  content: '';
+  flex: 1;
   height: 1px;
-  background: rgba(255, 255, 255, 0.06);
+  background: #2e2008;
+}
+
+.pause-divider-gem {
+  width: 7px; height: 7px;
+  background: #6a4c10;
+  border: 1px solid #8B6914;
+  transform: rotate(45deg);
+  flex-shrink: 0;
 }
 
 /* ============================================================
-   [🧱 BLOCK: Two-column layout]
-   Stats on the left, controls on the right.
+   [🧱 BLOCK: Two-Column Layout]
    ============================================================ */
 .pause-columns {
   display: flex;
-  gap: 40px;
+  gap: 32px;
   width: 100%;
   align-items: flex-start;
 }
@@ -102,22 +186,26 @@
 }
 
 .pause-stats__sublabel {
-  font-size: 8px;
-  color: #334155;
-  letter-spacing: 0.2em;
+  font-family: 'Cinzel', serif;
+  font-size: 7px;
+  font-weight: 700;
+  color: #5a4010;
+  letter-spacing: 0.3em;
   text-transform: uppercase;
-  margin-bottom: 2px;
+  margin-bottom: 4px;
 }
 
 .pause-stats__label {
+  font-family: 'Cinzel', serif;
   font-size: 9px;
-  color: rgba(148, 163, 184, 0.7);
-  letter-spacing: 0.1em;
+  color: #8B6914;
+  letter-spacing: 0.12em;
   text-transform: uppercase;
 }
 
 .pause-stats__value {
-  font-size: 11px;
+  font-family: 'Cinzel', serif;
+  font-size: 12px;
   font-weight: 700;
 }
 
@@ -127,82 +215,80 @@
   align-items: center;
 }
 
-/* HP bar */
 .pause-stats__bar-track {
   width: 100%;
-  height: 4px;
-  background: rgba(30, 41, 59, 0.8);
-  border-radius: 2px;
+  height: 5px;
+  background: #0a0804;
+  border: 1px solid #2e2008;
   overflow: hidden;
 }
 
 .pause-stats__bar-fill {
   height: 100%;
-  border-radius: 2px;
   transition: width 0.2s ease;
 }
 
-/* Stat grid */
 .pause-stats__stat-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 4px 16px;
+  gap: 6px 20px;
 }
 
 .pause-stats__stat-row {
   display: flex;
   align-items: center;
   gap: 6px;
+  padding: 4px 8px;
+  background: rgba(255,255,255,0.02);
+  border: 1px solid #1e1608;
 }
 
-.pause-stats__stat-icon {
-  font-size: 12px;
-  width: 16px;
-}
+.pause-stats__stat-icon { font-size: 12px; width: 16px; }
 
 .pause-stats__stat-key {
-  font-size: 9px;
-  color: #64748b;
-  letter-spacing: 0.1em;
-  flex: 1;
-}
-
-.pause-stats__stat-val {
-  font-size: 11px;
-  font-weight: 700;
-  color: #facc15;
-}
-
-/* Weapon */
-.pause-stats__weapon {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  background: rgba(56, 189, 248, 0.05);
-  border: 1px solid rgba(56, 189, 248, 0.15);
-  border-radius: 6px;
-  padding: 6px 10px;
-}
-
-.pause-stats__weapon-icon {
-  font-size: 18px;
-}
-
-.pause-stats__weapon-name {
-  font-size: 10px;
-  font-weight: 700;
-  color: #f1f5f9;
-  margin-bottom: 1px;
-}
-
-.pause-stats__weapon-type {
+  font-family: 'Cinzel', serif;
   font-size: 8px;
-  color: #38bdf8;
-  letter-spacing: 0.1em;
+  color: #5a4010;
+  letter-spacing: 0.12em;
+  flex: 1;
   text-transform: uppercase;
 }
 
-/* Charms */
+.pause-stats__stat-val {
+  font-family: 'Cinzel', serif;
+  font-size: 11px;
+  font-weight: 700;
+  color: #f0c040;
+}
+
+.pause-stats__weapon {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: rgba(140,90,10,0.06);
+  border: 1px solid #3a2808;
+  border-left: 2px solid #8B6914;
+  padding: 8px 12px;
+}
+
+.pause-stats__weapon-icon { font-size: 20px; }
+
+.pause-stats__weapon-name {
+  font-family: 'Cinzel', serif;
+  font-size: 11px;
+  font-weight: 700;
+  color: #f0c040;
+  margin-bottom: 2px;
+}
+
+.pause-stats__weapon-type {
+  font-family: 'Cinzel', serif;
+  font-size: 8px;
+  color: #8B6914;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
 .pause-stats__charms {
   display: flex;
   flex-direction: column;
@@ -212,60 +298,75 @@
 .pause-stats__charm-row {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   font-size: 10px;
+  padding: 3px 8px;
+  border-left: 1px solid #3a2808;
 }
 
 .pause-stats__charm-name {
-  color: #94a3b8;
+  font-family: 'Cinzel', serif;
+  font-size: 9px;
+  color: #8B6914;
 }
 
 .pause-stats__empty {
+  font-family: 'IM Fell English', serif;
+  font-style: italic;
   font-size: 10px;
-  color: #334155;
+  color: #3a2808;
 }
 
 /* ============================================================
-   [🧱 BLOCK: Controls]
+   [🧱 BLOCK: Controls — Tome Entries]
    ============================================================ */
 .pause-controls {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  min-width: 180px;
+  gap: 6px;
+  min-width: 200px;
 }
 
 .pause-controls__label {
-  font-size: 8px;
-  color: #334155;
-  letter-spacing: 0.2em;
+  font-family: 'Cinzel', serif;
+  font-size: 7px;
+  font-weight: 700;
+  color: #5a4010;
+  letter-spacing: 0.3em;
   text-transform: uppercase;
-  margin-bottom: 4px;
+  margin-bottom: 6px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid #2e2008;
 }
 
 .pause-controls__row {
   display: flex;
-  justify-content: space-between;
   align-items: center;
-  gap: 24px;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 3px 0;
+  border-bottom: 1px solid #1e1608;
 }
 
 .pause-controls__key {
-  font-size: 10px;
+  font-family: 'Cinzel', serif;
+  font-size: 9px;
   font-weight: 700;
-  color: #f1f5f9;
-  background: rgba(255, 255, 255, 0.06);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 4px;
+  color: #f0c040;
+  background: #0a0804;
+  border: 1px solid #5a4010;
   padding: 2px 8px;
-  letter-spacing: 0.05em;
   white-space: nowrap;
+  min-width: 60px;
+  text-align: center;
 }
 
 .pause-controls__desc {
-  font-size: 10px;
-  color: rgba(100, 116, 139, 0.9);
-  letter-spacing: 0.08em;
+  font-family: 'Cinzel', serif;
+  font-size: 9px;
+  color: #5a4010;
+  letter-spacing: 0.06em;
+  text-align: right;
 }
 
 /* ============================================================
@@ -274,35 +375,40 @@
 .pause-buttons {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 8px;
   width: 100%;
 }
 
 .pause-btn {
-  font-family: 'Courier New', monospace;
+  font-family: 'Cinzel', serif;
+  font-size: 11px;
   font-weight: 700;
-  letter-spacing: 0.2em;
+  letter-spacing: 0.25em;
   text-transform: uppercase;
-  border: none;
-  border-radius: 6px;
   cursor: pointer;
   width: 100%;
-  transition: background 0.12s, color 0.12s, border 0.12s;
+  padding: 11px 0;
+  transition: background 0.12s, color 0.12s, border-color 0.12s;
 }
 
 .pause-btn--resume {
-  font-size: 13px;
-  color: #0f172a;
-  background: #f1f5f9;
-  padding: 12px 0;
+  color: #0e0b06;
+  background: linear-gradient(180deg, #c0860c 0%, #8B6914 100%);
+  border: 1px solid #f0c040;
+  box-shadow: 0 0 12px rgba(240,192,64,0.15);
+}
+.pause-btn--resume:hover {
+  background: linear-gradient(180deg, #f0c040 0%, #c0860c 100%);
 }
 
 .pause-btn--quit {
-  font-size: 12px;
-  color: #64748b;
+  color: #5a4010;
   background: transparent;
-  border: 1px solid #1e293b;
-  padding: 10px 0;
+  border: 1px solid #2e2008;
+}
+.pause-btn--quit:hover {
+  color: #f87171;
+  border-color: #7a1a1a;
 }
 
 .pause-confirm-row {
@@ -311,28 +417,33 @@
 }
 
 .pause-btn--confirm-yes {
-  font-size: 11px;
-  color: #0f172a;
-  background: #ef4444;
-  padding: 10px 0;
+  font-size: 10px;
+  color: #0e0b06;
+  background: #7a1a1a;
+  border: 1px solid #ef4444;
   flex: 1;
+  padding: 9px 0;
 }
+.pause-btn--confirm-yes:hover { background: #ef4444; }
 
 .pause-btn--confirm-cancel {
-  font-size: 11px;
-  color: #64748b;
+  font-size: 10px;
+  color: #5a4010;
   background: transparent;
-  border: 1px solid #1e293b;
-  padding: 10px 0;
+  border: 1px solid #2e2008;
   flex: 1;
+  padding: 9px 0;
 }
+.pause-btn--confirm-cancel:hover { color: #8B6914; border-color: #5a4010; }
 
 /* ============================================================
    [🧱 BLOCK: Hint]
    ============================================================ */
 .pause-hint {
-  margin-top: 16px;
-  font-size: 9px;
-  color: #1e293b;
-  letter-spacing: 0.15em;
+  margin-top: 14px;
+  font-family: 'IM Fell English', serif;
+  font-style: italic;
+  font-size: 10px;
+  color: #2e2008;
+  letter-spacing: 0.1em;
 }

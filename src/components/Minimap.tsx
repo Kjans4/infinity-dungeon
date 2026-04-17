@@ -27,10 +27,10 @@ const PADDING = 6;
 // [🧱 BLOCK: Legend Items]
 // ============================================================
 const LEGEND = [
-  { color: "#f8fafc", label: "You"     },
+  { color: "#f0c040", label: "You"     },
   { color: "#a855f7", label: "Grunt"   },
-  { color: "#f59e0b", label: "Shooter" },
-  { color: "#475569", label: "Tank"    },
+  { color: "#c0860c", label: "Shooter" },
+  { color: "#5a4010", label: "Tank"    },
   { color: "#4ade80", label: "Gate"    },
 ];
 
@@ -54,7 +54,6 @@ export default function Minimap({ state, isBoss }: MinimapProps) {
 
       const worldW = isBoss ? BOSS_WORLD_W : WORLD_W;
       const worldH = isBoss ? BOSS_WORLD_H : WORLD_H;
-
       const scaleX = (MAP_W - PADDING * 2) / worldW;
       const scaleY = (MAP_H - PADDING * 2) / worldH;
 
@@ -66,16 +65,29 @@ export default function Minimap({ state, isBoss }: MinimapProps) {
       // ── Clear ─────────────────────────────────────────────
       ctx.clearRect(0, 0, MAP_W, MAP_H);
 
-      // ── Background ────────────────────────────────────────
-      ctx.fillStyle = "rgba(10, 15, 30, 0.85)";
+      // ── Stone background ──────────────────────────────────
+      ctx.fillStyle = "rgba(10, 8, 4, 0.92)";
       ctx.fillRect(0, 0, MAP_W, MAP_H);
 
-      // ── World boundary ────────────────────────────────────
-      ctx.strokeStyle = isBoss
-        ? "rgba(249, 115, 22, 0.4)"
-        : "rgba(239, 68, 68, 0.4)";
-      ctx.lineWidth = 1;
+      // Subtle grid texture
+      ctx.strokeStyle = "rgba(46,32,8,0.4)";
+      ctx.lineWidth   = 0.5;
+      for (let x = PADDING; x <= MAP_W - PADDING; x += 20) {
+        ctx.beginPath(); ctx.moveTo(x, PADDING); ctx.lineTo(x, MAP_H - PADDING); ctx.stroke();
+      }
+      for (let y = PADDING; y <= MAP_H - PADDING; y += 20) {
+        ctx.beginPath(); ctx.moveTo(PADDING, y); ctx.lineTo(MAP_W - PADDING, y); ctx.stroke();
+      }
+
+      // ── World boundary — gold border ──────────────────────
+      ctx.strokeStyle = isBoss ? "rgba(249,115,22,0.5)" : "rgba(139,105,20,0.6)";
+      ctx.lineWidth   = 1.5;
       ctx.strokeRect(PADDING, PADDING, MAP_W - PADDING * 2, MAP_H - PADDING * 2);
+
+      // Inner shadow line
+      ctx.strokeStyle = "rgba(0,0,0,0.4)";
+      ctx.lineWidth   = 1;
+      ctx.strokeRect(PADDING + 1, PADDING + 1, MAP_W - PADDING * 2 - 2, MAP_H - PADDING * 2 - 2);
 
       // ── Door ──────────────────────────────────────────────
       if (state.door) {
@@ -84,14 +96,13 @@ export default function Minimap({ state, isBoss }: MinimapProps) {
           state.door.y + state.door.height / 2
         );
         ctx.beginPath();
-        ctx.arc(dp.x, dp.y, 3, 0, Math.PI * 2);
-        ctx.fillStyle = state.door.isActive ? "#4ade80" : "rgba(100,100,100,0.4)";
+        ctx.arc(dp.x, dp.y, 4, 0, Math.PI * 2);
+        ctx.fillStyle = state.door.isActive ? "#4ade80" : "rgba(90,64,16,0.4)";
         ctx.fill();
-
         if (state.door.isActive) {
           ctx.beginPath();
-          ctx.arc(dp.x, dp.y, 5, 0, Math.PI * 2);
-          ctx.strokeStyle = "rgba(74, 222, 128, 0.4)";
+          ctx.arc(dp.x, dp.y, 6, 0, Math.PI * 2);
+          ctx.strokeStyle = "rgba(74,222,128,0.4)";
           ctx.lineWidth   = 1;
           ctx.stroke();
         }
@@ -100,18 +111,12 @@ export default function Minimap({ state, isBoss }: MinimapProps) {
       // ── Enemies ───────────────────────────────────────────
       state.enemies.forEach((enemy) => {
         if (enemy.isDead) return;
-        const ep = toMap(
-          enemy.x + enemy.width  / 2,
-          enemy.y + enemy.height / 2
-        );
-
-        // Tank gets a larger dot to reflect its physical size
-        const radius = enemy instanceof Tank ? 4 : 2;
+        const ep = toMap(enemy.x + enemy.width / 2, enemy.y + enemy.height / 2);
+        const radius = enemy instanceof Tank ? 4 : 2.5;
         const color  =
-          enemy instanceof Tank    ? "#475569" :
-          enemy instanceof Shooter ? "#f59e0b" :
+          enemy instanceof Tank    ? "#5a4010" :
+          enemy instanceof Shooter ? "#c0860c" :
                                      "#a855f7";
-
         ctx.beginPath();
         ctx.arc(ep.x, ep.y, radius, 0, Math.PI * 2);
         ctx.fillStyle = color;
@@ -125,36 +130,42 @@ export default function Minimap({ state, isBoss }: MinimapProps) {
           state.boss.y + state.boss.height / 2
         );
         ctx.beginPath();
-        ctx.arc(bp.x, bp.y, 5, 0, Math.PI * 2);
+        ctx.arc(bp.x, bp.y, 6, 0, Math.PI * 2);
         ctx.fillStyle = "#ef4444";
         ctx.fill();
-
-        ctx.fillStyle = "rgba(239,68,68,0.7)";
-        ctx.font      = "bold 6px 'Courier New'";
-        ctx.textAlign = "center";
-        ctx.fillText("BOSS", bp.x, bp.y - 7);
-        ctx.textAlign = "left";
+        ctx.beginPath();
+        ctx.arc(bp.x, bp.y, 6, 0, Math.PI * 2);
+        ctx.strokeStyle = "rgba(239,68,68,0.5)";
+        ctx.lineWidth   = 2;
+        ctx.stroke();
+        ctx.fillStyle   = "rgba(239,68,68,0.8)";
+        ctx.font        = "bold 6px 'Cinzel', serif";
+        ctx.textAlign   = "center";
+        ctx.fillText("☩", bp.x, bp.y - 8);
+        ctx.textAlign   = "left";
       }
 
-      // ── Player ────────────────────────────────────────────
+      // ── Player — gold diamond ─────────────────────────────
       const pp = toMap(
         state.player.x + state.player.width  / 2,
         state.player.y + state.player.height / 2
       );
-
+      // Glow halo
       ctx.beginPath();
-      ctx.arc(pp.x, pp.y, 5, 0, Math.PI * 2);
-      ctx.fillStyle = "rgba(255,255,255,0.15)";
+      ctx.arc(pp.x, pp.y, 6, 0, Math.PI * 2);
+      ctx.fillStyle = "rgba(240,192,64,0.15)";
       ctx.fill();
-
-      ctx.beginPath();
-      ctx.arc(pp.x, pp.y, 3, 0, Math.PI * 2);
-      ctx.fillStyle = "#f8fafc";
-      ctx.fill();
+      // Diamond shape
+      ctx.save();
+      ctx.translate(pp.x, pp.y);
+      ctx.rotate(Math.PI / 4);
+      ctx.fillStyle = "#f0c040";
+      ctx.fillRect(-3, -3, 6, 6);
+      ctx.restore();
 
       // ── Camera viewport ───────────────────────────────────
       const vp = toMap(state.camera.x, state.camera.y);
-      ctx.strokeStyle = "rgba(255,255,255,0.12)";
+      ctx.strokeStyle = "rgba(140,90,10,0.2)";
       ctx.lineWidth   = 1;
       ctx.strokeRect(
         vp.x, vp.y,
@@ -172,26 +183,37 @@ export default function Minimap({ state, isBoss }: MinimapProps) {
   return (
     <div className="minimap-root">
       <div className="minimap-frame">
-        <p className="minimap-label">Minimap</p>
 
-        <canvas
-          ref={canvasRef}
-          width={MAP_W}
-          height={MAP_H}
-          className="minimap-canvas"
-        />
+        {/* Decorative inner border line */}
+        <div className="minimap-inner-border" />
 
+        {/* Title bar with gem dividers */}
+        <div className="minimap-title-bar">
+          <div className="minimap-title-gem" />
+          <p className="minimap-label">Realm Map</p>
+          <div className="minimap-title-gem" />
+        </div>
+
+        {/* Canvas with bottom-corner accents */}
+        <div className="minimap-canvas-wrap" style={{ padding: "0 4px" }}>
+          <canvas
+            ref={canvasRef}
+            width={MAP_W}
+            height={MAP_H}
+            className="minimap-canvas"
+          />
+        </div>
+
+        {/* Legend */}
         <div className="minimap-legend">
           {LEGEND.map(({ color, label }) => (
             <div key={label} className="minimap-legend__item">
-              <div
-                className="minimap-legend__dot"
-                style={{ background: color }}
-              />
+              <div className="minimap-legend__dot" style={{ background: color }} />
               <span className="minimap-legend__label">{label}</span>
             </div>
           ))}
         </div>
+
       </div>
     </div>
   );

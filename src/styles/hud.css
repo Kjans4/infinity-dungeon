@@ -1,21 +1,18 @@
 /* ============================================================
    HUD — src/styles/hud.css
-   All styles for the HUD component (HUD.tsx)
+   Fantasy RPG redesign — scroll/banner style
    ============================================================ */
 
-/* ── Shared font ── */
-.hud-root,
-.hud-root * {
-  font-family: 'Courier New', monospace;
-}
+@import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700&family=Cinzel+Decorative:wght@400;700&family=IM+Fell+English:ital@0;1&display=swap');
 
 /* ============================================================
-   [🧱 BLOCK: HUD Root]
-   Main pill container fixed at bottom-center of viewport.
+   [🧱 BLOCK: Root — Scroll Banner]
+   Horizontal banner fixed at bottom-center.
+   Stone texture, gold border, tapered ends.
    ============================================================ */
 .hud-root {
   position: fixed;
-  bottom: 20px;
+  bottom: 18px;
   left: 50%;
   transform: translateX(-50%);
   z-index: 20;
@@ -24,135 +21,221 @@
   display: flex;
   flex-direction: row;
   align-items: center;
-  gap: 16px;
-  padding: 10px 20px;
+  gap: 0;
 
-  background: rgba(10, 15, 30, 0.55);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  border: 1px solid rgba(255, 255, 255, 0.07);
-  border-radius: 12px;
-  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.4);
+  /* Stone base */
+  background:
+    repeating-linear-gradient(
+      90deg,
+      rgba(255,255,255,0.008) 0px, rgba(255,255,255,0.008) 1px,
+      transparent 1px, transparent 60px
+    ),
+    repeating-linear-gradient(
+      0deg,
+      rgba(255,255,255,0.008) 0px, rgba(255,255,255,0.008) 1px,
+      transparent 1px, transparent 40px
+    ),
+    linear-gradient(180deg, #1a1208 0%, #0e0b06 50%, #1a1208 100%);
+
+  border-top:    1px solid #5a4010;
+  border-bottom: 1px solid #5a4010;
+  border-left:   none;
+  border-right:  none;
+  box-shadow:
+    0 -1px 0 #2e2008,
+    0  1px 0 #2e2008,
+    0 0 40px rgba(0,0,0,0.8),
+    inset 0 1px 0 rgba(140,90,10,0.15),
+    inset 0 -1px 0 rgba(140,90,10,0.15);
+
+  padding: 0;
   white-space: nowrap;
 }
 
+/* Left scroll-end cap */
+.hud-root::before {
+  content: '';
+  display: block;
+  width: 32px;
+  min-width: 32px;
+  align-self: stretch;
+  background: linear-gradient(90deg, #0a0804 0%, #1a1208 100%);
+  border-top:    1px solid #5a4010;
+  border-bottom: 1px solid #5a4010;
+  border-left:   2px solid #8B6914;
+  border-radius: 3px 0 0 3px;
+  margin-left: -1px;
+  clip-path: polygon(100% 0%, 100% 100%, 20% 100%, 0% 50%, 20% 0%);
+}
+
+/* Right scroll-end cap */
+.hud-root::after {
+  content: '';
+  display: block;
+  width: 32px;
+  min-width: 32px;
+  align-self: stretch;
+  background: linear-gradient(270deg, #0a0804 0%, #1a1208 100%);
+  border-top:    1px solid #5a4010;
+  border-bottom: 1px solid #5a4010;
+  border-right:  2px solid #8B6914;
+  border-radius: 0 3px 3px 0;
+  margin-right: -1px;
+  clip-path: polygon(0% 0%, 80% 0%, 100% 50%, 80% 100%, 0% 100%);
+}
+
 /* ============================================================
-   [🧱 BLOCK: Elite Room Badge]
-   Shown top-center when the player is in the elite room.
-   Drops in like the boss bar but uses orange theming.
+   [🧱 BLOCK: HUD Inner Wrapper]
+   Wraps all segments with consistent padding.
    ============================================================ */
-.hud-elite-badge {
-  position: fixed;
-  top: 20px;
-  left: 50%;
-  transform: translateX(-50%);
-  z-index: 20;
-  pointer-events: none;
-
-  font-family: 'Courier New', monospace;
-  font-size: 11px;
-  font-weight: 900;
-  letter-spacing: 0.25em;
-  text-transform: uppercase;
-  color: #f97316;
-  text-shadow: 0 0 20px rgba(249, 115, 22, 0.7);
-
-  padding: 8px 20px;
-  background: rgba(10, 15, 30, 0.7);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  border: 1px solid rgba(249, 115, 22, 0.35);
-  border-radius: 8px;
-  box-shadow: 0 0 16px rgba(249, 115, 22, 0.1), 0 4px 24px rgba(0, 0, 0, 0.5);
-
-  animation: elite-badge-drop 0.35s ease forwards;
-}
-
-@keyframes elite-badge-drop {
-  from { opacity: 0; transform: translateX(-50%) translateY(-12px); }
-  to   { opacity: 1; transform: translateX(-50%) translateY(0);     }
+.hud-inner {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 0;
+  padding: 6px 4px;
 }
 
 /* ============================================================
-   [🧱 BLOCK: Divider]
+   [🧱 BLOCK: Divider — Gem Pillar]
    ============================================================ */
 .hud-divider {
-  width: 1px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  padding: 0 10px;
   align-self: stretch;
-  background: rgba(255, 255, 255, 0.07);
-  margin: 0 4px;
+}
+
+.hud-divider::before,
+.hud-divider::after {
+  content: '';
+  flex: 1;
+  width: 1px;
+  background: linear-gradient(to bottom, transparent, #5a4010, transparent);
+}
+
+.hud-divider-gem {
+  width: 6px;
+  height: 6px;
+  background: #8B6914;
+  border: 1px solid #c0860c;
+  transform: rotate(45deg);
+  flex-shrink: 0;
 }
 
 /* ============================================================
-   [🧱 BLOCK: Thin Bar]
+   [🧱 BLOCK: Bars Group — HP & Stamina]
    ============================================================ */
 .hud-bars-group {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 5px;
+  padding: 4px 12px;
 }
 
 .hud-bar-wrapper {
   display: flex;
   flex-direction: column;
-  gap: 3px;
-  min-width: 120px;
+  gap: 2px;
+  min-width: 130px;
 }
 
 .hud-bar-header {
   display: flex;
   justify-content: space-between;
+  align-items: baseline;
 }
 
 .hud-label {
-  font-size: 9px;
-  color: rgba(148, 163, 184, 0.8);
-  letter-spacing: 0.12em;
+  font-family: 'Cinzel', serif;
+  font-size: 7px;
+  font-weight: 600;
+  color: #8B6914;
+  letter-spacing: 0.2em;
   text-transform: uppercase;
 }
 
 .hud-value {
-  font-size: 9px;
-  color: rgba(148, 163, 184, 0.6);
+  font-family: 'Cinzel', serif;
+  font-size: 8px;
+  font-weight: 700;
+  color: #c0860c;
 }
 
 .hud-bar-track {
   width: 100%;
-  height: 5px;
-  background: rgba(30, 41, 59, 0.8);
-  border-radius: 3px;
-  overflow: hidden;
+  height: 6px;
+  background: #0a0804;
+  border: 1px solid #2e2008;
+  border-radius: 0;
+  overflow: visible;
+  position: relative;
+}
+
+/* Etched notch marks on bar track */
+.hud-bar-track::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(
+    90deg,
+    transparent 0px,
+    transparent 24px,
+    rgba(140,90,10,0.2) 24px,
+    rgba(140,90,10,0.2) 25px
+  );
+  pointer-events: none;
+  z-index: 1;
 }
 
 .hud-bar-fill {
   height: 100%;
-  border-radius: 3px;
-  transition: width 0.1s linear;
+  transition: width 0.15s ease;
+  position: relative;
+}
+
+/* Shine on fill */
+.hud-bar-fill::after {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 40%;
+  background: rgba(255,255,255,0.15);
 }
 
 /* ============================================================
-   [🧱 BLOCK: Room / Floor]
+   [🧱 BLOCK: Room / Floor — Carved Badge]
    ============================================================ */
 .hud-room-group {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 2px;
+  justify-content: center;
+  gap: 1px;
+  padding: 4px 14px;
+  position: relative;
 }
 
 .hud-floor-label {
-  font-size: 8px;
-  color: rgba(100, 116, 139, 0.8);
-  letter-spacing: 0.18em;
+  font-family: 'Cinzel', serif;
+  font-size: 7px;
+  font-weight: 600;
+  color: #5a4010;
+  letter-spacing: 0.25em;
   text-transform: uppercase;
 }
 
 .hud-room-number {
-  font-size: 18px;
-  font-weight: 900;
+  font-family: 'Cinzel Decorative', serif;
+  font-size: 16px;
+  font-weight: 700;
   line-height: 1;
-  color: #f1f5f9;
-  letter-spacing: 0.04em;
+  color: #f0c040;
+  text-shadow: 0 0 12px rgba(240,192,64,0.4);
+  letter-spacing: 0.06em;
   transition: color 0.3s ease;
 }
 
@@ -163,36 +246,52 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 2px;
+  justify-content: center;
+  gap: 1px;
+  padding: 4px 14px;
 }
 
 .hud-gold-label {
-  font-size: 8px;
-  color: rgba(100, 116, 139, 0.8);
-  letter-spacing: 0.18em;
+  font-family: 'Cinzel', serif;
+  font-size: 7px;
+  font-weight: 600;
+  color: #5a4010;
+  letter-spacing: 0.25em;
   text-transform: uppercase;
 }
 
 .hud-gold-value {
+  font-family: 'Cinzel', serif;
   font-size: 14px;
-  font-weight: 900;
-  color: #facc15;
+  font-weight: 700;
+  color: #f0c040;
+  text-shadow: 0 0 10px rgba(240,192,64,0.35);
 }
 
 /* ============================================================
-   [🧱 BLOCK: Kill Ring]
+   [🧱 BLOCK: Kill Ring — Rune Circle]
    ============================================================ */
 .hud-kill-ring-wrapper {
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 3px;
+  padding: 4px 12px;
 }
 
 .hud-kill-ring-dial {
   position: relative;
-  width: 40px;
-  height: 40px;
+  width: 44px;
+  height: 44px;
+}
+
+/* Outer rune ring decoration */
+.hud-kill-ring-dial::before {
+  content: '';
+  position: absolute;
+  inset: -4px;
+  border-radius: 50%;
+  border: 1px solid #2e2008;
 }
 
 .hud-kill-ring-svg {
@@ -210,19 +309,19 @@
 }
 
 .hud-kill-ring-number {
-  font-size: 10px;
-  font-weight: 900;
+  font-family: 'Cinzel', serif;
+  font-size: 11px;
+  font-weight: 700;
 }
 
 .hud-kill-ring-label {
-  font-size: 8px;
+  font-family: 'Cinzel', serif;
+  font-size: 7px;
+  font-weight: 600;
   letter-spacing: 0.1em;
   text-transform: uppercase;
 }
 
-/* ============================================================
-   [🧱 BLOCK: Farming State]
-   ============================================================ */
 .hud-kill-ring-farming {
   display: flex;
   flex-direction: column;
@@ -231,8 +330,45 @@
 }
 
 .hud-kill-ring-bonus {
+  font-family: 'Cinzel', serif;
   font-size: 7px;
   letter-spacing: 0.08em;
+}
+
+/* ============================================================
+   [🧱 BLOCK: Elite Room Badge]
+   ============================================================ */
+.hud-elite-badge {
+  position: fixed;
+  top: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 20;
+  pointer-events: none;
+
+  font-family: 'Cinzel Decorative', serif;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.25em;
+  text-transform: uppercase;
+  color: #f97316;
+  text-shadow: 0 0 20px rgba(249,115,22,0.6);
+
+  padding: 8px 24px;
+  background:
+    linear-gradient(180deg, #1a1208 0%, #0e0b06 100%);
+  border: 1px solid #7a3010;
+  border-top: 1px solid #f97316;
+  box-shadow:
+    0 0 20px rgba(249,115,22,0.12),
+    inset 0 1px 0 rgba(249,115,22,0.15);
+
+  animation: elite-badge-drop 0.35s ease forwards;
+}
+
+@keyframes elite-badge-drop {
+  from { opacity: 0; transform: translateX(-50%) translateY(-12px); }
+  to   { opacity: 1; transform: translateX(-50%) translateY(0); }
 }
 
 /* ============================================================
@@ -250,33 +386,40 @@
   flex-direction: column;
   align-items: center;
   gap: 6px;
-  padding: 10px 20px 12px;
-  min-width: 340px;
+  padding: 10px 24px 12px;
+  min-width: 360px;
 
-  background: rgba(10, 15, 30, 0.7);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  border: 1px solid rgba(239, 68, 68, 0.2);
-  border-radius: 10px;
-  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.5);
+  background:
+    repeating-linear-gradient(
+      90deg,
+      rgba(255,255,255,0.006) 0px, rgba(255,255,255,0.006) 1px,
+      transparent 1px, transparent 48px
+    ),
+    linear-gradient(180deg, #1a1208 0%, #0e0b06 60%, #1a1208 100%);
+
+  border: 1px solid #5a4010;
+  border-top: 1px solid #8B6914;
+  box-shadow:
+    0 0 30px rgba(0,0,0,0.7),
+    inset 0 1px 0 rgba(140,90,10,0.2);
 
   animation: boss-bar-drop 0.35s ease forwards;
 }
 
 @keyframes boss-bar-drop {
   from { opacity: 0; transform: translateX(-50%) translateY(-12px); }
-  to   { opacity: 1; transform: translateX(-50%) translateY(0);     }
+  to   { opacity: 1; transform: translateX(-50%) translateY(0); }
 }
 
 .hud-boss-bar--enraged {
-  border-color: rgba(239, 68, 68, 0.6);
-  box-shadow: 0 0 20px rgba(239, 68, 68, 0.15), 0 4px 24px rgba(0, 0, 0, 0.5);
+  border-color: #7a1a1a;
+  border-top-color: #ef4444;
   animation: boss-bar-drop 0.35s ease forwards, boss-enrage-pulse 1.2s ease-in-out infinite;
 }
 
 @keyframes boss-enrage-pulse {
-  0%, 100% { border-color: rgba(239, 68, 68, 0.4); }
-  50%       { border-color: rgba(239, 68, 68, 0.9); }
+  0%, 100% { border-top-color: rgba(239,68,68,0.5); }
+  50%       { border-top-color: rgba(239,68,68,1.0); }
 }
 
 .hud-boss-bar__header {
@@ -287,46 +430,68 @@
 }
 
 .hud-boss-bar__name {
-  font-size: 10px;
+  font-family: 'Cinzel Decorative', serif;
+  font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.2em;
   text-transform: uppercase;
 }
 
 .hud-boss-bar__hp {
+  font-family: 'Cinzel', serif;
   font-size: 10px;
-  color: rgba(148, 163, 184, 0.6);
+  color: #5a4010;
 }
 
 .hud-boss-bar__track {
   width: 100%;
   height: 8px;
-  background: rgba(30, 41, 59, 0.9);
-  border-radius: 4px;
-  overflow: hidden;
+  background: #0a0804;
+  border: 1px solid #2e2008;
   position: relative;
+  overflow: hidden;
+}
+
+.hud-boss-bar__track::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(
+    90deg,
+    transparent 0px, transparent 35px,
+    rgba(140,90,10,0.18) 35px, rgba(140,90,10,0.18) 36px
+  );
+  z-index: 1;
+  pointer-events: none;
 }
 
 .hud-boss-bar__fill {
   height: 100%;
-  border-radius: 4px;
   transition: width 0.15s linear;
+  position: relative;
+}
+
+.hud-boss-bar__fill::after {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 40%;
+  background: rgba(255,255,255,0.12);
 }
 
 .hud-boss-bar__rage-marker {
   position: absolute;
-  top: 0;
-  left: 50%;
-  width: 2px;
-  height: 100%;
-  background: rgba(255, 255, 255, 0.4);
-  border-radius: 1px;
+  top: 0; left: 50%;
+  width: 2px; height: 100%;
+  background: rgba(140,90,10,0.6);
+  z-index: 2;
 }
 
 .hud-boss-bar__floor {
-  font-size: 8px;
-  color: #334155;
-  letter-spacing: 0.15em;
+  font-family: 'Cinzel', serif;
+  font-size: 7px;
+  color: #3a2808;
+  letter-spacing: 0.2em;
   text-transform: uppercase;
   align-self: flex-end;
 }

@@ -1,3 +1,4 @@
+// src/components/Inventory.tsx
 "use client";
 
 import React, { useState, useEffect } from "react";
@@ -19,22 +20,27 @@ interface InventoryProps {
 }
 
 // ============================================================
+// [🧱 BLOCK: Gem Rule Divider]
+// ============================================================
+function GemRule() {
+  return (
+    <div className="inv-gem-rule">
+      <div className="inv-gem-rule-gem" />
+    </div>
+  );
+}
+
+// ============================================================
 // [🧱 BLOCK: Small Button]
 // ============================================================
-function SmallBtn({
-  label, onClick, color = "#64748b", danger = false,
-}: {
+function SmallBtn({ label, onClick, color = "#5a4010", danger = false }: {
   label: string; onClick: () => void; color?: string; danger?: boolean;
 }) {
   return (
     <button
       onClick={onClick}
       className={`inv-small-btn ${danger ? "inv-small-btn--danger" : "inv-small-btn--default"}`}
-      style={
-        !danger
-          ? ({ "--btn-color": color } as React.CSSProperties)
-          : undefined
-      }
+      style={!danger ? ({ "--btn-color": color } as React.CSSProperties) : undefined}
     >
       {label}
     </button>
@@ -44,10 +50,8 @@ function SmallBtn({
 // ============================================================
 // [🧱 BLOCK: Weapon Slot]
 // ============================================================
-function WeaponSlot({
-  item, onUnequip,
-}: {
-  item:      WeaponItem | null;
+function WeaponSlot({ item, onUnequip }: {
+  item: WeaponItem | null;
   onUnequip: () => void;
 }) {
   const [confirm, setConfirm] = useState(false);
@@ -56,13 +60,12 @@ function WeaponSlot({
     return (
       <div className="inv-weapon-slot inv-weapon-slot--empty">
         <p className="inv-weapon-slot__label">⚔ Weapon Slot</p>
-        <p className="inv-weapon-slot__fists">👊 Bare Fists — buy a weapon in the shop</p>
+        <p className="inv-weapon-slot__fists">"Bare fists — seek steel from a merchant."</p>
       </div>
     );
   }
 
   const refund = Math.ceil(item.cost * 0.5);
-
   const atkStats = [
     {
       label: "Light",
@@ -72,13 +75,13 @@ function WeaponSlot({
     {
       label: "Heavy",
       dmg:  item.weaponType === "sword" ? 28 : item.weaponType === "axe" ? 40 : 35,
-      stam: item.weaponType === "sword" ? 25 : item.weaponType === "axe" ? 30 : 22,
+      stam: item.weaponType === "sword" ? 35 : item.weaponType === "axe" ? 42 : 32,
     },
   ];
 
   return (
     <div className="inv-weapon-slot inv-weapon-slot--equipped">
-      <p className="inv-weapon-slot__label">⚔ Weapon Slot — Equipped</p>
+      <p className="inv-weapon-slot__label">⚔ Weapon — Equipped</p>
 
       <div className="inv-weapon-slot__header">
         <span className="inv-weapon-slot__icon">{item.icon}</span>
@@ -86,9 +89,7 @@ function WeaponSlot({
           <p className="inv-weapon-slot__name">{item.name}</p>
           <p className="inv-weapon-slot__type">{item.weaponType}</p>
           <p className="inv-weapon-slot__desc">{item.description}</p>
-          {item.tradeOff && (
-            <p className="inv-weapon-slot__tradeoff">⚠ {item.tradeOff}</p>
-          )}
+          {item.tradeOff && <p className="inv-weapon-slot__tradeoff">⚠ {item.tradeOff}</p>}
         </div>
       </div>
 
@@ -96,26 +97,18 @@ function WeaponSlot({
         {atkStats.map((atk) => (
           <div key={atk.label} className="inv-weapon-slot__atk-card">
             <p className="inv-weapon-slot__atk-label">{atk.label}</p>
-            <p className="inv-weapon-slot__atk-dmg">{atk.dmg} dmg</p>
+            <p className="inv-weapon-slot__atk-dmg">{atk.dmg} damage</p>
             <p className="inv-weapon-slot__atk-stam">{atk.stam} stamina</p>
           </div>
         ))}
       </div>
 
       {!confirm ? (
-        <SmallBtn
-          label={`Unequip & Sell (+${refund}g)`}
-          onClick={() => setConfirm(true)}
-          danger
-        />
+        <SmallBtn label={`Sell for ${refund}g`} onClick={() => setConfirm(true)} danger />
       ) : (
         <div className="inv-confirm-row">
-          <SmallBtn
-            label="Confirm Sell"
-            onClick={() => { setConfirm(false); onUnequip(); }}
-            danger
-          />
-          <SmallBtn label="Cancel" onClick={() => setConfirm(false)} color="#64748b" />
+          <SmallBtn label="Confirm" onClick={() => { setConfirm(false); onUnequip(); }} danger />
+          <SmallBtn label="Cancel"  onClick={() => setConfirm(false)} color="#5a4010" />
         </div>
       )}
     </div>
@@ -135,20 +128,14 @@ function CharmRow({ charm, onSell }: { charm: Charm; onSell: () => void }) {
       <div className="inv-charm-row__info">
         <p className="inv-charm-row__name">{charm.name}</p>
         <p className="inv-charm-row__desc">{charm.description}</p>
-        {charm.tradeOff && (
-          <p className="inv-charm-row__tradeoff">⚠ {charm.tradeOff}</p>
-        )}
+        {charm.tradeOff && <p className="inv-charm-row__tradeoff">⚠ {charm.tradeOff}</p>}
       </div>
       {!confirm ? (
         <SmallBtn label="Sell" onClick={() => setConfirm(true)} danger />
       ) : (
         <div className="inv-confirm-row">
-          <SmallBtn
-            label={`+${refund}g`}
-            onClick={() => { setConfirm(false); onSell(); }}
-            danger
-          />
-          <SmallBtn label="✕" onClick={() => setConfirm(false)} color="#475569" />
+          <SmallBtn label={`+${refund}g`} onClick={() => { setConfirm(false); onSell(); }} danger />
+          <SmallBtn label="✕"             onClick={() => setConfirm(false)} color="#3a2808" />
         </div>
       )}
     </div>
@@ -187,54 +174,53 @@ export default function Inventory({
   return (
     <div className="inv-backdrop">
       <div className="inv-panel">
+        <div className="inv-panel-inner">
 
-        {/* Header */}
-        <div className="inv-header">
-          <div>
-            <p className="inv-header__hint">Game Paused · Hold I or press ESC to close</p>
-            <p className="inv-header__title">INVENTORY</p>
+          {/* Header */}
+          <div className="inv-header">
+            <div>
+              <p className="inv-header__hint">Paused · Hold I or ESC to close</p>
+              <p className="inv-header__title">Satchel</p>
+            </div>
+            <div className="inv-header__gold">
+              <p className="inv-header__gold-label">Treasury</p>
+              <p className="inv-header__gold-value">{gold}g</p>
+            </div>
           </div>
-          <div className="inv-header__gold">
-            <p className="inv-header__gold-label">Gold Balance</p>
-            <p className="inv-header__gold-value">💰 {gold}g</p>
+
+          <GemRule />
+
+          {/* Weapon slot */}
+          <WeaponSlot item={playerStats.equippedWeaponItem} onUnequip={handleUnequipWeapon} />
+
+          <GemRule />
+
+          {/* Charm slots */}
+          <div className="inv-charms-section">
+            <p className="inv-charms-section__label">
+              Relics ({playerStats.charms.length}/{playerStats.maxCharms})
+            </p>
+            <div className="inv-charms-list">
+              {playerStats.charms.map((charm) => (
+                <CharmRow key={charm.id} charm={charm} onSell={() => handleSellCharm(charm.id)} />
+              ))}
+              {Array.from({ length: playerStats.maxCharms - playerStats.charms.length }).map((_, i) => (
+                <div key={`empty-${i}`} className="inv-charm-empty">— Empty relic slot</div>
+              ))}
+            </div>
           </div>
-        </div>
 
-        {/* Weapon slot */}
-        <WeaponSlot
-          item={playerStats.equippedWeaponItem}
-          onUnequip={handleUnequipWeapon}
-        />
+          <GemRule />
 
-        {/* Charm slots */}
-        <div className="inv-charms-section">
-          <p className="inv-charms-section__label">
-            Charms ({playerStats.charms.length}/{playerStats.maxCharms})
+          {/* Footer */}
+          <div className="inv-footer">
+            <SmallBtn label="Return to Battle" onClick={onClose} color="#8B6914" />
+          </div>
+          <p className="inv-footer__hint">
+            "Acquire weapons &amp; relics from the merchant · Hold I to close"
           </p>
-          <div className="inv-charms-list">
-            {playerStats.charms.map((charm) => (
-              <CharmRow
-                key={charm.id}
-                charm={charm}
-                onSell={() => handleSellCharm(charm.id)}
-              />
-            ))}
-            {Array.from({ length: playerStats.maxCharms - playerStats.charms.length }).map((_, i) => (
-              <div key={`empty-${i}`} className="inv-charm-empty">
-                — Empty slot
-              </div>
-            ))}
-          </div>
-        </div>
 
-        {/* Footer */}
-        <div className="inv-footer">
-          <SmallBtn label="Back to Game" onClick={onClose} color="#38bdf8" />
         </div>
-        <p className="inv-footer__hint">
-          BUY WEAPONS &amp; CHARMS IN THE SHOP · HOLD I TO CLOSE
-        </p>
-
       </div>
     </div>
   );
