@@ -4,7 +4,6 @@ import { Camera }  from "../Camera";
 import { Grunt }   from "../enemy/Grunt";
 import { Shooter } from "../enemy/Shooter";
 import { Tank }    from "../enemy/Tank";
-import { Boss }    from "../enemy/Boss";
 
 // ============================================================
 // [🧱 BLOCK: Charge Multipliers]
@@ -171,27 +170,6 @@ export class WeaponSystem {
     });
 
     return hit;
-  }
-
-  // ============================================================
-  // [🧱 BLOCK: Resolve Hit vs Boss]
-  // ============================================================
-  resolveHitBoss(
-    player:   Player,
-    boss:     Boss,
-    atkBonus: number
-  ): boolean {
-    if (!player.isAttacking || !player.equippedWeapon || !player.attackType) return false;
-
-    const damage = this.computeDamage(player, atkBonus);
-    const bx = boss.x + boss.width  / 2;
-    const by = boss.y + boss.height / 2;
-
-    if (this.hitTestCharged(player, bx, by, boss.width, boss.height)) {
-      boss.takeDamage(damage);
-      return true;
-    }
-    return false;
   }
 
   // ============================================================

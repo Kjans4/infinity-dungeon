@@ -216,11 +216,9 @@ export class Player {
     this.y += this.vy;
 
     // ── Resources ─────────────────────────────────────────────
-    // Stamina regen is suppressed while blocking so the hold drain
-    // isn't immediately cancelled by regen.
-    if (this.stamina < this.maxStamina && this.blockState !== 'blocking') {
-      this.stamina += 0.4;
-    }
+    // Stamina regen is handled by HordeSystem / BossSystem using
+    // ps.staminaRegenRate so charm multipliers (Overclock, Berserker)
+    // are respected. Player.update() must NOT add a second regen tick.
     if (this.heavyCooldown > 0) this.heavyCooldown  -= 16;
     if (this.iFrames       > 0) this.iFrames        -= 16;
     if (this.hitFlashTimer > 0) {
