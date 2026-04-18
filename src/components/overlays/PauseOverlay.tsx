@@ -3,7 +3,6 @@
 
 import React, { useState } from "react";
 import { PlayerStats, STAT_DEFS } from "@/engine/PlayerStats";
-import { Player }                 from "@/engine/Player";
 import "@/styles/pause.css";
 
 // ============================================================
@@ -16,7 +15,6 @@ interface Props {
   maxHp:        number;
   gold:         number;
   playerStats:  PlayerStats;
-  player:       Player;
   onResume:     () => void;
   onQuit:       () => void;
 }
@@ -113,7 +111,7 @@ function StatsPanel({ hp, maxHp, gold, playerStats }: {
           Charms ({playerStats.charms.length}/{playerStats.maxCharms})
         </p>
         {playerStats.charms.length === 0 ? (
-          <p className="pause-stats__empty">No relics equipped</p>
+          <p className="pause-stats__empty">No charms equipped</p>
         ) : (
           <div className="pause-stats__charms">
             {playerStats.charms.map((charm) => (
@@ -134,7 +132,7 @@ function StatsPanel({ hp, maxHp, gold, playerStats }: {
 // [🧱 BLOCK: PauseOverlay Component]
 // ============================================================
 export default function PauseOverlay({
-  floor, room, hp, maxHp, gold, playerStats, player,
+  floor, room, hp, maxHp, gold, playerStats,
   onResume, onQuit,
 }: Props) {
   const [confirmQuit, setConfirmQuit] = useState(false);

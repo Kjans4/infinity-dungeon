@@ -654,7 +654,7 @@ export default function GameCanvas() {
         <PauseOverlay
           floor={hud.floor} room={hud.room}
           hp={hud.hp} maxHp={MAX_HP} gold={gold}
-          playerStats={state.playerStats} player={state.player}
+          playerStats={state.playerStats}
           onResume={() => setIsPaused(false)}
           onQuit={() => { setIsPaused(false); handleQuitToMenu(); }}
         />

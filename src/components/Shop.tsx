@@ -121,7 +121,7 @@ function PendingLootCard({ item, playerStats, player, onClaim }: {
   const accentColor = isWeapon ? "#60a5fa" : "#a78bfa";
   const typeLabel   = isWeapon
     ? `${(item as WeaponItem).weaponType.toUpperCase()} · Spoil`
-    : "Relic · Spoil";
+    : "Charm · Spoil";
 
   const alreadyOwned = isWeapon
     ? playerStats.equippedWeaponItem?.id === item.id
@@ -148,7 +148,7 @@ function PendingLootCard({ item, playerStats, player, onClaim }: {
       {willReplace && !alreadyOwned && (
         <div className="shop-loot-card__replace-warn">Replaces {playerStats.equippedWeaponItem?.name}</div>
       )}
-      {charmsFull && !isWeapon && <div className="shop-item-card__full-warning">Sell a relic first</div>}
+      {charmsFull && !isWeapon && <div className="shop-item-card__full-warning">Sell a charm first</div>}
       {alreadyOwned && <div className="shop-item-card__full-warning">Already owned</div>}
       <PillBtn
         label={canClaim ? "Claim" : alreadyOwned ? "Owned" : "No Slots"}
@@ -180,7 +180,7 @@ function ShopItemCard({ item, gold, playerStats, player, onBuy }: {
   const canAfford   = gold >= item.cost;
   const canBuy      = !alreadyOwned && canAfford && !charmsFull;
   const accentColor = isWeapon ? "#60a5fa" : "#f0c040";
-  const typeLabel   = isWeapon ? `${weaponItem!.weaponType.toUpperCase()} · Weapon` : "Relic";
+  const typeLabel   = isWeapon ? `${weaponItem!.weaponType.toUpperCase()} · Weapon` : "Charm";
 
   function handleBuy() {
     if (!canBuy) return;
@@ -198,7 +198,7 @@ function ShopItemCard({ item, gold, playerStats, player, onBuy }: {
       <div className="shop-item-card__desc">{item.description}</div>
       {item.tradeOff && <div className="shop-item-card__tradeoff">⚠ {item.tradeOff}</div>}
       <div className="shop-item-card__cost">{item.cost}g</div>
-      {charmsFull && !isWeapon && <div className="shop-item-card__full-warning">Sell a relic first</div>}
+      {charmsFull && !isWeapon && <div className="shop-item-card__full-warning">Sell a charm first</div>}
       <PillBtn
         label={alreadyOwned ? "Owned" : "Acquire"}
         onClick={handleBuy}
@@ -445,10 +445,10 @@ export default function Shop({
               {/* Owned charms */}
               <div className="shop-section">
                 <p className="shop-section__label">
-                  Relics ({playerStats.charms.length}/{playerStats.maxCharms})
+                  Charms ({playerStats.charms.length}/{playerStats.maxCharms})
                 </p>
                 {playerStats.charms.length === 0 ? (
-                  <p className="shop-none-msg">"No relics bound to you."</p>
+                  <p className="shop-none-msg">"No charms equipped."</p>
                 ) : (
                   <div className="shop-charms-list">
                     {playerStats.charms.map((charm) => (

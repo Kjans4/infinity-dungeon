@@ -198,14 +198,14 @@ export default function Inventory({
           {/* Charm slots */}
           <div className="inv-charms-section">
             <p className="inv-charms-section__label">
-              Relics ({playerStats.charms.length}/{playerStats.maxCharms})
+              Charms ({playerStats.charms.length}/{playerStats.maxCharms})
             </p>
             <div className="inv-charms-list">
               {playerStats.charms.map((charm) => (
                 <CharmRow key={charm.id} charm={charm} onSell={() => handleSellCharm(charm.id)} />
               ))}
               {Array.from({ length: playerStats.maxCharms - playerStats.charms.length }).map((_, i) => (
-                <div key={`empty-${i}`} className="inv-charm-empty">— Empty relic slot</div>
+                <div key={`empty-${i}`} className="inv-charm-empty">— Empty charm slot</div>
               ))}
             </div>
           </div>
@@ -217,7 +217,7 @@ export default function Inventory({
             <SmallBtn label="Return to Battle" onClick={onClose} color="#8B6914" />
           </div>
           <p className="inv-footer__hint">
-            "Acquire weapons &amp; relics from the merchant · Hold I to close"
+            "Acquire weapons &amp; charms from the merchant · Hold I to close"
           </p>
 
         </div>
