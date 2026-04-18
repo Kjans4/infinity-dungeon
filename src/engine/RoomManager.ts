@@ -13,39 +13,28 @@ export interface RoomState {
 }
 
 // ============================================================
-// [🧱 BLOCK: Win Condition]
-// After clearing the boss on MAX_FLOORS the run is won.
-// Raise this number to add more floors — no other code changes needed.
-// ============================================================
-export const MAX_FLOORS = 5;
-
-export function isFinalFloor(floor: number): boolean {
-  return floor >= MAX_FLOORS;
-}
-
-// ============================================================
 // [🧱 BLOCK: Scaling Helpers]
-// Using Floor 1 as the base for all multiplication.
+// All functions work for any floor number — pure infinite scaling.
 //
-// HP:    doubles each floor  → F1=1×  F2=2×  F3=3×  F4=4×
-// Speed: grows gently        → F1=1×  F2=1.25×  F3=1.5×  F4=1.75×
-//
-// Speed is kept gentler than HP so enemies don't become
-// impossible to kite at high floors while still feeling faster.
+// Enemy HP:     +100% per floor  (floor 1=1× floor 10=10×)
+// Enemy Speed:  +25% per floor   (soft cap feel — fast but killable)
+// Boss HP:      +50% per floor   (ramps harder than horde)
 // ============================================================
 export function getEnemySpeedScale(floor: number): number {
   return 1 + (floor - 1) * 0.25;
 }
+
 export function getEnemyHpScale(floor: number): number {
   return 1 + (floor - 1) * 1.0;
 }
+
 export function getBossHpScale(floor: number): number {
   return 1 + (floor - 1) * 0.50;
 }
 
 // ============================================================
 // [🧱 BLOCK: Room Display Number]
-// Floor 1: 1,2,3 | Floor 2: 4,5,6 | Floor 3: 7,8,9
+// Simple linear calculation: Floor 1 (Rooms 1,2,3), Floor 2 (Rooms 4,5,6), etc.
 // ============================================================
 export function getRoomDisplay(floor: number, roomInCycle: 1 | 2 | 3): number {
   return (floor - 1) * 3 + roomInCycle;
@@ -65,11 +54,9 @@ export function initialRoomState(): RoomState {
 
 // ============================================================
 // [🧱 BLOCK: Advance Room]
-// Called when player walks through the door.
-//   Room 1 → Room 2 (horde)
-//   Room 2 → Room 3 (elite)
-//   Room 3 → Boss
-// The pre-boss shop is gone — Room 3 is now the elite gauntlet.
+// Room 1 → Room 2 (horde)
+// Room 2 → Room 3 (elite)
+// Room 3 → Boss
 // ============================================================
 export function advanceRoom(current: RoomState): RoomState {
   const { floor, roomInCycle } = current;
@@ -98,6 +85,7 @@ export function advanceRoom(current: RoomState): RoomState {
 
 // ============================================================
 // [🧱 BLOCK: Next Floor]
+// Always advances — the run is infinite.
 // ============================================================
 export function nextFloor(current: RoomState): RoomState {
   const floor = current.floor + 1;
@@ -111,8 +99,7 @@ export function nextFloor(current: RoomState): RoomState {
 
 // ============================================================
 // [🧱 BLOCK: Enter Boss Phase]
-// Kept as a utility — used by dev tools to skip directly to boss.
-// Normal flow now goes elite → boss via advanceRoom().
+// Utility used by dev tools to skip directly to boss.
 // ============================================================
 export function enterBossPhase(current: RoomState): RoomState {
   return { ...current, phase: 'boss' };

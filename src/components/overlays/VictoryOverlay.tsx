@@ -6,26 +6,14 @@ import "@/styles/victory.css";
 
 // ============================================================
 // [🧱 BLOCK: Props]
+// Removed cycle-related props. Logic is now pure infinite.
 // ============================================================
 interface Props {
-  floor:           number;
-  kills:           number;   // kills earned this floor only
-  goldEarned:      number;   // gold earned this floor only
-  runStartTime:    number;   // Date.now() at run start — for total time on win screen
-  isFinalFloor:    boolean;  // true → show "YOU WIN" instead of "Enter Floor N+1"
-  onContinue:      () => void;
-  onQuit:          () => void; // only shown on final floor
-}
-
-// ============================================================
-// [🧱 BLOCK: Format Time]
-// ============================================================
-function formatTime(ms: number): string {
-  const totalSec = Math.floor(ms / 1000);
-  const mins     = Math.floor(totalSec / 60);
-  const secs     = totalSec % 60;
-  if (mins === 0) return `${secs}s`;
-  return `${mins}m ${secs}s`;
+  floor:      number;
+  kills:      number;   // kills this floor only
+  goldEarned: number;   // gold this floor only
+  onContinue: () => void;
+  onQuit:     () => void;
 }
 
 // ============================================================
@@ -43,13 +31,11 @@ function StatRow({ icon, label, value }: { icon: string; label: string; value: s
 
 // ============================================================
 // [🧱 BLOCK: VictoryOverlay]
-// Two modes:
-//   isFinalFloor=false → simple "floor cleared, keep going" card
-//   isFinalFloor=true  → full "YOU WIN" screen with run summary
+// Simplified to a single mode: Floor Clear.
+// No more "Cycle" interruptions or expanded cards.
 // ============================================================
 export default function VictoryOverlay({
-  floor, kills, goldEarned, runStartTime,
-  isFinalFloor, onContinue, onQuit,
+  floor, kills, goldEarned, onContinue, onQuit,
 }: Props) {
   const [visible, setVisible] = useState(false);
 
@@ -58,69 +44,29 @@ export default function VictoryOverlay({
     return () => clearTimeout(t);
   }, []);
 
-  const elapsed = Date.now() - runStartTime;
-
-  // ── Final floor — full win screen ─────────────────────────
-  if (isFinalFloor) {
-    return (
-      <div className="victory-backdrop">
-        <div className={`victory-card victory-card--win ${visible ? "victory-card--visible" : ""}`}>
-
-          <div className="victory-title-block">
-            <p className="victory-title victory-title--win">YOU WIN</p>
-            <p className="victory-subtitle">All {floor} floors cleared</p>
-          </div>
-
-          <div className="victory-divider" />
-
-          <div className="victory-summary">
-            <p className="victory-summary__label">Run Summary</p>
-            <div className="victory-stats">
-              <StatRow icon="⏱" label="Total Time"  value={formatTime(elapsed)} />
-              <StatRow icon="☠" label="Total Kills"  value={String(kills)}       />
-              <StatRow icon="💰" label="Gold Earned" value={`${goldEarned}g`}    />
-              <StatRow icon="🏆" label="Floors"      value={`${floor} / ${floor}`} />
-            </div>
-          </div>
-
-          <div className="victory-divider" />
-
-          <div className="victory-buttons">
-            <button
-              className="victory-btn victory-btn--primary"
-              onClick={onQuit}
-              onMouseEnter={(e) => (e.currentTarget.style.background = "#86efac")}
-              onMouseLeave={(e) => (e.currentTarget.style.background = "#4ade80")}
-            >
-              ← Main Menu
-            </button>
-          </div>
-
-        </div>
-      </div>
-    );
-  }
-
-  // ── Normal floor clear — compact card ─────────────────────
   return (
     <div className="victory-backdrop">
       <div className={`victory-card ${visible ? "victory-card--visible" : ""}`}>
 
         <div className="victory-title-block">
-          <p className="victory-title">VICTORY</p>
-          <p className="victory-subtitle">Floor {floor} cleared</p>
+          <p className="victory-title">FLOOR CLEAR</p>
+          <p className="victory-subtitle">Floor {floor} Conquered</p>
         </div>
 
         <div className="victory-divider" />
 
         <div className="victory-summary">
+          <p className="victory-summary__label">Floor Summary</p>
           <div className="victory-stats">
-            <StatRow icon="☠" label="Kills this floor"  value={String(kills)}    />
-            <StatRow icon="💰" label="Gold this floor"  value={`${goldEarned}g`} />
+            <StatRow icon="☠"  label="Kills this floor" value={String(kills)}      />
+            <StatRow icon="💰" label="Gold this floor"  value={`${goldEarned}g`}   />
+            <StatRow icon="📍" label="Current Depth"   value={`Floor ${floor}`}    />
           </div>
         </div>
 
-        <p className="victory-warning">Floor {floor + 1} — enemies are stronger.</p>
+        <p className="victory-warning">
+          The dungeon grows darker. Floor {floor + 1} awaits.
+        </p>
 
         <div className="victory-divider" />
 
@@ -131,7 +77,21 @@ export default function VictoryOverlay({
             onMouseEnter={(e) => (e.currentTarget.style.background = "#86efac")}
             onMouseLeave={(e) => (e.currentTarget.style.background = "#4ade80")}
           >
-            ▶ Enter Floor {floor + 1}
+            ▶ Descend to Floor {floor + 1}
+          </button>
+          <button
+            className="victory-btn victory-btn--secondary"
+            onClick={onQuit}
+            onMouseEnter={(e) => { 
+                e.currentTarget.style.color = "#f1f5f9"; 
+                e.currentTarget.style.borderColor = "#475569"; 
+            }}
+            onMouseLeave={(e) => { 
+                e.currentTarget.style.color = ""; 
+                e.currentTarget.style.borderColor = ""; 
+            }}
+          >
+            ← Retreat to Menu
           </button>
         </div>
 
