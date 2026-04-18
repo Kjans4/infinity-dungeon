@@ -550,9 +550,11 @@ export default function GameCanvas() {
       if (event === "enraged") {
         const bossName = state.boss ? getBossName(state.boss) : 'BOSS';
         const enrageMsg =
-          bossName === 'PHANTOM'   ? "⚡ UNBOUND"     :
-          bossName === 'COLOSSUS' ? "⚡ UNSHACKLED"  :
-                                    "⚡ ENRAGED";
+          bossName === 'PHANTOM'  ? "⚡ UNBOUND"      :
+          bossName === 'COLOSSUS' ? "⚡ UNSHACKLED"   :
+          bossName === 'MAGE'     ? "⚡ ARCANE"        :
+          bossName === 'SHADE'    ? "⚡ PHANTOM STEP"  :
+                                    "⚡ ENRAGED";        // BRUTE fallback
         announce(enrageMsg, "Boss enters rage mode!", "#ef4444");
         renderRef.current.shake("heavy");
       }
@@ -611,7 +613,7 @@ export default function GameCanvas() {
           floor={roomRef.current.floor} room={roomRef.current.roomDisplay}
           gold={gold} playerStats={state.playerStats} player={state.player}
           pendingLoot={state.pendingLoot}
-          isMidRoom={true}
+          isMidRoom={isMidRoom}
           onGoldChange={handleGoldChange}
           onClaimLoot={handleClaimLoot}
           onContinue={handleNpcClose}

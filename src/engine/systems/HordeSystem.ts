@@ -356,9 +356,10 @@ export class HordeSystem {
     const playerCX = player.x + player.width  / 2;
     const playerCY = player.y + player.height / 2;
     const isHeavy  = player.attackType === "heavy" || player.attackType === "charged_heavy";
+    const atkBonus = ps.atkBonus + ps.lastStandBonus(player);
 
     const hitEnemies = this.weaponSystem.resolveHitsCustom(
-      player, state.enemies, ps.atkBonus,
+      player, state.enemies, atkBonus,
       (enemy, amount) => {
         // Parry-stunned enemies take bonus damage
         const finalAmt = enemy.isStunned ? Math.round(amount * PARRY_VULN_MULT) : amount;

@@ -1,7 +1,7 @@
 // src/components/Shop.tsx
 "use client";
 
-import React, { useState, useCallback } from "react";
+import React, { useState, useCallback, useRef } from "react";
 import { PlayerStats, STAT_DEFS, StatKey, statCost, statCap } from "@/engine/PlayerStats";
 import { Player }     from "@/engine/Player";
 import { Charm }      from "@/engine/CharmRegistry";
@@ -325,10 +325,12 @@ export default function Shop({
   const [, forceUpdate] = useState(0);
   const refresh = useCallback(() => forceUpdate((n) => n + 1), []);
 
-  const [optionsReady, setOptionsReady] = useState(false);
-  if (!optionsReady) {
+  // Generate shop options exactly once per mount — using a ref avoids
+  // the setState-during-render anti-pattern that caused double renders.
+  const shopInitRef = useRef(false);
+  if (!shopInitRef.current) {
     playerStats.generateShopOptions();
-    setOptionsReady(true);
+    shopInitRef.current = true;
   }
 
   const handleStatSpend  = (ng: number) => { onGoldChange(ng); refresh(); };

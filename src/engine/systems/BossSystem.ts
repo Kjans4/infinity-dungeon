@@ -149,7 +149,7 @@ export class BossSystem {
 
     // ── Mage fakes ────────────────────────────────────────────
     if (boss instanceof Mage) {
-      this.resolveWeaponHitMageFakes(player, boss, ps.atkBonus);
+      this.resolveWeaponHitMageFakes(player, boss, ps.atkBonus + ps.lastStandBonus(player));
     }
 
     // ── Projectile hits on player ─────────────────────────────
@@ -231,7 +231,7 @@ export class BossSystem {
 
     // ── Weapon input + hit vs boss ─────────────────────────────
     this.weaponSystem.processInput(player);
-    this.resolveWeaponHit(player, boss, ps.atkBonus);
+    this.resolveWeaponHit(player, boss, ps.atkBonus + ps.lastStandBonus(player));
 
     // ── Stamina regen ─────────────────────────────────────────
     if (player.stamina < player.maxStamina) {
@@ -271,6 +271,14 @@ export class BossSystem {
       spawnBossGold(state, bx, by);
       spawnBossItemDrop(state, bx, by);
       state.particles.push(...spawnBurst(bx, by, boss.color, 12, 1.8));
+
+      // Executioner — shockwave burst VFX on boss kill.
+      // No horde enemies exist in boss phase, so damage is skipped,
+      // but the visual fires to stay consistent with the charm promise.
+      if (ps.hasCharm('executioner')) {
+        state.particles.push(...spawnBurst(bx, by, '#facc15', 20, 2.2));
+      }
+
       return { event: "victory", goldCollected };
     }
 

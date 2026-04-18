@@ -66,7 +66,7 @@ export const CHARM_POOL: Charm[] = [
     cost:        80,
     onEquip:  (_, m) => { m.healOnKill += 3; },
     onRemove: (_, m) => { m.healOnKill -= 3; },
-    onKill:   (p)    => { p.hp = Math.min(p.maxHp ?? 100, p.hp + 3); },
+    // Heal applied via ps.healOnKill in HordeSystem — no onKill needed.
   },
 
   // ── Iron Skin ───────────────────────────────────────────
@@ -88,7 +88,7 @@ export const CHARM_POOL: Charm[] = [
     description: '+20 attack damage.',
     cost:        60,
     tradeOff:    '-30 max HP',
-    onEquip:  (p, m) => { m.bonusAtk += 20; m.bonusMaxHp -= 30; p.hp = Math.min(p.hp, (p.maxHp ?? 100) - 30); },
+    onEquip:  (p, m) => { m.bonusAtk += 20; m.bonusMaxHp -= 30; p.hp = Math.min(p.hp, p.maxHp - 30); },
     onRemove: (_, m) => { m.bonusAtk -= 20; m.bonusMaxHp += 30; },
   },
 
@@ -135,9 +135,9 @@ export const CHARM_POOL: Charm[] = [
     description: 'Each kill heals 5 HP.',
     cost:        90,
     tradeOff:    '-10 max HP',
-    onEquip:  (p, m) => { m.healOnKill += 5; m.bonusMaxHp -= 10; p.hp = Math.min(p.hp, (p.maxHp ?? 100) - 10); },
+    onEquip:  (p, m) => { m.healOnKill += 5; m.bonusMaxHp -= 10; p.hp = Math.min(p.hp, p.maxHp - 10); },
     onRemove: (_, m) => { m.healOnKill -= 5; m.bonusMaxHp += 10; },
-    onKill:   (p)    => { p.hp = Math.min(p.maxHp ?? 100, p.hp + 5); },
+    // Heal applied via ps.healOnKill in HordeSystem — no onKill needed.
   },
 
   // ── Overclock ───────────────────────────────────────────

@@ -221,6 +221,18 @@ export class PlayerStats {
     return (this.str * 3) + this.modifiers.bonusAtk;
   }
 
+  // ============================================================
+  // [🧱 BLOCK: Last Stand Bonus]
+  // Returns +15 ATK when the player has the last_stand charm
+  // equipped AND current HP is at or below 25% of max.
+  // Systems call this with the live player reference so the
+  // check reflects real-time HP, not a cached snapshot.
+  // ============================================================
+  lastStandBonus(player: Player): number {
+    if (!this.hasCharm('last_stand')) return 0;
+    return player.hp / player.maxHp <= 0.25 ? 15 : 0;
+  }
+
   get dashCost(): number {
     return Math.max(5, 30 - this.modifiers.dashCostReduction);
   }
