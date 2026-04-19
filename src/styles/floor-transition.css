@@ -1,0 +1,75 @@
+/* ============================================================
+   FloorTransition — src/styles/floor-transition.css
+   Full-screen black fade with "FLOOR X" centre text.
+   ============================================================ */
+
+/* ============================================================
+   [🧱 BLOCK: Backdrop]
+   Sits above everything (z-index 70), starts transparent,
+   CSS transition handles the fade. Opacity is driven inline
+   by the component so timings match the JS setTimeout chain.
+   ============================================================ */
+.ft-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+  background: #000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  /* opacity controlled inline — transition also inline */
+  pointer-events: none;
+}
+
+/* ============================================================
+   [🧱 BLOCK: Content]
+   Centre column that scales in when text becomes visible.
+   ============================================================ */
+.ft-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  opacity: 0;
+  transform: scale(0.92);
+  transition: opacity 0.3s ease, transform 0.3s ease;
+}
+
+.ft-content--visible {
+  opacity: 1;
+  transform: scale(1);
+}
+
+/* ============================================================
+   [🧱 BLOCK: Decorative Rule]
+   Short gold horizontal line flanking the text.
+   ============================================================ */
+.ft-rule {
+  width: 120px;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, #8B6914 30%, #f0c040 50%, #8B6914 70%, transparent);
+}
+
+/* ============================================================
+   [🧱 BLOCK: Text]
+   ============================================================ */
+.ft-label {
+  font-family: 'Courier New', monospace;
+  font-size: 11px;
+  font-weight: 400;
+  letter-spacing: 0.35em;
+  text-transform: uppercase;
+  color: #5a4010;
+}
+
+.ft-floor {
+  font-family: 'Courier New', monospace;
+  font-size: 52px;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  color: #f0c040;
+  text-shadow:
+    0 0 40px rgba(240, 192, 64, 0.5),
+    0 0 80px rgba(240, 192, 64, 0.2);
+  line-height: 1;
+}

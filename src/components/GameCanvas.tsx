@@ -21,6 +21,7 @@ import GameOverOverlay        from "@/components/overlays/GameOverOverlay";
 import VictoryOverlay        from "@/components/overlays/VictoryOverlay";
 import PauseOverlay          from "@/components/overlays/PauseOverlay";
 import WaveClearAnnouncement from "@/components/overlays/WaveClearAnnouncement";
+import FloorTransition       from "@/components/overlays/FloorTransition";
 import { spawnBurst }        from "@/engine/Particle";
 import { ShopItem }          from "@/engine/items/ItemPool";
 
@@ -129,21 +130,31 @@ export default function GameCanvas() {
   const floorKillsRef = useRef(0);
   const floorGoldRef  = useRef(0);
 
-  const [showMenu,      setShowMenu]      = useState(true);
-  const [isGameOver,     setIsGameOver]    = useState(false);
-  const [isVictory,      setIsVictory]     = useState(false);
-  const [showShop,       setShowShop]      = useState(false);
-  const [isMidRoom,      setIsMidRoom]     = useState(false);
-  const [isPaused,       setIsPaused]      = useState(false);
-  const [showInventory, setShowInventory] = useState(false);
-  const [gold,           setGold]          = useState(0);
-  const [hud, setHud] = useState<HUDState>(BLANK_HUD);
-  const [victoryStats, setVictoryStats] = useState({ kills: 0, gold: 0 });
+  const [showMenu,         setShowMenu]         = useState(true);
+  const [isGameOver,       setIsGameOver]        = useState(false);
+  const [isVictory,        setIsVictory]         = useState(false);
+  const [showShop,         setShowShop]          = useState(false);
+  const [isMidRoom,        setIsMidRoom]         = useState(false);
+  const [isPaused,         setIsPaused]          = useState(false);
+  const [showInventory,    setShowInventory]     = useState(false);
+  const [gold,             setGold]              = useState(0);
+  const [hud,              setHud]               = useState<HUDState>(BLANK_HUD);
+  const [victoryStats,     setVictoryStats]      = useState({ kills: 0, gold: 0 });
   const [announcement, setAnnouncement] = useState<{
     show: boolean; message: string; subtext?: string; color?: string;
   }>({ show: false, message: "" });
   const announcementRef = useRef(false);
   const [devPanelOpen, setDevPanelOpen] = useState(false);
+
+  // ============================================================
+  // [🧱 BLOCK: Floor Transition State]
+  // showTransition — overlay is mounted and animating
+  // transitionFloor — which floor number to display
+  // pendingContinue — callback to invoke once transition ends
+  // ============================================================
+  const [showTransition,  setShowTransition]  = useState(false);
+  const [transitionFloor, setTransitionFloor] = useState(2);
+  const pendingContinueRef = useRef<(() => void) | null>(null);
 
   useEffect(() => {
     uiActiveRef.current = {
@@ -264,6 +275,7 @@ export default function GameCanvas() {
     setIsMidRoom(false);
     setShowInventory(false);
     setShowMenu(false);
+    setShowTransition(false);
     lastAnnouncedRemainingRef.current = null;
     isDyingRef.current = false;
     vignetteAlphaRef.current = 0;
@@ -285,6 +297,7 @@ export default function GameCanvas() {
     setIsMidRoom(false);
     setShowInventory(false);
     setShowMenu(false);
+    setShowTransition(false);
     lastAnnouncedRemainingRef.current = null;
     isDyingRef.current = false;
     vignetteAlphaRef.current = 0;
@@ -304,6 +317,7 @@ export default function GameCanvas() {
     setIsMidRoom(false);
     setShowInventory(false);
     setShowMenu(true);
+    setShowTransition(false);
     lastAnnouncedRemainingRef.current = null;
     isDyingRef.current = false;
     vignetteAlphaRef.current = 0;
@@ -342,7 +356,15 @@ export default function GameCanvas() {
     if (idx !== -1) state.pendingLoot.splice(idx, 1);
   }, []);
 
-  const handleVictoryContinue = useCallback(() => {
+  // ============================================================
+  // [🧱 BLOCK: Victory Continue — with Floor Transition]
+  // When the player clicks "Descend", we:
+  //   1. Hide the victory overlay immediately
+  //   2. Store the real continuation logic in pendingContinueRef
+  //   3. Show the FloorTransition overlay (it knows which floor)
+  //   4. FloorTransition calls onComplete → pendingContinueRef fires
+  // ============================================================
+  const executeContinue = useCallback(() => {
     const rs = nextFloor(roomRef.current);
     roomRef.current = rs;
     stateRef.current!.resetRoom();
@@ -354,6 +376,20 @@ export default function GameCanvas() {
     resetFloorTracking();
     setTimeout(() => announce(`FLOOR ${rs.floor}`, "Enemies incoming", "#f59e0b"), 300);
   }, [resetFloorTracking, announce]);
+
+  const handleVictoryContinue = useCallback(() => {
+    const nextFloorNum = roomRef.current.floor + 1;
+    pendingContinueRef.current = executeContinue;
+    setIsVictory(false);
+    setTransitionFloor(nextFloorNum);
+    setShowTransition(true);
+  }, [executeContinue]);
+
+  const handleTransitionComplete = useCallback(() => {
+    setShowTransition(false);
+    pendingContinueRef.current?.();
+    pendingContinueRef.current = null;
+  }, []);
 
   const handleGoldChange = useCallback((newGold: number) => {
     if (stateRef.current) stateRef.current.gold = newGold;
@@ -425,7 +461,8 @@ export default function GameCanvas() {
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
 
-    if (showMenu || showShop || isVictory || isGameOver || isPaused || showInventory) return;
+    // Pause the game loop during any UI overlay (including transition)
+    if (showMenu || showShop || isVictory || isGameOver || isPaused || showInventory || showTransition) return;
 
     const rs      = roomRef.current;
     const isBoss  = rs.phase === 'boss';
@@ -554,7 +591,7 @@ export default function GameCanvas() {
           bossName === 'COLOSSUS' ? "⚡ UNSHACKLED"   :
           bossName === 'MAGE'     ? "⚡ ARCANE"        :
           bossName === 'SHADE'    ? "⚡ PHANTOM STEP"  :
-                                    "⚡ ENRAGED";        // BRUTE fallback
+                                    "⚡ ENRAGED";
         announce(enrageMsg, "Boss enters rage mode!", "#ef4444");
         renderRef.current.shake("heavy");
       }
@@ -565,7 +602,6 @@ export default function GameCanvas() {
           gold:  floorGoldRef.current,
         });
 
-        // Simplified: removed Cycle logic check.
         announce("BOSS SLAIN", "Floor cleared — descend deeper", "#4ade80");
 
         roomRef.current = { ...rs, phase: 'victory' };
@@ -635,6 +671,14 @@ export default function GameCanvas() {
           goldEarned={victoryStats.gold}
           onContinue={handleVictoryContinue}
           onQuit={handleQuitToMenu}
+        />
+      )}
+
+      {/* ── Floor Transition Overlay ─────────────────────────── */}
+      {showTransition && (
+        <FloorTransition
+          targetFloor={transitionFloor}
+          onComplete={handleTransitionComplete}
         />
       )}
 
