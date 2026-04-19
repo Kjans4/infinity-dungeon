@@ -367,3 +367,34 @@
   color: #0e0b06;
   background: var(--btn-color, #5a4010);
 }
+/* ============================================================
+   [🧱 BLOCK: Weapon Passive Display]
+   Shown inside the equipped weapon slot.
+   ============================================================ */
+.inv-weapon-slot__passive {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  background: rgba(96,165,250,0.05);
+  border: 1px solid rgba(96,165,250,0.18);
+  border-left: 2px solid #60a5fa;
+  padding: 8px 10px;
+}
+
+.inv-weapon-slot__passive-label {
+  font-family: 'Cinzel', serif;
+  font-size: 7px;
+  font-weight: 700;
+  color: #60a5fa;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  margin-bottom: 2px;
+}
+
+.inv-weapon-slot__passive-desc {
+  font-family: 'IM Fell English', serif;
+  font-style: italic;
+  font-size: 10px;
+  color: #93c5fd;
+  line-height: 1.5;
+}

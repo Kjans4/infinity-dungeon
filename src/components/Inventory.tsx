@@ -6,6 +6,7 @@ import { PlayerStats } from "@/engine/PlayerStats";
 import { Player }      from "@/engine/Player";
 import { Charm }       from "@/engine/CharmRegistry";
 import { WeaponItem }  from "@/engine/items/types";
+import { getWeaponPassive } from "@/engine/WeaponPassiveRegistry";
 import "@/styles/inventory.css";
 
 // ============================================================
@@ -92,6 +93,17 @@ function WeaponSlot({ item, onUnequip }: {
           {item.tradeOff && <p className="inv-weapon-slot__tradeoff">⚠ {item.tradeOff}</p>}
         </div>
       </div>
+
+      {(() => {
+        const p = getWeaponPassive(item.weaponType);
+        return p ? (
+          <div className="inv-weapon-slot__passive">
+            <p className="inv-weapon-slot__passive-label">Passive · {p.name}</p>
+            <p className="inv-weapon-slot__passive-desc">{p.description}</p>
+            {p.tradeOff && <p className="inv-weapon-slot__tradeoff">⚠ {p.tradeOff}</p>}
+          </div>
+        ) : null;
+      })()}
 
       <div className="inv-weapon-slot__atk-row">
         {atkStats.map((atk) => (

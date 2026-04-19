@@ -13,6 +13,10 @@ import { WeaponSystem }                         from "./WeaponSystem";
 import { spawnBurst }                           from "../Particle";
 import { getRandomShopItems }                   from "../items/ItemPool";
 import { circleCircle, rectCenter }             from "../Collision";
+import {
+  isRendMarked, clearRendMark, REND_BONUS_DAMAGE,
+  isRiposteActive, tickRiposte, RIPOSTE_MULT, GLAIVE_EXTRA_COST,
+} from "../WeaponPassiveRegistry";
 
 const WAVE_SIZE              = 8;
 const BASE_THRESHOLD         = 20;
@@ -230,6 +234,8 @@ export class HordeSystem {
       player.y + player.height / 2,
       "#38bdf8", 10, 1.3
     ));
+    // Weapon passive onParry (e.g. Riposte opens its window)
+    state.playerStats.weaponPassive?.onParry?.(player, state);
     return true;
   }
 
@@ -356,18 +362,52 @@ export class HordeSystem {
     const playerCX = player.x + player.width  / 2;
     const playerCY = player.y + player.height / 2;
     const isHeavy  = player.attackType === "heavy" || player.attackType === "charged_heavy";
+    const isLight  = player.attackType === "light" || player.attackType === "charged_light";
     const atkBonus = ps.atkBonus + ps.lastStandBonus(player);
+    const passive  = ps.weaponPassive;
+
+    // ── Glaive: extra stamina cost per attack ─────────────────
+    if (passive?.id === 'glaive' && player.isAttacking) {
+      player.stamina = Math.max(0, player.stamina - GLAIVE_EXTRA_COST);
+    }
+
+    // ── Riposte: tick window timer, compute multiplier ────────
+    tickRiposte(16);
+    const riposteMult = passive?.id === 'riposte' && isRiposteActive()
+      ? RIPOSTE_MULT : 1.0;
+
+    // ── Momentum: 2× damage if attacking within 200ms of dash end ─
+    // dashTimer counts down from 200ms; if it's still > 0 the dash just ended.
+    const momentumMult = passive?.id === 'momentum' && player.dashTimer > 0
+      ? 2.0 : 1.0;
+
+    // ── Katana Iaijutsu: +40% on charged light ────────────────
+    const iaijutsuMult = passive?.id === 'iaijutsu' && player.attackType === 'charged_light'
+      ? 1.4 : 1.0;
 
     const hitEnemies = this.weaponSystem.resolveHitsCustom(
       player, state.enemies, atkBonus,
       (enemy, amount) => {
         // Parry-stunned enemies take bonus damage
-        const finalAmt = enemy.isStunned ? Math.round(amount * PARRY_VULN_MULT) : amount;
-        if (enemy instanceof Tank) {
+        let finalAmt = enemy.isStunned ? Math.round(amount * PARRY_VULN_MULT) : amount;
+        // Passive multipliers
+        finalAmt = Math.round(finalAmt * riposteMult * momentumMult * iaijutsuMult);
+        // Precision: light attacks ignore 50% of armour reduction on Tank/Colossus
+        if (passive?.id === 'precision' && isLight && enemy instanceof Tank) {
+          // Force takeDamage instead of takeDamageFrom to bypass shield
+          enemy.takeDamage(finalAmt);
+        } else if (enemy instanceof Tank) {
           enemy.takeDamageFrom(finalAmt, playerCX, playerCY, isHeavy);
         } else {
           enemy.takeDamage(finalAmt);
         }
+        // Rend: if enemy was marked, deal bonus damage then clear mark
+        if (isRendMarked(enemy)) {
+          enemy.takeDamage(REND_BONUS_DAMAGE);
+          clearRendMark(enemy);
+        }
+        // Passive onHit hook
+        passive?.onHit?.(player, enemy, finalAmt, state);
       }
     );
 
@@ -428,6 +468,8 @@ export class HordeSystem {
         if (ps.healOnKill > 0) {
           player.hp = Math.min(player.maxHp, player.hp + ps.healOnKill);
         }
+        // Weapon passive onKill hook
+        passive?.onKill?.(player, enemy, state);
       });
     }
 
@@ -485,6 +527,7 @@ export class HordeSystem {
         if (parried) {
           proj.isDone = true;
           state.particles.push(...spawnBurst(proj.x, proj.y, "#38bdf8", 6, 1.0));
+          state.playerStats.weaponPassive?.onParry?.(player, state);
           return;
         }
       }

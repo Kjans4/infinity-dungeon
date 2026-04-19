@@ -7,6 +7,7 @@ import { Player }     from "@/engine/Player";
 import { Charm }      from "@/engine/CharmRegistry";
 import { WeaponItem } from "@/engine/items/types";
 import { ShopItem }   from "@/engine/items/ItemPool";
+import { getWeaponPassive } from "@/engine/WeaponPassiveRegistry";
 import "@/styles/shop.css";
 
 // ============================================================
@@ -144,7 +145,17 @@ function PendingLootCard({ item, playerStats, player, onClaim }: {
       <div className="shop-item-card__type" style={{ color: accentColor }}>{typeLabel}</div>
       <div className="shop-item-card__name">{item.name}</div>
       <div className="shop-item-card__desc">{item.description}</div>
-      {item.tradeOff && <div className="shop-item-card__tradeoff">⚠ {item.tradeOff}</div>}
+      {isWeapon && (() => {
+        const p = getWeaponPassive((item as WeaponItem).weaponType);
+        return p ? (
+          <div className="shop-item-card__passive">
+            <span className="shop-item-card__passive-label">Passive · {p.name}</span>
+            <span className="shop-item-card__passive-desc">{p.description}</span>
+            {p.tradeOff && <span className="shop-item-card__tradeoff">⚠ {p.tradeOff}</span>}
+          </div>
+        ) : null;
+      })()}
+      {!isWeapon && item.tradeOff && <div className="shop-item-card__tradeoff">⚠ {item.tradeOff}</div>}
       {willReplace && !alreadyOwned && (
         <div className="shop-loot-card__replace-warn">Replaces {playerStats.equippedWeaponItem?.name}</div>
       )}
@@ -196,7 +207,17 @@ function ShopItemCard({ item, gold, playerStats, player, onBuy }: {
       <div className="shop-item-card__type" style={{ color: accentColor }}>{typeLabel}</div>
       <div className="shop-item-card__name">{item.name}</div>
       <div className="shop-item-card__desc">{item.description}</div>
-      {item.tradeOff && <div className="shop-item-card__tradeoff">⚠ {item.tradeOff}</div>}
+      {isWeapon && (() => {
+        const p = getWeaponPassive(weaponItem!.weaponType);
+        return p ? (
+          <div className="shop-item-card__passive">
+            <span className="shop-item-card__passive-label">Passive · {p.name}</span>
+            <span className="shop-item-card__passive-desc">{p.description}</span>
+            {p.tradeOff && <span className="shop-item-card__tradeoff">⚠ {p.tradeOff}</span>}
+          </div>
+        ) : null;
+      })()}
+      {!isWeapon && item.tradeOff && <div className="shop-item-card__tradeoff">⚠ {item.tradeOff}</div>}
       <div className="shop-item-card__cost">{item.cost}g</div>
       {charmsFull && !isWeapon && <div className="shop-item-card__full-warning">Sell a charm first</div>}
       <PillBtn

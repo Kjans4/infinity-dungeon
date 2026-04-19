@@ -15,6 +15,9 @@ import { ItemDrop }                    from "../ItemDrop";
 import { spawnBurst }                  from "../Particle";
 import { WeaponSystem }                from "./WeaponSystem";
 import { getRandomShopItems }          from "../items/ItemPool";
+import {
+  isRiposteActive, tickRiposte, RIPOSTE_MULT, GLAIVE_EXTRA_COST,
+} from "../WeaponPassiveRegistry";
 
 // ============================================================
 // [🧱 BLOCK: Parry / Stagger Constants]
@@ -149,7 +152,7 @@ export class BossSystem {
 
     // ── Mage fakes ────────────────────────────────────────────
     if (boss instanceof Mage) {
-      this.resolveWeaponHitMageFakes(player, boss, ps.atkBonus + ps.lastStandBonus(player));
+      this.resolveWeaponHitMageFakes(player, boss, ps.atkBonus + ps.lastStandBonus(player), ps.weaponPassive?.id ?? null);
     }
 
     // ── Projectile hits on player ─────────────────────────────
@@ -163,6 +166,7 @@ export class BossSystem {
         if (parried) {
           proj.isDone = true;
           state.particles.push(...spawnBurst(proj.x, proj.y, "#38bdf8", 6, 1.0));
+          ps.weaponPassive?.onParry?.(player, state);
           return;
         }
       }
@@ -189,6 +193,8 @@ export class BossSystem {
             player.y + player.height / 2,
             "#38bdf8", 10, 1.4
           ));
+          // Weapon passive onParry (e.g. Riposte)
+          ps.weaponPassive?.onParry?.(player, state);
         }
       } else {
         let rawDmg = Math.round(boss.contactDamage * (1 - ps.damageReduction));
@@ -213,6 +219,8 @@ export class BossSystem {
               player.y + player.height / 2,
               "#38bdf8", 10, 1.4
             ));
+            // Weapon passive onParry
+            ps.weaponPassive?.onParry?.(player, state);
           }
         } else {
           let rawDmg = Math.round(boss.lungeDamage * (1 - ps.damageReduction));
@@ -231,7 +239,16 @@ export class BossSystem {
 
     // ── Weapon input + hit vs boss ─────────────────────────────
     this.weaponSystem.processInput(player);
-    this.resolveWeaponHit(player, boss, ps.atkBonus + ps.lastStandBonus(player));
+
+    // Glaive: extra stamina cost per attack
+    if (ps.weaponPassive?.id === 'glaive' && player.isAttacking) {
+      player.stamina = Math.max(0, player.stamina - GLAIVE_EXTRA_COST);
+    }
+
+    // Tick riposte window
+    tickRiposte(16);
+
+    this.resolveWeaponHit(player, boss, ps.atkBonus + ps.lastStandBonus(player), ps.weaponPassive?.id ?? null);
 
     // ── Stamina regen ─────────────────────────────────────────
     if (player.stamina < player.maxStamina) {
@@ -287,9 +304,15 @@ export class BossSystem {
 
   // ============================================================
   // [🧱 BLOCK: Resolve Weapon Hit vs Boss]
-  // Applies stagger vulnerability bonus if active.
+  // Applies stagger vulnerability bonus and weapon passive
+  // multipliers (riposte, momentum, iaijutsu) if active.
   // ============================================================
-  private resolveWeaponHit(player: Player, boss: AnyBoss, atkBonus: number): void {
+  private resolveWeaponHit(
+    player:    Player,
+    boss:      AnyBoss,
+    atkBonus:  number,
+    passiveId: string | null
+  ): void {
     if (!player.isAttacking || !player.equippedWeapon || !player.attackType) return;
 
     const weapon  = player.equippedWeapon;
@@ -303,6 +326,18 @@ export class BossSystem {
 
     // Stagger vulnerability
     if (this.isBossStaggered) damage = Math.round(damage * BOSS_PARRY_VULN_MULT);
+
+    // ── Weapon passive multipliers ────────────────────────────
+    // Riposte: 3× if parry window is open (sword)
+    if (isRiposteActive()) damage = Math.round(damage * RIPOSTE_MULT);
+    // Momentum: 2× if attacking while still in dash window (spear)
+    if (passiveId === 'momentum' && player.dashTimer > 0) {
+      damage = Math.round(damage * 2.0);
+    }
+    // Iaijutsu: +40% on charged light (katana)
+    if (passiveId === 'iaijutsu' && player.attackType === 'charged_light') {
+      damage = Math.round(damage * 1.4);
+    }
 
     const isHeavy = mode === 'heavy';
     const facing  = (isHeavy && player.lockedFacing) ? player.lockedFacing : player.facing;
@@ -321,10 +356,16 @@ export class BossSystem {
     }
   }
 
+
   // ============================================================
   // [🧱 BLOCK: Resolve Weapon Hit vs Mage Fakes]
   // ============================================================
-  private resolveWeaponHitMageFakes(player: Player, mage: Mage, atkBonus: number): void {
+  private resolveWeaponHitMageFakes(
+    player:    Player,
+    mage:      Mage,
+    atkBonus:  number,
+    passiveId: string | null
+  ): void {
     if (!player.isAttacking || !player.equippedWeapon || !player.attackType) return;
     if (mage.fakes.length === 0) return;
 
@@ -334,6 +375,11 @@ export class BossSystem {
     let   damage  = atk.damage + atkBonus;
     if (player.attackType === 'charged_light') damage = Math.round(damage * 2.5);
     if (player.attackType === 'charged_heavy') damage = Math.round(damage * 2.0);
+
+    // Passive multipliers mirror resolveWeaponHit
+    if (isRiposteActive())                                           damage = Math.round(damage * RIPOSTE_MULT);
+    if (passiveId === 'momentum' && player.dashTimer > 0)           damage = Math.round(damage * 2.0);
+    if (passiveId === 'iaijutsu' && player.attackType === 'charged_light') damage = Math.round(damage * 1.4);
 
     const isHeavy = mode === 'heavy';
     const facing  = (isHeavy && player.lockedFacing) ? player.lockedFacing : player.facing;

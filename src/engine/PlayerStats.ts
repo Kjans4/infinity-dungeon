@@ -3,8 +3,8 @@ import { Player }        from "./Player";
 import { Charm, CHARM_POOL, PlayerStatModifiers, defaultModifiers } from "./CharmRegistry";
 import { WeaponItem }    from "./items/types";
 import { Weapon }        from "./items/Weapon";
-import { getCharmById }  from "./CharmRegistry";
 import { ShopItem, getRandomShopItems } from "./items/ItemPool";
+import { WeaponPassive, getWeaponPassive } from "./WeaponPassiveRegistry";
 
 // ============================================================
 // [🧱 BLOCK: Stat Definitions]
@@ -173,13 +173,13 @@ export class PlayerStats {
   }
 
   private applyWeaponPassive(item: WeaponItem, player: Player) {
-    const charm = getCharmById(item.passiveId);
-    if (charm) charm.onEquip(player, this.modifiers);
+    const passive = getWeaponPassive(item.weaponType);
+    if (passive) passive.onEquip?.(player);
   }
 
   private removeWeaponPassive(item: WeaponItem, player: Player) {
-    const charm = getCharmById(item.passiveId);
-    if (charm) charm.onRemove(player, this.modifiers);
+    const passive = getWeaponPassive(item.weaponType);
+    if (passive) passive.onRemove?.(player);
   }
 
   // ============================================================
@@ -231,6 +231,16 @@ export class PlayerStats {
   lastStandBonus(player: Player): number {
     if (!this.hasCharm('last_stand')) return 0;
     return player.hp / player.maxHp <= 0.25 ? 15 : 0;
+  }
+
+  // ============================================================
+  // [🧱 BLOCK: Weapon Passive Getter]
+  // Returns the active weapon's passive object, or null if the
+  // player has bare fists or the weapon type has no passive.
+  // ============================================================
+  get weaponPassive(): WeaponPassive | null {
+    if (!this.equippedWeaponItem) return null;
+    return getWeaponPassive(this.equippedWeaponItem.weaponType);
   }
 
   get dashCost(): number {
