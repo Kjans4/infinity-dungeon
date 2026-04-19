@@ -173,6 +173,7 @@
   flex-direction: column;
   position: relative;
   overflow: hidden;
+  overflow-y: auto;
 }
 
 /* Double inner border */
@@ -270,7 +271,6 @@
   flex-direction: column;
   gap: 3px;
   padding: 0 1.6rem 1rem;
-  flex: 1;
   position: relative;
   z-index: 1;
 }
@@ -360,6 +360,144 @@
 }
 
 /* ============================================================
+   [🧱 BLOCK: Best Run Panel]
+   Displays personal best and recent run history.
+   Sits between nav and footer in the right panel.
+   ============================================================ */
+.menu-best-run {
+  position: relative;
+  z-index: 1;
+  margin: 0 1.6rem 0.8rem;
+  background: rgba(255,255,255,0.015);
+  border: 1px solid #2e2008;
+  border-top: 1px solid #3a2808;
+  padding: 12px 14px 10px;
+}
+
+.menu-best-run__header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.menu-best-run__crown {
+  font-size: 10px;
+  color: #8B6914;
+}
+
+.menu-best-run__title {
+  font-family: 'Cinzel', serif;
+  font-size: 8px;
+  font-weight: 700;
+  color: #8B6914;
+  letter-spacing: 0.28em;
+  text-transform: uppercase;
+}
+
+/* ── Stat row for the best run ── */
+.menu-best-run__record {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  margin-bottom: 10px;
+}
+
+.menu-best-run__stat {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  flex: 1;
+  gap: 3px;
+}
+
+.menu-best-run__stat-label {
+  font-family: 'Cinzel', serif;
+  font-size: 7px;
+  color: #3a2808;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+}
+
+.menu-best-run__stat-value {
+  font-family: 'Cinzel', serif;
+  font-size: 13px;
+  font-weight: 700;
+  color: #c0860c;
+}
+
+.menu-best-run__stat-value--gold {
+  color: #f0c040;
+  text-shadow: 0 0 10px rgba(240,192,64,0.3);
+  font-size: 16px;
+}
+
+.menu-best-run__divider {
+  width: 1px;
+  height: 28px;
+  background: #2e2008;
+  flex-shrink: 0;
+}
+
+/* ── Recent runs history list ── */
+.menu-best-run__history-label {
+  font-family: 'Cinzel', serif;
+  font-size: 7px;
+  font-weight: 700;
+  color: #3a2808;
+  letter-spacing: 0.25em;
+  text-transform: uppercase;
+  margin-bottom: 6px;
+  padding-top: 8px;
+  border-top: 1px solid #1e1608;
+}
+
+.menu-best-run__history {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.menu-best-run__history-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 0;
+  border-bottom: 1px solid rgba(46,32,8,0.6);
+}
+
+.menu-best-run__history-index {
+  font-family: 'Cinzel', serif;
+  font-size: 7px;
+  color: #2e2008;
+  width: 10px;
+  flex-shrink: 0;
+}
+
+.menu-best-run__history-floor {
+  font-family: 'Cinzel', serif;
+  font-size: 9px;
+  font-weight: 700;
+  color: #8B6914;
+  width: 28px;
+  flex-shrink: 0;
+}
+
+.menu-best-run__history-kills {
+  font-family: 'Cinzel', serif;
+  font-size: 9px;
+  color: #5a4010;
+  flex: 1;
+}
+
+.menu-best-run__history-time {
+  font-family: 'Cinzel', serif;
+  font-size: 8px;
+  color: #3a2808;
+  text-align: right;
+}
+
+/* ============================================================
    [🧱 BLOCK: Footer]
    ============================================================ */
 .menu-footer {
@@ -367,6 +505,7 @@
   padding: 0.7rem 2rem;
   position: relative;
   z-index: 1;
+  margin-top: auto;
 }
 
 .menu-footer__quote {

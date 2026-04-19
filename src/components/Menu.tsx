@@ -2,6 +2,7 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
+import { loadBestRun, loadRunHistory, RunRecord } from "@/engine/GameState";
 import "@/styles/menu.css";
 
 // ============================================================
@@ -9,6 +10,17 @@ import "@/styles/menu.css";
 // ============================================================
 interface MenuProps {
   onStart: () => void;
+}
+
+// ============================================================
+// [🧱 BLOCK: Time Formatter]
+// ============================================================
+function formatTime(ms: number): string {
+  const totalSec = Math.floor(ms / 1000);
+  const mins     = Math.floor(totalSec / 60);
+  const secs     = totalSec % 60;
+  if (mins === 0) return `${secs}s`;
+  return `${mins}m ${secs}s`;
 }
 
 // ============================================================
@@ -87,7 +99,6 @@ function Sigil() {
 
 // ============================================================
 // [🧱 BLOCK: Stone Cracks SVG]
-// Decorative crack lines overlaid on the left stone panel.
 // ============================================================
 function StoneCracks() {
   return (
@@ -175,6 +186,71 @@ const IconExit = (
 );
 
 // ============================================================
+// [🧱 BLOCK: Best Run Panel]
+// Displays the personal best + last 5 runs in the menu.
+// ============================================================
+function BestRunPanel() {
+  const [best,    setBest]    = useState<RunRecord | null>(null);
+  const [history, setHistory] = useState<RunRecord[]>([]);
+
+  useEffect(() => {
+    setBest(loadBestRun());
+    setHistory(loadRunHistory().slice(0, 5));
+  }, []);
+
+  if (!best) return null;
+
+  return (
+    <div className="menu-best-run">
+      <div className="menu-best-run__header">
+        <span className="menu-best-run__crown">⚜</span>
+        <span className="menu-best-run__title">Best Run</span>
+      </div>
+
+      <div className="menu-best-run__record">
+        <div className="menu-best-run__stat">
+          <span className="menu-best-run__stat-label">Floor</span>
+          <span className="menu-best-run__stat-value menu-best-run__stat-value--gold">
+            {best.floor}
+          </span>
+        </div>
+        <div className="menu-best-run__divider" />
+        <div className="menu-best-run__stat">
+          <span className="menu-best-run__stat-label">Kills</span>
+          <span className="menu-best-run__stat-value">{best.kills}</span>
+        </div>
+        <div className="menu-best-run__divider" />
+        <div className="menu-best-run__stat">
+          <span className="menu-best-run__stat-label">Time</span>
+          <span className="menu-best-run__stat-value">{formatTime(best.elapsedMs)}</span>
+        </div>
+        <div className="menu-best-run__divider" />
+        <div className="menu-best-run__stat">
+          <span className="menu-best-run__stat-label">Gold</span>
+          <span className="menu-best-run__stat-value">{best.goldEarned}g</span>
+        </div>
+      </div>
+
+      {history.length > 1 && (
+        <>
+          <p className="menu-best-run__history-label">Recent Runs</p>
+          <div className="menu-best-run__history">
+            {history.map((run, i) => (
+              <div key={run.timestamp} className="menu-best-run__history-row">
+                <span className="menu-best-run__history-index">{i + 1}</span>
+                <span className="menu-best-run__history-floor">F{run.floor}</span>
+                <span className="menu-best-run__history-kills">{run.kills}☠</span>
+                <span className="menu-best-run__history-time">{formatTime(run.elapsedMs)}</span>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+// ============================================================
 // [🧱 BLOCK: Menu Component]
 // ============================================================
 export default function Menu({ onStart }: MenuProps) {
@@ -235,6 +311,9 @@ export default function Menu({ onStart }: MenuProps) {
           <div className="menu-nav__divider" />
           <MenuButton icon={IconExit}   label="Forsake the Realm"  danger  onClick={() => {}} />
         </nav>
+
+        {/* Best run history */}
+        <BestRunPanel />
 
         {/* Footer */}
         <footer className="menu-footer">

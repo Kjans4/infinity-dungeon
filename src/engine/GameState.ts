@@ -16,6 +16,64 @@ import { AnyBoss }     from "./enemy/boss/index";
 // ============================================================
 export const PENDING_LOOT_CAP = 3;
 
+// ============================================================
+// [🧱 BLOCK: Run Record — localStorage persistence]
+// Stores the stats of a single completed run.
+// "Best" is determined by floor reached, then kills as tiebreak.
+// ============================================================
+export interface RunRecord {
+  floor:      number;
+  room:       number;
+  kills:      number;
+  goldEarned: number;
+  elapsedMs:  number;
+  timestamp:  number;   // Date.now() at run end
+}
+
+const LS_KEY_BEST    = "id_best_run";
+const LS_KEY_HISTORY = "id_run_history";
+const HISTORY_CAP    = 10;
+
+export function saveRunRecord(record: RunRecord): void {
+  try {
+    // ── Update best ───────────────────────────────────────────
+    const raw  = localStorage.getItem(LS_KEY_BEST);
+    const best: RunRecord | null = raw ? JSON.parse(raw) : null;
+    const isBetter =
+      !best ||
+      record.floor > best.floor ||
+      (record.floor === best.floor && record.kills > best.kills);
+    if (isBetter) localStorage.setItem(LS_KEY_BEST, JSON.stringify(record));
+
+    // ── Append to history (newest first, capped) ──────────────
+    const histRaw = localStorage.getItem(LS_KEY_HISTORY);
+    const history: RunRecord[] = histRaw ? JSON.parse(histRaw) : [];
+    history.unshift(record);
+    if (history.length > HISTORY_CAP) history.length = HISTORY_CAP;
+    localStorage.setItem(LS_KEY_HISTORY, JSON.stringify(history));
+  } catch {
+    // localStorage unavailable (SSR / private browsing) — silently skip
+  }
+}
+
+export function loadBestRun(): RunRecord | null {
+  try {
+    const raw = localStorage.getItem(LS_KEY_BEST);
+    return raw ? (JSON.parse(raw) as RunRecord) : null;
+  } catch {
+    return null;
+  }
+}
+
+export function loadRunHistory(): RunRecord[] {
+  try {
+    const raw = localStorage.getItem(LS_KEY_HISTORY);
+    return raw ? (JSON.parse(raw) as RunRecord[]) : [];
+  } catch {
+    return [];
+  }
+}
+
 export class GameState {
   // Entities
   player:      Player;

@@ -342,6 +342,8 @@ None critical. Items to address in future sessions:
 
 ### 🔴 High
 1. **Sound effects** — hit, dash, enemy death, gold pickup, boss roar, slam, UI click, victory fanfare. Web Audio API, zero dependencies.
+
+# 2 is done
 2. **Floor transition animation** — brief black fade with "FLOOR X" text between victory and new floor.
 
 ### 🟡 Medium
