@@ -9,6 +9,9 @@
 
 /* ============================================================
    [🧱 BLOCK: Backdrop]
+   Semi-transparent so player can see the arena behind it.
+   pointer-events: none on backdrop so clicks pass through
+   to game; only the card itself is interactive.
    ============================================================ */
 .victory-backdrop {
   position: fixed;
@@ -17,12 +20,12 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(0, 0, 0, 0.88);
+  background: rgba(0, 0, 0, 0.72);
+  pointer-events: none;
 }
 
 /* ============================================================
    [🧱 BLOCK: Card]
-   Wider than before to fit two summary columns side by side.
    ============================================================ */
 .victory-card {
   display: flex;
@@ -30,13 +33,14 @@
   align-items: center;
   gap: 20px;
   width: min(780px, 94vw);
-  background: rgba(10, 15, 30, 0.95);
+  background: rgba(10, 15, 30, 0.97);
   border: 1px solid rgba(74, 222, 128, 0.2);
   border-radius: 12px;
   padding: 36px 44px;
   opacity: 0;
   transform: translateY(20px);
   transition: opacity 0.5s ease, transform 0.5s ease;
+  pointer-events: all;   /* card is clickable even though backdrop is not */
 }
 
 .victory-card--visible {
@@ -45,10 +49,20 @@
 }
 
 /* ============================================================
-   [🧱 BLOCK: Title]
+   [🧱 BLOCK: Title Row]
+   Title block + close (✕) button side by side.
    ============================================================ */
+.victory-title-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  width: 100%;
+  gap: 16px;
+}
+
 .victory-title-block {
   text-align: center;
+  flex: 1;
 }
 
 .victory-title {
@@ -67,6 +81,32 @@
   text-transform: uppercase;
 }
 
+/* ── Close / minimize button ── */
+.victory-close-btn {
+  font-family: 'Courier New', monospace;
+  font-size: 16px;
+  font-weight: 700;
+  color: #475569;
+  background: transparent;
+  border: 1px solid #1e293b;
+  border-radius: 6px;
+  width: 36px;
+  height: 36px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: color 0.12s, border-color 0.12s, background 0.12s;
+  margin-top: 4px;
+}
+
+.victory-close-btn:hover {
+  color: #4ade80;
+  border-color: #4ade80;
+  background: rgba(74, 222, 128, 0.08);
+}
+
 /* ============================================================
    [🧱 BLOCK: Divider]
    ============================================================ */
@@ -78,8 +118,6 @@
 
 /* ============================================================
    [🧱 BLOCK: Two-Column Summaries]
-   Floor summary on the left, run summary on the right.
-   Stacks vertically on narrow screens.
    ============================================================ */
 .victory-summaries {
   display: flex;
@@ -88,7 +126,6 @@
   align-items: flex-start;
 }
 
-/* ── Vertical divider between columns ── */
 .victory-col-divider {
   width: 1px;
   align-self: stretch;
@@ -161,7 +198,6 @@
 
 /* ============================================================
    [🧱 BLOCK: Charms Section]
-   Shown in the run summary column.
    ============================================================ */
 .victory-charms {
   margin-top: 6px;
@@ -203,7 +239,7 @@
 }
 
 /* ============================================================
-   [🧱 BLOCK: Warning]
+   [🧱 BLOCK: Warning / hint text]
    ============================================================ */
 .victory-warning {
   font-size: 11px;
@@ -233,17 +269,87 @@
   padding: 13px 0;
   width: 100%;
   border: none;
-  transition: background 0.12s;
+  transition: background 0.12s, color 0.12s, border-color 0.12s;
 }
 
-.victory-btn--primary {
-  color: #0f172a;
-  background: #4ade80;
+/* Minimize / return to game — green outline */
+.victory-btn--minimize {
+  color: #4ade80;
+  background: transparent;
+  border: 1px solid rgba(74, 222, 128, 0.4);
 }
 
+.victory-btn--minimize:hover {
+  background: rgba(74, 222, 128, 0.1);
+  border-color: #4ade80;
+}
+
+/* Retreat to menu — muted */
 .victory-btn--secondary {
   color: #475569;
   background: transparent;
   border: 1px solid #1e293b;
-  transition: color 0.12s, border 0.12s;
+  transition: color 0.12s, border-color 0.12s;
+}
+
+/* ============================================================
+   [🧱 BLOCK: Victory Badge]
+   Small glowing tab tucked below the minimap (top-right).
+   Rendered by GameCanvas when the overlay is minimized.
+   ============================================================ */
+.victory-badge {
+  position: fixed;
+  top: 208px;          /* sits just below the minimap */
+  right: 16px;
+  z-index: 25;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 14px 6px 10px;
+  background: rgba(10, 15, 30, 0.95);
+  border: 1px solid rgba(74, 222, 128, 0.5);
+  border-radius: 0 0 8px 8px;
+  cursor: pointer;
+  pointer-events: all;
+  transition: border-color 0.15s, box-shadow 0.15s;
+  animation: victory-badge-drop 0.3s ease forwards, victory-badge-glow 2s ease-in-out infinite;
+}
+
+.victory-badge:hover {
+  border-color: #4ade80;
+  box-shadow: 0 0 16px rgba(74, 222, 128, 0.3);
+}
+
+@keyframes victory-badge-drop {
+  from { opacity: 0; transform: translateY(-8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes victory-badge-glow {
+  0%, 100% { box-shadow: 0 0 6px rgba(74, 222, 128, 0.2); }
+  50%       { box-shadow: 0 0 18px rgba(74, 222, 128, 0.5); }
+}
+
+.victory-badge__gem {
+  width: 8px;
+  height: 8px;
+  background: #4ade80;
+  border-radius: 50%;
+  flex-shrink: 0;
+  box-shadow: 0 0 6px #4ade80;
+  animation: victory-gem-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes victory-gem-pulse {
+  0%, 100% { opacity: 0.7; transform: scale(1);    }
+  50%       { opacity: 1;   transform: scale(1.25); }
+}
+
+.victory-badge__label {
+  font-family: 'Courier New', monospace;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: #4ade80;
 }

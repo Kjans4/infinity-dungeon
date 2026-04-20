@@ -24,6 +24,7 @@ import WaveClearAnnouncement from "@/components/overlays/WaveClearAnnouncement";
 import FloorTransition       from "@/components/overlays/FloorTransition";
 import { spawnBurst }        from "@/engine/Particle";
 import { ShopItem }          from "@/engine/items/ItemPool";
+import "@/styles/victory.css";
 
 import "@/styles/dev-panel.css";
 
@@ -130,16 +131,22 @@ export default function GameCanvas() {
   const floorKillsRef = useRef(0);
   const floorGoldRef  = useRef(0);
 
-  const [showMenu,         setShowMenu]         = useState(true);
-  const [isGameOver,       setIsGameOver]        = useState(false);
-  const [isVictory,        setIsVictory]         = useState(false);
-  const [showShop,         setShowShop]          = useState(false);
-  const [isMidRoom,        setIsMidRoom]         = useState(false);
-  const [isPaused,         setIsPaused]          = useState(false);
-  const [showInventory,    setShowInventory]     = useState(false);
-  const [gold,             setGold]              = useState(0);
-  const [hud,              setHud]               = useState<HUDState>(BLANK_HUD);
-  const [victoryStats,     setVictoryStats]      = useState({ kills: 0, gold: 0 });
+  // ============================================================
+  // [🧱 BLOCK: Victory UI State]
+  // isVictory      — overlay is visible (not minimized)
+  // victoryMinimized — overlay closed, badge shown instead
+  // ============================================================
+  const [showMenu,           setShowMenu]           = useState(true);
+  const [isGameOver,         setIsGameOver]          = useState(false);
+  const [isVictory,          setIsVictory]           = useState(false);
+  const [victoryMinimized,   setVictoryMinimized]    = useState(false);
+  const [showShop,           setShowShop]            = useState(false);
+  const [isMidRoom,          setIsMidRoom]           = useState(false);
+  const [isPaused,           setIsPaused]            = useState(false);
+  const [showInventory,      setShowInventory]       = useState(false);
+  const [gold,               setGold]                = useState(0);
+  const [hud,                setHud]                 = useState<HUDState>(BLANK_HUD);
+  const [victoryStats,       setVictoryStats]        = useState({ kills: 0, gold: 0 });
   const [announcement, setAnnouncement] = useState<{
     show: boolean; message: string; subtext?: string; color?: string;
   }>({ show: false, message: "" });
@@ -148,13 +155,13 @@ export default function GameCanvas() {
 
   // ============================================================
   // [🧱 BLOCK: Floor Transition State]
-  // showTransition — overlay is mounted and animating
-  // transitionFloor — which floor number to display
-  // pendingContinue — callback to invoke once transition ends
   // ============================================================
   const [showTransition,  setShowTransition]  = useState(false);
   const [transitionFloor, setTransitionFloor] = useState(2);
   const pendingContinueRef = useRef<(() => void) | null>(null);
+
+  // Victory phase is active (overlay visible or minimized to badge)
+  const isVictoryPhase = isVictory || victoryMinimized;
 
   useEffect(() => {
     uiActiveRef.current = {
@@ -190,11 +197,13 @@ export default function GameCanvas() {
         const state = stateRef.current;
         if (!state) return;
 
+        // Door interaction — works in all phases including victory
         if (state.door?.playerIsNear) {
           handleDoorEnter();
           return;
         }
 
+        // Shop NPC interaction — works in all phases including victory
         if (state.shopNpc?.playerIsNear) {
           state.playerStats.generateShopOptions();
           setIsMidRoom(true);
@@ -270,8 +279,9 @@ export default function GameCanvas() {
     hordeRef.current.setup(stateRef.current!, rs, WORLD_W, WORLD_H);
     setHud(BLANK_HUD);
     setGold(0);
-    setIsGameOver(false); setIsVictory(false);
-    setShowShop(false);   setIsPaused(false);
+    setIsGameOver(false);    setIsVictory(false);
+    setVictoryMinimized(false);
+    setShowShop(false);      setIsPaused(false);
     setIsMidRoom(false);
     setShowInventory(false);
     setShowMenu(false);
@@ -292,8 +302,9 @@ export default function GameCanvas() {
     hordeRef.current.setup(stateRef.current!, rs, WORLD_W, WORLD_H);
     setHud(BLANK_HUD);
     setGold(0);
-    setIsGameOver(false); setIsVictory(false);
-    setShowShop(false);   setIsPaused(false);
+    setIsGameOver(false);    setIsVictory(false);
+    setVictoryMinimized(false);
+    setShowShop(false);      setIsPaused(false);
     setIsMidRoom(false);
     setShowInventory(false);
     setShowMenu(false);
@@ -312,8 +323,9 @@ export default function GameCanvas() {
     roomRef.current = initialRoomState();
     setHud(BLANK_HUD);
     setGold(0);
-    setIsGameOver(false); setIsVictory(false);
-    setShowShop(false);   setIsPaused(false);
+    setIsGameOver(false);    setIsVictory(false);
+    setVictoryMinimized(false);
+    setShowShop(false);      setIsPaused(false);
     setIsMidRoom(false);
     setShowInventory(false);
     setShowMenu(true);
@@ -324,25 +336,56 @@ export default function GameCanvas() {
     resetFloorTracking();
   }, [resetFloorTracking]);
 
+  // ============================================================
+  // [🧱 BLOCK: Door Enter]
+  // Handles F-press at any door. In victory phase it triggers
+  // the floor transition instead of advanceRoom.
+  // ============================================================
   const handleDoorEnter = useCallback(() => {
-    const rs = advanceRoom(roomRef.current);
-    roomRef.current = rs;
+    const rs = roomRef.current;
+
+    // Victory phase door → next floor
+    if (rs.phase === 'victory') {
+      const nextFloorNum = rs.floor + 1;
+      pendingContinueRef.current = () => {
+        const newRs = nextFloor(rs);
+        roomRef.current = newRs;
+        stateRef.current!.resetRoom();
+        hordeRef.current.setup(stateRef.current!, newRs, WORLD_W, WORLD_H);
+        setIsVictory(false);
+        setVictoryMinimized(false);
+        setShowShop(false);
+        setIsMidRoom(false);
+        lastAnnouncedRemainingRef.current = null;
+        resetFloorTracking();
+        setTimeout(() => announce(`FLOOR ${newRs.floor}`, "Enemies incoming", "#f59e0b"), 300);
+      };
+      setIsVictory(false);
+      setVictoryMinimized(false);
+      setTransitionFloor(nextFloorNum);
+      setShowTransition(true);
+      return;
+    }
+
+    // Normal room advance
+    const newRs = advanceRoom(rs);
+    roomRef.current = newRs;
     lastAnnouncedRemainingRef.current = null;
 
-    if (rs.phase === 'boss') {
-      bossRef.current.setup(stateRef.current!, rs);
+    if (newRs.phase === 'boss') {
+      bossRef.current.setup(stateRef.current!, newRs);
       const bossName = stateRef.current?.boss
         ? getBossName(stateRef.current.boss)
         : 'BOSS';
       announce(`${bossName} INCOMING`, "Prepare yourself!", "#ef4444");
-    } else if (rs.phase === 'elite') {
-      hordeRef.current.setup(stateRef.current!, rs, WORLD_W, WORLD_H);
+    } else if (newRs.phase === 'elite') {
+      hordeRef.current.setup(stateRef.current!, newRs, WORLD_W, WORLD_H);
       announce("⚡ ELITE ROOM", "No Grunts — only the strong survive", "#f97316");
     } else {
-      hordeRef.current.setup(stateRef.current!, rs, WORLD_W, WORLD_H);
-      announce("PREPARE!", `Room ${rs.roomDisplay} — enemies incoming`, "#38bdf8");
+      hordeRef.current.setup(stateRef.current!, newRs, WORLD_W, WORLD_H);
+      announce("PREPARE!", `Room ${newRs.roomDisplay} — enemies incoming`, "#38bdf8");
     }
-  }, [announce]);
+  }, [announce, resetFloorTracking]);
 
   const handleNpcClose = useCallback(() => {
     setShowShop(false);
@@ -356,39 +399,23 @@ export default function GameCanvas() {
     if (idx !== -1) state.pendingLoot.splice(idx, 1);
   }, []);
 
-  // ============================================================
-  // [🧱 BLOCK: Victory Continue — with Floor Transition]
-  // When the player clicks "Descend", we:
-  //   1. Hide the victory overlay immediately
-  //   2. Store the real continuation logic in pendingContinueRef
-  //   3. Show the FloorTransition overlay (it knows which floor)
-  //   4. FloorTransition calls onComplete → pendingContinueRef fires
-  // ============================================================
-  const executeContinue = useCallback(() => {
-    const rs = nextFloor(roomRef.current);
-    roomRef.current = rs;
-    stateRef.current!.resetRoom();
-    hordeRef.current.setup(stateRef.current!, rs, WORLD_W, WORLD_H);
-    setIsVictory(false);
-    setShowShop(false);
-    setIsMidRoom(false);
-    lastAnnouncedRemainingRef.current = null;
-    resetFloorTracking();
-    setTimeout(() => announce(`FLOOR ${rs.floor}`, "Enemies incoming", "#f59e0b"), 300);
-  }, [resetFloorTracking, announce]);
-
-  const handleVictoryContinue = useCallback(() => {
-    const nextFloorNum = roomRef.current.floor + 1;
-    pendingContinueRef.current = executeContinue;
-    setIsVictory(false);
-    setTransitionFloor(nextFloorNum);
-    setShowTransition(true);
-  }, [executeContinue]);
-
   const handleTransitionComplete = useCallback(() => {
     setShowTransition(false);
     pendingContinueRef.current?.();
     pendingContinueRef.current = null;
+  }, []);
+
+  // ============================================================
+  // [🧱 BLOCK: Victory Minimize / Restore]
+  // ============================================================
+  const handleVictoryClose = useCallback(() => {
+    setIsVictory(false);
+    setVictoryMinimized(true);
+  }, []);
+
+  const handleVictoryRestore = useCallback(() => {
+    setVictoryMinimized(false);
+    setIsVictory(true);
   }, []);
 
   const handleGoldChange = useCallback((newGold: number) => {
@@ -461,16 +488,18 @@ export default function GameCanvas() {
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
 
-    // Pause the game loop during any UI overlay (including transition)
-    if (showMenu || showShop || isVictory || isGameOver || isPaused || showInventory || showTransition) return;
+    // ── Overlays that fully pause the game loop ───────────────
+    // Victory is intentionally NOT in this list — player can roam.
+    if (showMenu || showShop || isGameOver || isPaused || showInventory || showTransition) return;
 
     const rs      = roomRef.current;
-    const isBoss  = rs.phase === 'boss';
+    const isBoss  = rs.phase === 'boss' || rs.phase === 'victory';
     const isHorde = rs.phase === 'horde' || rs.phase === 'elite';
     const worldW  = isBoss ? BOSS_WORLD_W : WORLD_W;
     const worldH  = isBoss ? BOSS_WORLD_H : WORLD_H;
     const player  = state.player;
 
+    // ── Death sequence ────────────────────────────────────────
     if (isDyingRef.current) {
       const elapsed = Date.now() - deathStartRef.current;
 
@@ -602,11 +631,13 @@ export default function GameCanvas() {
           gold:  floorGoldRef.current,
         });
 
-        announce("BOSS SLAIN", "Floor cleared — descend deeper", "#4ade80");
-
+        // Mark room as victory phase so door F-press triggers nextFloor
         roomRef.current = { ...rs, phase: 'victory' };
-        setTimeout(() => setIsVictory(true), 2000);
-        return;
+
+        announce("BOSS SLAIN", "Approach the gate to descend", "#4ade80");
+
+        // Show overlay after brief delay — game loop keeps running
+        setTimeout(() => setIsVictory(true), 1200);
       }
 
       bossRef.current.draw(state, ctx, state.camera, player);
@@ -615,7 +646,7 @@ export default function GameCanvas() {
     player.draw(ctx, state.camera);
   });
 
-  const gameActive   = !showMenu && !isGameOver && !isVictory;
+  const gameActive   = !showMenu && !isGameOver;
   const isBossPhase  = roomRef.current.phase === 'boss';
   const isElitePhase = roomRef.current.phase === 'elite';
   const state          = stateRef.current;
@@ -641,7 +672,7 @@ export default function GameCanvas() {
       )}
 
       {!showMenu && !isGameOver && (
-        <Minimap state={stateRef.current} isBoss={roomRef.current.phase === 'boss'} />
+        <Minimap state={stateRef.current} isBoss={roomRef.current.phase === 'boss' || roomRef.current.phase === 'victory'} />
       )}
 
       {showShop && state && (
@@ -664,6 +695,7 @@ export default function GameCanvas() {
         />
       )}
 
+      {/* ── Victory overlay — only shown when not minimized ── */}
       {isVictory && state && (
         <VictoryOverlay
           floor={hud.floor}
@@ -673,12 +705,20 @@ export default function GameCanvas() {
           totalGoldEarned={state.totalGoldEarned}
           runStartTime={state.runStartTime}
           playerStats={state.playerStats}
-          onContinue={handleVictoryContinue}
+          onClose={handleVictoryClose}
           onQuit={handleQuitToMenu}
         />
       )}
 
-      {/* ── Floor Transition Overlay ─────────────────────────── */}
+      {/* ── Victory badge — shown when overlay is minimized ── */}
+      {victoryMinimized && (
+        <button className="victory-badge" onClick={handleVictoryRestore}>
+          <span className="victory-badge__gem" />
+          <span className="victory-badge__label">Floor Clear</span>
+        </button>
+      )}
+
+      {/* ── Floor Transition Overlay ── */}
       {showTransition && (
         <FloorTransition
           targetFloor={transitionFloor}

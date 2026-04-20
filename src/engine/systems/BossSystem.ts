@@ -12,6 +12,8 @@ import { GameState, PENDING_LOOT_CAP } from "../GameState";
 import { BOSS_WORLD_W, BOSS_WORLD_H }  from "../Camera";
 import { GoldDrop }                    from "../GoldDrop";
 import { ItemDrop }                    from "../ItemDrop";
+import { Door }                        from "../Door";
+import { ShopNPC }                     from "../ShopNPC";
 import { spawnBurst }                  from "../Particle";
 import { WeaponSystem }                from "./WeaponSystem";
 import { getRandomShopItems }          from "../items/ItemPool";
@@ -21,11 +23,9 @@ import {
 
 // ============================================================
 // [🧱 BLOCK: Parry / Stagger Constants]
-// Bosses cannot be fully stunned — they stagger instead.
-// During stagger they freeze briefly and take bonus damage.
 // ============================================================
-const BOSS_STAGGER_MS    = 600;   // freeze duration
-const BOSS_PARRY_VULN_MULT = 1.5; // damage bonus during stagger
+const BOSS_STAGGER_MS      = 600;
+const BOSS_PARRY_VULN_MULT = 1.5;
 
 const BOSS_GOLD = { min: 80, max: 120 };
 
@@ -70,10 +70,9 @@ export function getBossName(boss: AnyBoss): string {
 
 // ============================================================
 // [🧱 BLOCK: Boss Stagger State]
-// Stored locally since boss classes don't own this state.
 // ============================================================
 interface BossStagger {
-  timer: number;   // ms remaining
+  timer: number;
 }
 
 // ============================================================
@@ -114,11 +113,61 @@ export class BossSystem {
   // ============================================================
   reset(state: GameState) {
     state.boss        = null;
+    state.door        = null;
+    state.shopNpc     = null;
     state.goldDrops   = [];
     state.itemDrops   = [];
     state.particles   = [];
     state.projectiles = [];
     this.stagger      = { timer: 0 };
+  }
+
+  // ============================================================
+  // [🧱 BLOCK: Spawn Victory Door and Shop]
+  // Called once on boss death. Door is immediately active.
+  // ShopNPC positioned beside the door as in horde rooms.
+  // ============================================================
+  private spawnVictoryDoorAndShop(state: GameState) {
+    state.door          = new Door(BOSS_WORLD_W);
+    state.door.isActive = true;
+    state.shopNpc       = new ShopNPC(BOSS_WORLD_W);
+    state.shopNpc.activate();
+  }
+
+  // ============================================================
+  // [🧱 BLOCK: Tick Door and Shop Post-Victory]
+  // Runs every frame after boss is dead so the door/shop keep
+  // animating and responding to player proximity.
+  // ============================================================
+  private tickDoorAndShop(state: GameState, player: Player) {
+    if (state.door) {
+      state.door.update();
+      state.door.checkPlayerProximity(player);
+    }
+    if (state.shopNpc) {
+      state.shopNpc.update();
+      state.shopNpc.checkPlayerProximity(player);
+    }
+
+    // Stamina regen while roaming post-victory
+    const ps = state.playerStats;
+    if (player.stamina < player.maxStamina) {
+      player.stamina = Math.min(player.maxStamina, player.stamina + ps.staminaRegenRate);
+    }
+
+    // Remaining gold / item drops still collectible
+    state.goldDrops.forEach((drop) => drop.update(player));
+    state.goldDrops = state.goldDrops.filter((d) => !d.collected);
+
+    state.itemDrops = state.itemDrops.filter((drop) => {
+      if (drop.collected) return false;
+      if (state.pendingLoot.length >= PENDING_LOOT_CAP) {
+        drop.update(player); return !drop.collected;
+      }
+      const pickedUp = drop.update(player);
+      if (pickedUp) { state.pendingLoot.push(drop.item); return false; }
+      return !drop.collected;
+    });
   }
 
   // ============================================================
@@ -131,7 +180,12 @@ export class BossSystem {
     worldH: number
   ): { event: "victory" | "enraged" | null; goldCollected: number } {
     const boss = state.boss as AnyBoss | null;
-    if (!boss) return { event: null, goldCollected: 0 };
+
+    // ── Post-victory roam phase — boss already gone ───────────
+    if (!boss) {
+      this.tickDoorAndShop(state, player);
+      return { event: null, goldCollected: 0 };
+    }
 
     const ps = state.playerStats;
 
@@ -139,7 +193,6 @@ export class BossSystem {
     if (this.stagger.timer > 0) {
       this.stagger.timer -= 16;
       if (this.stagger.timer < 0) this.stagger.timer = 0;
-      // Boss is frozen — skip its update
     } else {
       boss.update(player, worldW, worldH);
     }
@@ -152,7 +205,11 @@ export class BossSystem {
 
     // ── Mage fakes ────────────────────────────────────────────
     if (boss instanceof Mage) {
-      this.resolveWeaponHitMageFakes(player, boss, ps.atkBonus + ps.lastStandBonus(player), ps.weaponPassive?.id ?? null);
+      this.resolveWeaponHitMageFakes(
+        player, boss,
+        ps.atkBonus + ps.lastStandBonus(player),
+        ps.weaponPassive?.id ?? null
+      );
     }
 
     // ── Projectile hits on player ─────────────────────────────
@@ -160,7 +217,6 @@ export class BossSystem {
       proj.update();
       if (!proj.isHittingPlayer(player)) return;
 
-      // Parry deflects boss projectiles too
       if (player.isParrying) {
         const parried = player.tryParry();
         if (parried) {
@@ -182,8 +238,6 @@ export class BossSystem {
 
     // ── Boss contact damage ───────────────────────────────────
     if (boss.isCollidingWithPlayer(player) && player.iFrames <= 0 && !this.isBossStaggered) {
-
-      // Parry check vs contact
       if (player.isParrying) {
         const parried = player.tryParry();
         if (parried) {
@@ -193,7 +247,6 @@ export class BossSystem {
             player.y + player.height / 2,
             "#38bdf8", 10, 1.4
           ));
-          // Weapon passive onParry (e.g. Riposte)
           ps.weaponPassive?.onParry?.(player, state);
         }
       } else {
@@ -209,7 +262,6 @@ export class BossSystem {
     // ── Shade lunge ───────────────────────────────────────────
     if (boss instanceof Shade && !this.isBossStaggered) {
       if (boss.isLungeHittingPlayer(player) && player.iFrames <= 0) {
-        // Parry vs lunge
         if (player.isParrying) {
           const parried = player.tryParry();
           if (parried) {
@@ -219,7 +271,6 @@ export class BossSystem {
               player.y + player.height / 2,
               "#38bdf8", 10, 1.4
             ));
-            // Weapon passive onParry
             ps.weaponPassive?.onParry?.(player, state);
           }
         } else {
@@ -230,7 +281,7 @@ export class BossSystem {
       }
     }
 
-    // ── Slam / stomp AoE — block reduces, parry doesn't apply ──
+    // ── Slam / stomp AoE ──────────────────────────────────────
     if (boss.isSlamHittingPlayer(player) && player.iFrames <= 0 && !this.isBossStaggered) {
       let rawDmg = Math.round(boss.slamDamage * (1 - ps.damageReduction));
       if (player.isBlocking) rawDmg = player.applyBlockedHit(rawDmg);
@@ -240,15 +291,17 @@ export class BossSystem {
     // ── Weapon input + hit vs boss ─────────────────────────────
     this.weaponSystem.processInput(player);
 
-    // Glaive: extra stamina cost per attack
     if (ps.weaponPassive?.id === 'glaive' && player.isAttacking) {
       player.stamina = Math.max(0, player.stamina - GLAIVE_EXTRA_COST);
     }
 
-    // Tick riposte window
     tickRiposte(16);
 
-    this.resolveWeaponHit(player, boss, ps.atkBonus + ps.lastStandBonus(player), ps.weaponPassive?.id ?? null);
+    this.resolveWeaponHit(
+      player, boss,
+      ps.atkBonus + ps.lastStandBonus(player),
+      ps.weaponPassive?.id ?? null
+    );
 
     // ── Stamina regen ─────────────────────────────────────────
     if (player.stamina < player.maxStamina) {
@@ -289,12 +342,12 @@ export class BossSystem {
       spawnBossItemDrop(state, bx, by);
       state.particles.push(...spawnBurst(bx, by, boss.color, 12, 1.8));
 
-      // Executioner — shockwave burst VFX on boss kill.
-      // No horde enemies exist in boss phase, so damage is skipped,
-      // but the visual fires to stay consistent with the charm promise.
       if (ps.hasCharm('executioner')) {
         state.particles.push(...spawnBurst(bx, by, '#facc15', 20, 2.2));
       }
+
+      // Spawn door + shop immediately so player can act freely
+      this.spawnVictoryDoorAndShop(state);
 
       return { event: "victory", goldCollected };
     }
@@ -304,8 +357,6 @@ export class BossSystem {
 
   // ============================================================
   // [🧱 BLOCK: Resolve Weapon Hit vs Boss]
-  // Applies stagger vulnerability bonus and weapon passive
-  // multipliers (riposte, momentum, iaijutsu) if active.
   // ============================================================
   private resolveWeaponHit(
     player:    Player,
@@ -320,24 +371,14 @@ export class BossSystem {
     const atk     = weapon.getAttack(mode);
     let   damage  = atk.damage + atkBonus;
 
-    // Charged multipliers
     if (player.attackType === 'charged_light') damage = Math.round(damage * 2.5);
     if (player.attackType === 'charged_heavy') damage = Math.round(damage * 2.0);
 
-    // Stagger vulnerability
     if (this.isBossStaggered) damage = Math.round(damage * BOSS_PARRY_VULN_MULT);
 
-    // ── Weapon passive multipliers ────────────────────────────
-    // Riposte: 3× if parry window is open (sword)
     if (isRiposteActive()) damage = Math.round(damage * RIPOSTE_MULT);
-    // Momentum: 2× if attacking while still in dash window (spear)
-    if (passiveId === 'momentum' && player.dashTimer > 0) {
-      damage = Math.round(damage * 2.0);
-    }
-    // Iaijutsu: +40% on charged light (katana)
-    if (passiveId === 'iaijutsu' && player.attackType === 'charged_light') {
-      damage = Math.round(damage * 1.4);
-    }
+    if (passiveId === 'momentum' && player.dashTimer > 0) damage = Math.round(damage * 2.0);
+    if (passiveId === 'iaijutsu' && player.attackType === 'charged_light') damage = Math.round(damage * 1.4);
 
     const isHeavy = mode === 'heavy';
     const facing  = (isHeavy && player.lockedFacing) ? player.lockedFacing : player.facing;
@@ -355,7 +396,6 @@ export class BossSystem {
       }
     }
   }
-
 
   // ============================================================
   // [🧱 BLOCK: Resolve Weapon Hit vs Mage Fakes]
@@ -376,9 +416,8 @@ export class BossSystem {
     if (player.attackType === 'charged_light') damage = Math.round(damage * 2.5);
     if (player.attackType === 'charged_heavy') damage = Math.round(damage * 2.0);
 
-    // Passive multipliers mirror resolveWeaponHit
-    if (isRiposteActive())                                           damage = Math.round(damage * RIPOSTE_MULT);
-    if (passiveId === 'momentum' && player.dashTimer > 0)           damage = Math.round(damage * 2.0);
+    if (isRiposteActive())                                                 damage = Math.round(damage * RIPOSTE_MULT);
+    if (passiveId === 'momentum' && player.dashTimer > 0)                  damage = Math.round(damage * 2.0);
     if (passiveId === 'iaijutsu' && player.attackType === 'charged_light') damage = Math.round(damage * 1.4);
 
     const isHeavy = mode === 'heavy';
@@ -398,10 +437,9 @@ export class BossSystem {
 
   // ============================================================
   // [🧱 BLOCK: Draw]
-  // Staggered boss gets a cyan flash overlay.
   // ============================================================
   draw(state: GameState, ctx: CanvasRenderingContext2D, camera: Camera, player: Player) {
-    // Boss stagger visual — cyan tint on boss
+    // Boss stagger visual
     if (state.boss && this.isBossStaggered) {
       const progress = this.stagger.timer / BOSS_STAGGER_MS;
       const sx = camera.toScreenX(state.boss.x);
@@ -413,12 +451,17 @@ export class BossSystem {
     }
 
     state.boss?.draw(ctx, camera);
-    state.projectiles.forEach((p) => p.draw(ctx, camera));
-    state.itemDrops.forEach((d)   => d.draw(ctx, camera));
+
+    // Door + ShopNPC appear after boss dies
+    state.door?.draw(ctx, camera);
+    state.shopNpc?.draw(ctx, camera, BOSS_WORLD_W);
+
+    state.projectiles.forEach((p)  => p.draw(ctx, camera));
+    state.itemDrops.forEach((d)    => d.draw(ctx, camera));
     state.goldDrops.forEach((drop) => drop.draw(ctx, camera));
-    state.particles.forEach((p)   => p.update());
+    state.particles.forEach((p)    => p.update());
     state.particles = state.particles.filter((p) => !p.isDone);
-    state.particles.forEach((p)   => p.draw(ctx, camera));
+    state.particles.forEach((p)    => p.draw(ctx, camera));
     this.weaponSystem.draw(ctx, player, camera);
   }
 }

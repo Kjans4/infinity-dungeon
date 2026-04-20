@@ -10,13 +10,13 @@ import "@/styles/victory.css";
 // ============================================================
 interface Props {
   floor:           number;
-  kills:           number;        // kills this floor only
-  goldEarned:      number;        // gold this floor only
-  totalKills:      number;        // run-wide total
-  totalGoldEarned: number;        // run-wide total
-  runStartTime:    number;        // Date.now() at run start
+  kills:           number;
+  goldEarned:      number;
+  totalKills:      number;
+  totalGoldEarned: number;
+  runStartTime:    number;
   playerStats:     PlayerStats;
-  onContinue:      () => void;
+  onClose:         () => void;   // minimizes to badge
   onQuit:          () => void;
 }
 
@@ -47,11 +47,12 @@ function StatRow({ icon, label, value }: { icon: string; label: string; value: s
 // ============================================================
 // [🧱 BLOCK: VictoryOverlay]
 // Two panels: floor summary (left) + run summary (right).
+// Close button minimizes to badge — no longer blocks gameplay.
 // ============================================================
 export default function VictoryOverlay({
   floor, kills, goldEarned,
   totalKills, totalGoldEarned, runStartTime,
-  playerStats, onContinue, onQuit,
+  playerStats, onClose, onQuit,
 }: Props) {
   const [visible, setVisible] = useState(false);
 
@@ -69,10 +70,19 @@ export default function VictoryOverlay({
     <div className="victory-backdrop">
       <div className={`victory-card ${visible ? "victory-card--visible" : ""}`}>
 
-        {/* ── Title ── */}
-        <div className="victory-title-block">
-          <p className="victory-title">FLOOR CLEAR</p>
-          <p className="victory-subtitle">Floor {floor} Conquered</p>
+        {/* ── Title + Close button ── */}
+        <div className="victory-title-row">
+          <div className="victory-title-block">
+            <p className="victory-title">FLOOR CLEAR</p>
+            <p className="victory-subtitle">Floor {floor} Conquered</p>
+          </div>
+          <button
+            className="victory-close-btn"
+            onClick={onClose}
+            title="Minimize — return to game"
+          >
+            ✕
+          </button>
         </div>
 
         <div className="victory-divider" />
@@ -80,30 +90,26 @@ export default function VictoryOverlay({
         {/* ── Two-column summaries ── */}
         <div className="victory-summaries">
 
-          {/* Floor summary */}
           <div className="victory-summary">
             <p className="victory-summary__label">Floor {floor} Summary</p>
             <div className="victory-stats">
-              <StatRow icon="☠"  label="Kills"        value={String(kills)}        />
-              <StatRow icon="💰" label="Gold earned"  value={`${goldEarned}g`}     />
-              <StatRow icon="📍" label="Depth"        value={`Floor ${floor}`}     />
+              <StatRow icon="☠"  label="Kills"       value={String(kills)}    />
+              <StatRow icon="💰" label="Gold earned" value={`${goldEarned}g`} />
+              <StatRow icon="📍" label="Depth"       value={`Floor ${floor}`} />
             </div>
           </div>
 
-          {/* Vertical rule */}
           <div className="victory-col-divider" />
 
-          {/* Run summary */}
           <div className="victory-summary">
             <p className="victory-summary__label">Run So Far</p>
             <div className="victory-stats">
-              <StatRow icon="⏱" label="Time"         value={formatTime(elapsed)}        />
-              <StatRow icon="☠" label="Total kills"  value={String(totalKills)}         />
-              <StatRow icon="💰" label="Total gold"  value={`${totalGoldEarned}g`}      />
-              <StatRow icon="⚔" label="Weapon"       value={weapon}                     />
+              <StatRow icon="⏱" label="Time"        value={formatTime(elapsed)}   />
+              <StatRow icon="☠" label="Total kills" value={String(totalKills)}    />
+              <StatRow icon="💰" label="Total gold" value={`${totalGoldEarned}g`} />
+              <StatRow icon="⚔" label="Weapon"      value={weapon}               />
             </div>
 
-            {/* Charms row */}
             {playerStats.charms.length > 0 && (
               <div className="victory-charms">
                 <p className="victory-charms__label">
@@ -124,20 +130,18 @@ export default function VictoryOverlay({
         </div>
 
         <p className="victory-warning">
-          The dungeon grows darker. Floor {floor + 1} awaits.
+          The dungeon grows darker. Approach the gate to descend to Floor {floor + 1}.
         </p>
 
         <div className="victory-divider" />
 
-        {/* ── Buttons ── */}
+        {/* ── Footer actions ── */}
         <div className="victory-buttons">
           <button
-            className="victory-btn victory-btn--primary"
-            onClick={onContinue}
-            onMouseEnter={(e) => (e.currentTarget.style.background = "#86efac")}
-            onMouseLeave={(e) => (e.currentTarget.style.background = "#4ade80")}
+            className="victory-btn victory-btn--minimize"
+            onClick={onClose}
           >
-            ▶ Descend to Floor {floor + 1}
+            ↙ Return to Game
           </button>
           <button
             className="victory-btn victory-btn--secondary"
