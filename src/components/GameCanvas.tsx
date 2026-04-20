@@ -688,6 +688,10 @@ export default function GameCanvas() {
           floor={hud.floor}
           kills={victoryStats.kills}
           goldEarned={victoryStats.gold}
+          totalKills={state.totalKills}
+          totalGoldEarned={state.totalGoldEarned}
+          runStartTime={state.runStartTime}
+          playerStats={state.playerStats}
           onContinue={handleVictoryContinue}
           onQuit={handleQuitToMenu}
         />
