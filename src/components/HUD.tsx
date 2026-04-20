@@ -6,6 +6,8 @@ import "@/styles/hud.css";
 // ============================================================
 // [🧱 BLOCK: HUD Props]
 // ============================================================
+import { RoomPhase } from "@/engine/RoomManager";
+
 interface HUDProps {
   hp:            number;
   maxHp:         number;
@@ -19,7 +21,7 @@ interface HUDProps {
   bossHp:        number;
   bossMaxHp:     number;
   bossIsEnraged: boolean;
-  isEliteRoom:   boolean;
+  roomPhase:     RoomPhase;
 }
 
 // ============================================================
@@ -189,8 +191,11 @@ function BossHPBar({ hp, maxHp, isEnraged, floor }: {
 export default function HUD({
   hp, maxHp, stamina, maxStamina,
   kills, killThreshold, room, floor, gold,
-  bossHp, bossMaxHp, bossIsEnraged, isEliteRoom,
+  bossHp, bossMaxHp, bossIsEnraged, roomPhase,
 }: HUDProps) {
+  const isEliteRoom = roomPhase === 'elite';
+  const isBossRoom  = roomPhase === 'boss';
+
   const hpColor =
     hp / maxHp > 0.5  ? "#4ade80" :
     hp / maxHp > 0.25 ? "#facc15" :
@@ -222,10 +227,20 @@ export default function HUD({
             <span className="hud-floor-label">Floor {floor}</span>
             <span
               className="hud-room-number"
-              style={isEliteRoom ? { color: "#f97316", textShadow: "0 0 12px rgba(249,115,22,0.5)" } : undefined}
+              style={
+                isEliteRoom ? { color: "#f97316", textShadow: "0 0 12px rgba(249,115,22,0.5)" } :
+                isBossRoom  ? { color: "#ef4444", textShadow: "0 0 12px rgba(239,68,68,0.5)"  } :
+                undefined
+              }
             >
-              {isEliteRoom ? "⚡ " : ""}Room {room}
+              {isEliteRoom ? "⚡ " : isBossRoom ? "💀 " : ""}Room {room}
             </span>
+            {isEliteRoom && (
+              <span className="hud-room-subtitle hud-room-subtitle--elite">Elite Room</span>
+            )}
+            {isBossRoom && (
+              <span className="hud-room-subtitle hud-room-subtitle--boss">Boss Room</span>
+            )}
           </div>
 
           <Divider />

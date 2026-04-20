@@ -2,7 +2,7 @@
 
 import React, { useRef, useEffect, useState, useCallback } from "react";
 import { InputHandler }  from "@/engine/Input";
-import { GameState, saveRunRecord }     from "@/engine/GameState";
+import { GameState }     from "@/engine/GameState";
 import { HordeSystem }   from "@/engine/systems/HordeSystem";
 import { BossSystem, getBossName } from "@/engine/systems/BossSystem";
 import { RenderSystem }  from "@/engine/systems/RenderSystem";
@@ -169,24 +169,6 @@ export default function GameCanvas() {
     setTimeout(() => setAnnouncement({ show: false, message: "" }), 2500);
   }, []);
 
-  // ============================================================
-  // [🧱 BLOCK: Save Run Record Helper]
-  // Builds a RunRecord from current game state and persists it.
-  // Called on death and on quit-to-menu.
-  // ============================================================
-  const persistRun = useCallback((floor: number, room: number) => {
-    const state = stateRef.current;
-    if (!state) return;
-    saveRunRecord({
-      floor,
-      room,
-      kills:      state.totalKills,
-      goldEarned: state.totalGoldEarned,
-      elapsedMs:  Date.now() - state.runStartTime,
-      timestamp:  Date.now(),
-    });
-  }, []);
-
   useEffect(() => {
     const canvas = canvasRef.current!;
     canvas.width  = window.innerWidth;
@@ -324,10 +306,6 @@ export default function GameCanvas() {
   }, [resetFloorTracking, announce]);
 
   const handleQuitToMenu = useCallback(() => {
-    // Persist any in-progress run before resetting
-    const r = roomRef.current;
-    persistRun(r.floor, r.roomDisplay);
-
     stateRef.current!.reset();
     hordeRef.current.reset(stateRef.current!);
     bossRef.current.reset(stateRef.current!);
@@ -344,7 +322,7 @@ export default function GameCanvas() {
     isDyingRef.current = false;
     vignetteAlphaRef.current = 0;
     resetFloorTracking();
-  }, [resetFloorTracking, persistRun]);
+  }, [resetFloorTracking]);
 
   const handleDoorEnter = useCallback(() => {
     const rs = advanceRoom(roomRef.current);
@@ -380,6 +358,11 @@ export default function GameCanvas() {
 
   // ============================================================
   // [🧱 BLOCK: Victory Continue — with Floor Transition]
+  // When the player clicks "Descend", we:
+  //   1. Hide the victory overlay immediately
+  //   2. Store the real continuation logic in pendingContinueRef
+  //   3. Show the FloorTransition overlay (it knows which floor)
+  //   4. FloorTransition calls onComplete → pendingContinueRef fires
   // ============================================================
   const executeContinue = useCallback(() => {
     const rs = nextFloor(roomRef.current);
@@ -525,8 +508,6 @@ export default function GameCanvas() {
 
       if (elapsed >= DEATH_TOTAL_MS) {
         isDyingRef.current = false;
-        // ── Persist run on death ──────────────────────────────
-        persistRun(rs.floor, rs.roomDisplay);
         setIsGameOver(true);
       }
 
@@ -655,7 +636,7 @@ export default function GameCanvas() {
           bossHp={hud.bossHp}
           bossMaxHp={hud.bossMaxHp}
           bossIsEnraged={hud.bossIsEnraged}
-          isEliteRoom={isElitePhase}
+          roomPhase={roomRef.current.phase}
         />
       )}
 

@@ -80,7 +80,8 @@ export function advanceRoom(current: RoomState): RoomState {
   }
 
   // roomInCycle === 3 (elite cleared) → boss
-  return { ...current, phase: 'boss' };
+  // Boss is room 4 in the cycle — its own numbered room, not stuck on 3.
+  return { ...current, roomDisplay: 4, phase: 'boss' };
 }
 
 // ============================================================

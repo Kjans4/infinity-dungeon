@@ -239,6 +239,24 @@
   transition: color 0.3s ease;
 }
 
+/* ── Room subtitle — shown for elite and boss phases ── */
+.hud-room-subtitle {
+  font-family: 'Cinzel', serif;
+  font-size: 7px;
+  font-weight: 600;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  line-height: 1;
+}
+
+.hud-room-subtitle--elite {
+  color: rgba(249, 115, 22, 0.8);
+}
+
+.hud-room-subtitle--boss {
+  color: rgba(239, 68, 68, 0.85);
+}
+
 /* ============================================================
    [🧱 BLOCK: Gold]
    ============================================================ */
