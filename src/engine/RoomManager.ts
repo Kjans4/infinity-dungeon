@@ -93,7 +93,7 @@ export function nextFloor(current: RoomState): RoomState {
   return {
     floor,
     roomInCycle: 1,
-    roomDisplay: getRoomDisplay(floor, 1),
+    roomDisplay: 1,
     phase:       'horde',
   };
 }
