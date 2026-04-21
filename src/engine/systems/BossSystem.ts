@@ -349,6 +349,10 @@ export class BossSystem {
       // Spawn door + shop immediately so player can act freely
       this.spawnVictoryDoorAndShop(state);
 
+      // Null out boss so the death block never fires again next frame.
+      // The !boss early-return path will handle all post-victory ticking.
+      state.boss = null;
+
       return { event: "victory", goldCollected };
     }
 
