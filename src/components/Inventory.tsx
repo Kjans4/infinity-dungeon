@@ -2,11 +2,12 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { PlayerStats } from "@/engine/PlayerStats";
-import { Player }      from "@/engine/Player";
-import { Charm }       from "@/engine/CharmRegistry";
-import { WeaponItem }  from "@/engine/items/types";
+import { PlayerStats }   from "@/engine/PlayerStats";
+import { Player }        from "@/engine/Player";
+import { Charm }         from "@/engine/CharmRegistry";
+import { WeaponItem, ArmorItem, ArmorSlot } from "@/engine/items/types";
 import { getWeaponPassive } from "@/engine/WeaponPassiveRegistry";
+import { ARMOR_SET_DEFS }   from "@/engine/items/ArmorRegistry";
 import "@/styles/inventory.css";
 
 // ============================================================
@@ -128,6 +129,117 @@ function WeaponSlot({ item, onUnequip }: {
 }
 
 // ============================================================
+// [🧱 BLOCK: Armor Slot Row]
+// Displays a single armor slot (helmet/armor/boots/gloves/weapon).
+// Shows the piece if equipped, empty state if not.
+// ============================================================
+const SLOT_LABELS: Record<ArmorSlot, string> = {
+  helmet: '🪖 Helmet',
+  armor:  '🛡 Armor',
+  boots:  '👢 Boots',
+  gloves: '🧤 Gloves',
+  weapon: '⚔️ Set Weapon',
+};
+
+function ArmorSlotRow({ slot, item, onSell }: {
+  slot:   ArmorSlot;
+  item:   ArmorItem | null;
+  onSell: () => void;
+}) {
+  const [confirm, setConfirm] = useState(false);
+
+  if (!item) {
+    return (
+      <div className="inv-armor-row inv-armor-row--empty">
+        <span className="inv-armor-row__slot-label">{SLOT_LABELS[slot]}</span>
+        <span className="inv-armor-row__empty-text">— Empty</span>
+      </div>
+    );
+  }
+
+  const refund = Math.ceil(item.cost * 0.5);
+
+  return (
+    <div className="inv-armor-row inv-armor-row--equipped">
+      <span className="inv-armor-row__icon">{item.icon}</span>
+      <div className="inv-armor-row__info">
+        <p className="inv-armor-row__name">{item.name}</p>
+        <p className="inv-armor-row__set">{item.setName} Set</p>
+        <p className="inv-armor-row__stat">{item.description}</p>
+      </div>
+      {!confirm ? (
+        <SmallBtn label="Sell" onClick={() => setConfirm(true)} danger />
+      ) : (
+        <div className="inv-confirm-row">
+          <SmallBtn label={`+${refund}g`} onClick={() => { setConfirm(false); onSell(); }} danger />
+          <SmallBtn label="✕"             onClick={() => setConfirm(false)} color="#3a2808" />
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ============================================================
+// [🧱 BLOCK: Set Bonus Display]
+// Shows all 3 sets with their piece count and active bonuses.
+// ============================================================
+function SetBonusPanel({ playerStats }: { playerStats: PlayerStats }) {
+  const counts     = playerStats.getEquippedSetCounts();
+  const activeTiers = playerStats.getActiveBonusTiers();
+
+  return (
+    <div className="inv-set-bonus-panel">
+      <p className="inv-set-bonus-panel__title">Armor Set Bonuses</p>
+      {ARMOR_SET_DEFS.map((def) => {
+        const count     = counts[def.id] ?? 0;
+        const activeTier = activeTiers.find((t) => t.setId === def.id);
+
+        return (
+          <div key={def.id} className="inv-set-bonus-entry">
+            {/* Set header */}
+            <div className="inv-set-bonus-entry__header">
+              <span className="inv-set-bonus-entry__icon">{def.icon}</span>
+              <span
+                className="inv-set-bonus-entry__name"
+                style={{ color: count >= 2 ? def.color : '#334155' }}
+              >
+                {def.name}
+              </span>
+              <span className="inv-set-bonus-entry__count">
+                {count} / 5
+              </span>
+            </div>
+
+            {/* Tier rows */}
+            {def.tiers.map((tier) => {
+              const reached = count >= tier.pieces;
+              const isActive = activeTier?.tier === tier.pieces ||
+                (activeTier && activeTier.tier > tier.pieces);
+              // A tier is active if we've met or exceeded its threshold
+              const tierActive = count >= tier.pieces;
+              return (
+                <div
+                  key={tier.pieces}
+                  className={`inv-set-bonus-tier ${tierActive ? "inv-set-bonus-tier--active" : ""}`}
+                >
+                  <span
+                    className="inv-set-bonus-tier__badge"
+                    style={{ background: tierActive ? def.color : undefined }}
+                  >
+                    {tier.pieces}pc
+                  </span>
+                  <span className="inv-set-bonus-tier__desc">{tier.description}</span>
+                </div>
+              );
+            })}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// ============================================================
 // [🧱 BLOCK: Charm Row]
 // ============================================================
 function CharmRow({ charm, onSell }: { charm: Charm; onSell: () => void }) {
@@ -183,6 +295,14 @@ export default function Inventory({
     refresh();
   };
 
+  const handleSellArmor = (slot: ArmorSlot) => {
+    const ng = playerStats.sellArmor(slot, gold, player);
+    onGoldChange(ng);
+    refresh();
+  };
+
+  const ARMOR_SLOTS: ArmorSlot[] = ['helmet', 'armor', 'boots', 'gloves', 'weapon'];
+
   return (
     <div className="inv-backdrop">
       <div className="inv-panel">
@@ -204,6 +324,28 @@ export default function Inventory({
 
           {/* Weapon slot */}
           <WeaponSlot item={playerStats.equippedWeaponItem} onUnequip={handleUnequipWeapon} />
+
+          <GemRule />
+
+          {/* Armor slots */}
+          <div className="inv-armor-section">
+            <p className="inv-armor-section__label">Armor</p>
+            <div className="inv-armor-list">
+              {ARMOR_SLOTS.map((slot) => (
+                <ArmorSlotRow
+                  key={slot}
+                  slot={slot}
+                  item={playerStats.armorSlots[slot]}
+                  onSell={() => handleSellArmor(slot)}
+                />
+              ))}
+            </div>
+          </div>
+
+          <GemRule />
+
+          {/* Set bonus panel */}
+          <SetBonusPanel playerStats={playerStats} />
 
           <GemRule />
 
@@ -229,7 +371,7 @@ export default function Inventory({
             <SmallBtn label="Return to Battle" onClick={onClose} color="#8B6914" />
           </div>
           <p className="inv-footer__hint">
-            "Acquire weapons &amp; charms from the merchant · Hold I to close"
+            "Acquire armor &amp; weapons from the merchant · Hold I to close"
           </p>
 
         </div>

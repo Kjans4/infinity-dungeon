@@ -79,6 +79,7 @@ function rollItemDrop(
   const pool = getRandomShopItems(
     [...ownedCharmIds, ...pendingCharmIds],
     ownedWeaponId ?? pendingWeaponId,
+    [],
     1
   );
   return pool[0] ?? null;

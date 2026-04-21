@@ -51,6 +51,7 @@ function spawnBossItemDrop(state: GameState, x: number, y: number) {
   const pool = getRandomShopItems(
     [...ownedCharmIds, ...pendingCharmIds],
     ownedWeaponId ?? pendingWeaponId,
+    [],
     1
   );
   if (pool[0]) state.itemDrops.push(new ItemDrop(x, y, pool[0]));

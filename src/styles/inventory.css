@@ -1,400 +1,461 @@
 /* ============================================================
    Inventory — src/styles/inventory.css
-   Fantasy RPG redesign — The Adventurer's Satchel
    ============================================================ */
-
-@import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700&family=Cinzel+Decorative:wght@400;700&family=IM+Fell+English:ital@0;1&display=swap');
 
 .inv-backdrop,
 .inv-backdrop * {
-  font-family: 'Cinzel', serif;
+  font-family: 'Courier New', monospace;
 }
 
 /* ============================================================
-   [🧱 BLOCK: Backdrop + Panel]
+   [🧱 BLOCK: Backdrop & Panel]
    ============================================================ */
 .inv-backdrop {
-  position: fixed;
-  inset: 0;
-  z-index: 100;
-  display: flex;
-  align-items: center;
+  position:        fixed;
+  inset:           0;
+  z-index:         55;
+  display:         flex;
+  align-items:     center;
   justify-content: center;
-  background: rgba(0,0,0,0.88);
-  backdrop-filter: blur(6px);
-  -webkit-backdrop-filter: blur(6px);
+  background:      rgba(0, 0, 0, 0.78);
 }
 
 .inv-panel {
-  position: relative;
-  width: min(660px, 95%);
-  max-height: 88vh;
+  width:      min(680px, 96vw);
+  max-height: 90vh;
   overflow-y: auto;
-
-  background:
-    repeating-linear-gradient(
-      0deg,
-      rgba(255,255,255,0.007) 0px, rgba(255,255,255,0.007) 1px,
-      transparent 1px, transparent 44px
-    ),
-    repeating-linear-gradient(
-      90deg,
-      rgba(255,255,255,0.007) 0px, rgba(255,255,255,0.007) 1px,
-      transparent 1px, transparent 66px
-    ),
-    linear-gradient(180deg, #1a1208 0%, #110d06 40%, #0e0b06 60%, #1a1208 100%);
-
-  border: 1px solid #3a2808;
-  box-shadow:
-    0 0 0 1px #1e1608,
-    0 24px 60px rgba(0,0,0,0.85),
-    inset 0 1px 0 rgba(140,90,10,0.1);
+  background: rgba(10, 8, 4, 0.98);
+  border:     1px solid rgba(139, 105, 20, 0.3);
+  border-radius: 10px;
+  scrollbar-width: thin;
+  scrollbar-color: #2e2008 transparent;
 }
 
-/* Corner ornaments */
-.inv-panel::before {
-  content: '';
-  position: absolute;
-  top: 0; left: 0;
-  width: 22px; height: 22px;
-  border-top:  2px solid #8B6914;
-  border-left: 2px solid #8B6914;
-  pointer-events: none; z-index: 2;
-}
-.inv-panel::after {
-  content: '';
-  position: absolute;
-  top: 0; right: 0;
-  width: 22px; height: 22px;
-  border-top:   2px solid #8B6914;
-  border-right: 2px solid #8B6914;
-  pointer-events: none; z-index: 2;
-}
+.inv-panel::-webkit-scrollbar        { width: 4px; }
+.inv-panel::-webkit-scrollbar-track  { background: transparent; }
+.inv-panel::-webkit-scrollbar-thumb  { background: #2e2008; border-radius: 2px; }
 
 .inv-panel-inner {
-  margin: 8px;
-  border: 1px solid #1e1608;
-  padding: 22px 24px 24px;
+  padding: 28px 32px;
   display: flex;
   flex-direction: column;
   gap: 16px;
 }
 
 /* ============================================================
-   [🧱 BLOCK: Gem Rule]
-   ============================================================ */
-.inv-gem-rule {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin: 2px 0;
-}
-.inv-gem-rule::before,
-.inv-gem-rule::after {
-  content: ''; flex: 1; height: 1px; background: #2e2008;
-}
-.inv-gem-rule-gem {
-  width: 7px; height: 7px;
-  background: #6a4c10; border: 1px solid #8B6914;
-  transform: rotate(45deg); flex-shrink: 0;
-}
-
-/* ============================================================
    [🧱 BLOCK: Header]
    ============================================================ */
 .inv-header {
-  display: flex;
+  display:         flex;
   justify-content: space-between;
-  align-items: flex-start;
+  align-items:     flex-start;
 }
 
 .inv-header__hint {
-  font-family: 'Cinzel', serif;
-  font-size: 7px;
-  color: #3a2808;
-  letter-spacing: 0.25em;
+  font-size:      9px;
+  color:          #334155;
+  letter-spacing: 0.15em;
   text-transform: uppercase;
-  margin-bottom: 5px;
+  margin-bottom:  4px;
 }
 
 .inv-header__title {
-  font-family: 'Cinzel Decorative', serif;
-  font-size: 20px;
-  font-weight: 700;
-  color: #f0c040;
-  text-shadow: 0 0 18px rgba(240,192,64,0.2);
-  letter-spacing: 2px;
+  font-size:      28px;
+  font-weight:    900;
+  color:          #c0860c;
+  letter-spacing: 0.05em;
 }
 
-.inv-header__gold { text-align: right; }
+.inv-header__gold {
+  text-align: right;
+}
 
 .inv-header__gold-label {
-  font-family: 'Cinzel', serif;
-  font-size: 7px;
-  color: #5a4010;
+  font-size:      9px;
+  color:          #475569;
   letter-spacing: 0.2em;
-  margin-bottom: 2px;
+  text-transform: uppercase;
 }
 
 .inv-header__gold-value {
-  font-family: 'Cinzel Decorative', serif;
-  font-size: 18px;
+  font-size:   20px;
   font-weight: 700;
-  color: #f0c040;
+  color:       #f0c040;
+}
+
+/* ============================================================
+   [🧱 BLOCK: Gem Rule]
+   ============================================================ */
+.inv-gem-rule {
+  display:         flex;
+  align-items:     center;
+  justify-content: center;
+  position:        relative;
+  height:          1px;
+  background:      rgba(255,255,255,0.05);
+}
+
+.inv-gem-rule-gem {
+  position:   absolute;
+  width:      6px;
+  height:     6px;
+  background: #3a2808;
+  border:     1px solid #6a4c10;
+  transform:  rotate(45deg);
 }
 
 /* ============================================================
    [🧱 BLOCK: Weapon Slot]
    ============================================================ */
 .inv-weapon-slot {
-  padding: 14px;
+  border:        1px solid rgba(139,105,20,0.15);
+  border-radius: 6px;
+  padding:       12px 14px;
+  display:       flex;
+  flex-direction:column;
+  gap:           8px;
 }
 
-.inv-weapon-slot--empty {
-  background: rgba(255,255,255,0.015);
-  border: 1px dashed #2e2008;
-}
-
-.inv-weapon-slot--equipped {
-  background: rgba(140,90,10,0.05);
-  border: 1px solid #3a2808;
-  border-left: 2px solid #8B6914;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
+.inv-weapon-slot--empty { opacity: 0.5; }
 
 .inv-weapon-slot__label {
-  font-family: 'Cinzel', serif;
-  font-size: 8px;
-  font-weight: 700;
-  color: #8B6914;
+  font-size:      9px;
+  color:          #5a4010;
   letter-spacing: 0.2em;
   text-transform: uppercase;
-  margin-bottom: 6px;
 }
-
-.inv-weapon-slot--equipped .inv-weapon-slot__label { margin-bottom: 0; }
 
 .inv-weapon-slot__fists {
-  font-family: 'IM Fell English', serif;
+  font-size:  11px;
+  color:      #334155;
   font-style: italic;
-  font-size: 11px;
-  color: #3a2808;
 }
 
-.inv-weapon-slot__header { display: flex; align-items: center; gap: 14px; }
-.inv-weapon-slot__icon   { font-size: 34px; filter: drop-shadow(0 0 8px rgba(140,90,10,0.4)); }
-.inv-weapon-slot__info   { flex: 1; }
+.inv-weapon-slot__header {
+  display:     flex;
+  align-items: flex-start;
+  gap:         10px;
+}
+
+.inv-weapon-slot__icon { font-size: 20px; }
 
 .inv-weapon-slot__name {
-  font-family: 'Cinzel', serif;
-  font-size: 14px;
+  font-size:   13px;
   font-weight: 700;
-  color: #f0c040;
-  margin-bottom: 2px;
+  color:       #e2e8f0;
 }
 
 .inv-weapon-slot__type {
-  font-family: 'Cinzel', serif;
-  font-size: 8px;
-  color: #8B6914;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  margin-bottom: 4px;
-}
-
-.inv-weapon-slot__desc {
-  font-family: 'IM Fell English', serif;
-  font-style: italic;
-  font-size: 10px;
-  color: #5a4010;
-}
-
-.inv-weapon-slot__tradeoff {
-  font-family: 'Cinzel', serif;
-  font-size: 9px;
-  color: #c0392b;
-  margin-top: 2px;
-}
-
-.inv-weapon-slot__atk-row { display: flex; gap: 8px; }
-
-.inv-weapon-slot__atk-card {
-  flex: 1;
-  background: rgba(255,255,255,0.02);
-  border: 1px solid #1e1608;
-  padding: 6px 10px;
-}
-
-.inv-weapon-slot__atk-label {
-  font-family: 'Cinzel', serif;
-  font-size: 7px;
-  color: #3a2808;
+  font-size:      9px;
+  color:          #60a5fa;
   letter-spacing: 0.15em;
   text-transform: uppercase;
-  margin-bottom: 4px;
 }
 
-.inv-weapon-slot__atk-dmg {
-  font-family: 'Cinzel', serif;
-  font-size: 11px;
-  color: #c0860c;
-  margin-bottom: 2px;
+.inv-weapon-slot__desc  { font-size: 10px; color: #64748b; }
+.inv-weapon-slot__tradeoff { font-size: 10px; color: #f87171; }
+
+.inv-weapon-slot__passive {
+  background:    rgba(56,189,248,0.05);
+  border:        1px solid rgba(56,189,248,0.1);
+  border-radius: 4px;
+  padding:       6px 8px;
 }
 
-.inv-weapon-slot__atk-stam {
-  font-family: 'IM Fell English', serif;
+.inv-weapon-slot__passive-label {
+  font-size:      9px;
+  color:          #38bdf8;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  margin-bottom:  2px;
+}
+
+.inv-weapon-slot__passive-desc { font-size: 10px; color: #64748b; }
+
+.inv-weapon-slot__atk-row {
+  display: flex;
+  gap:     8px;
+}
+
+.inv-weapon-slot__atk-card {
+  flex:          1;
+  background:    rgba(255,255,255,0.03);
+  border:        1px solid rgba(255,255,255,0.06);
+  border-radius: 4px;
+  padding:       6px 8px;
+}
+
+.inv-weapon-slot__atk-label { font-size: 9px;  color: #475569; letter-spacing: 0.1em; text-transform: uppercase; }
+.inv-weapon-slot__atk-dmg   { font-size: 11px; color: #f0c040; font-weight: 700; }
+.inv-weapon-slot__atk-stam  { font-size: 10px; color: #64748b; }
+
+/* ============================================================
+   [🧱 BLOCK: Armor Section]
+   ============================================================ */
+.inv-armor-section {
+  display:        flex;
+  flex-direction: column;
+  gap:            6px;
+}
+
+.inv-armor-section__label {
+  font-size:      9px;
+  color:          #5a4010;
+  letter-spacing: 0.25em;
+  text-transform: uppercase;
+}
+
+.inv-armor-list {
+  display:        flex;
+  flex-direction: column;
+  gap:            4px;
+}
+
+/* ── Single armor slot row ── */
+.inv-armor-row {
+  display:       flex;
+  align-items:   center;
+  gap:           10px;
+  padding:       8px 10px;
+  border:        1px solid rgba(139,105,20,0.12);
+  border-radius: 5px;
+  min-height:    44px;
+}
+
+.inv-armor-row--empty {
+  opacity: 0.4;
+}
+
+.inv-armor-row--equipped {
+  background: rgba(139,105,20,0.05);
+}
+
+.inv-armor-row__slot-label {
+  font-size:      9px;
+  color:          #475569;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  min-width:      80px;
+}
+
+.inv-armor-row__empty-text {
+  font-size:  10px;
+  color:      #334155;
   font-style: italic;
-  font-size: 9px;
-  color: #5a4010;
+}
+
+.inv-armor-row__icon { font-size: 16px; flex-shrink: 0; }
+
+.inv-armor-row__info {
+  flex: 1;
+  display:        flex;
+  flex-direction: column;
+  gap:            1px;
+  min-width:      0;
+}
+
+.inv-armor-row__name {
+  font-size:   11px;
+  font-weight: 700;
+  color:       #e2e8f0;
+}
+
+.inv-armor-row__set {
+  font-size:      8px;
+  color:          #8B6914;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.inv-armor-row__stat {
+  font-size: 10px;
+  color:     #4ade80;
 }
 
 /* ============================================================
-   [🧱 BLOCK: Charm Slots]
+   [🧱 BLOCK: Set Bonus Panel]
    ============================================================ */
-.inv-charms-section {
-  background: rgba(255,255,255,0.015);
-  border: 1px solid #2e2008;
-  border-top: 1px solid #3a2808;
-  padding: 14px;
+.inv-set-bonus-panel {
+  display:        flex;
+  flex-direction: column;
+  gap:            10px;
 }
 
-.inv-charms-section__label {
-  font-family: 'Cinzel', serif;
-  font-size: 8px;
-  font-weight: 700;
-  color: #8B6914;
-  letter-spacing: 0.2em;
+.inv-set-bonus-panel__title {
+  font-size:      9px;
+  color:          #5a4010;
+  letter-spacing: 0.25em;
   text-transform: uppercase;
-  margin-bottom: 12px;
 }
 
-.inv-charms-list { display: flex; flex-direction: column; gap: 8px; }
+.inv-set-bonus-entry {
+  background:    rgba(255,255,255,0.02);
+  border:        1px solid rgba(255,255,255,0.05);
+  border-radius: 5px;
+  padding:       8px 10px;
+  display:       flex;
+  flex-direction:column;
+  gap:           5px;
+}
 
-.inv-charm-row {
-  display: flex;
+.inv-set-bonus-entry__header {
+  display:     flex;
   align-items: center;
-  gap: 10px;
-  background: rgba(140,90,10,0.04);
-  border: 1px solid #2e2008;
-  border-left: 2px solid #6a4c10;
-  padding: 10px 12px;
-}
-
-.inv-charm-row__icon  { font-size: 20px; }
-.inv-charm-row__info  { flex: 1; }
-
-.inv-charm-row__name {
-  font-family: 'Cinzel', serif;
-  font-size: 11px;
-  font-weight: 700;
-  color: #c0860c;
+  gap:         8px;
   margin-bottom: 2px;
 }
 
-.inv-charm-row__desc {
-  font-family: 'IM Fell English', serif;
-  font-style: italic;
-  font-size: 9px;
-  color: #5a4010;
+.inv-set-bonus-entry__icon  { font-size: 14px; }
+
+.inv-set-bonus-entry__name  {
+  font-size:   11px;
+  font-weight: 700;
+  flex:        1;
+  transition:  color 0.2s;
 }
 
-.inv-charm-row__tradeoff {
-  font-family: 'Cinzel', serif;
-  font-size: 8px;
-  color: #c0392b;
+.inv-set-bonus-entry__count {
+  font-size:  10px;
+  color:      #475569;
 }
+
+/* ── Tier row ── */
+.inv-set-bonus-tier {
+  display:     flex;
+  align-items: center;
+  gap:         8px;
+  opacity:     0.35;
+  transition:  opacity 0.2s;
+}
+
+.inv-set-bonus-tier--active { opacity: 1; }
+
+.inv-set-bonus-tier__badge {
+  font-size:      8px;
+  font-weight:    700;
+  letter-spacing: 0.08em;
+  color:          #0f172a;
+  background:     #334155;
+  border-radius:  3px;
+  padding:        2px 5px;
+  flex-shrink:    0;
+  transition:     background 0.2s;
+}
+
+.inv-set-bonus-tier__desc {
+  font-size: 10px;
+  color:     #94a3b8;
+}
+
+.inv-set-bonus-tier--active .inv-set-bonus-tier__desc {
+  color: #e2e8f0;
+}
+
+/* ============================================================
+   [🧱 BLOCK: Charm Section]
+   ============================================================ */
+.inv-charms-section {
+  display:        flex;
+  flex-direction: column;
+  gap:            6px;
+}
+
+.inv-charms-section__label {
+  font-size:      9px;
+  color:          #5a4010;
+  letter-spacing: 0.25em;
+  text-transform: uppercase;
+}
+
+.inv-charms-list {
+  display:        flex;
+  flex-direction: column;
+  gap:            4px;
+}
+
+.inv-charm-row {
+  display:       flex;
+  align-items:   center;
+  gap:           10px;
+  padding:       8px 10px;
+  border:        1px solid rgba(139,105,20,0.12);
+  border-radius: 5px;
+}
+
+.inv-charm-row__icon { font-size: 16px; flex-shrink: 0; }
+
+.inv-charm-row__info {
+  flex: 1;
+  display:        flex;
+  flex-direction: column;
+  gap:            2px;
+  min-width:      0;
+}
+
+.inv-charm-row__name    { font-size: 11px; font-weight: 700; color: #e2e8f0; }
+.inv-charm-row__desc    { font-size: 10px; color: #64748b; }
+.inv-charm-row__tradeoff{ font-size: 10px; color: #f87171; }
 
 .inv-charm-empty {
-  border: 1px dashed #1e1608;
-  padding: 10px 12px;
-  font-family: 'IM Fell English', serif;
-  font-style: italic;
-  font-size: 10px;
-  color: #2e2008;
+  font-size:  10px;
+  color:      #1e293b;
+  padding:    6px 10px;
+  border:     1px dashed #1e293b;
+  border-radius: 4px;
 }
 
 /* ============================================================
    [🧱 BLOCK: Confirm Row]
    ============================================================ */
-.inv-confirm-row { display: flex; gap: 8px; }
+.inv-confirm-row {
+  display: flex;
+  gap:     6px;
+}
+
+/* ============================================================
+   [🧱 BLOCK: Buttons]
+   ============================================================ */
+.inv-small-btn {
+  font-family:    'Courier New', monospace;
+  font-size:      9px;
+  font-weight:    700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  border-radius:  4px;
+  padding:        5px 10px;
+  cursor:         pointer;
+  flex-shrink:    0;
+  transition:     background 0.12s, color 0.12s;
+}
+
+.inv-small-btn--default {
+  background: transparent;
+  color:      var(--btn-color, #8B6914);
+  border:     1px solid var(--btn-color, #8B6914);
+}
+
+.inv-small-btn--default:hover {
+  background: rgba(139,105,20,0.1);
+}
+
+.inv-small-btn--danger {
+  background: transparent;
+  color:      #ef4444;
+  border:     1px solid rgba(239,68,68,0.4);
+}
+
+.inv-small-btn--danger:hover {
+  background: rgba(239,68,68,0.1);
+}
 
 /* ============================================================
    [🧱 BLOCK: Footer]
    ============================================================ */
-.inv-footer { margin-top: 8px; text-align: center; }
+.inv-footer { display: flex; justify-content: center; }
 
 .inv-footer__hint {
-  font-family: 'IM Fell English', serif;
-  font-style: italic;
-  font-size: 8px;
-  color: #2e2008;
+  font-size:  9px;
+  color:      #1e293b;
   text-align: center;
-  letter-spacing: 0.1em;
-  margin-top: 10px;
-}
-
-/* ============================================================
-   [🧱 BLOCK: Small Button]
-   ============================================================ */
-.inv-small-btn {
-  font-family: 'Cinzel', serif;
-  font-size: 8px;
-  font-weight: 700;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  background: transparent;
-  padding: 4px 12px;
-  cursor: pointer;
-  transition: all 0.1s;
-}
-
-.inv-small-btn--danger {
-  color: #c0392b;
-  border: 1px solid #7a1a1a;
-}
-.inv-small-btn--danger:hover {
-  color: #0e0b06;
-  background: #c0392b;
-}
-
-.inv-small-btn--default {
-  color: var(--btn-color, #5a4010);
-  border: 1px solid var(--btn-color, #3a2808);
-}
-.inv-small-btn--default:hover {
-  color: #0e0b06;
-  background: var(--btn-color, #5a4010);
-}
-/* ============================================================
-   [🧱 BLOCK: Weapon Passive Display]
-   Shown inside the equipped weapon slot.
-   ============================================================ */
-.inv-weapon-slot__passive {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-  background: rgba(96,165,250,0.05);
-  border: 1px solid rgba(96,165,250,0.18);
-  border-left: 2px solid #60a5fa;
-  padding: 8px 10px;
-}
-
-.inv-weapon-slot__passive-label {
-  font-family: 'Cinzel', serif;
-  font-size: 7px;
-  font-weight: 700;
-  color: #60a5fa;
-  letter-spacing: 0.15em;
-  text-transform: uppercase;
-  margin-bottom: 2px;
-}
-
-.inv-weapon-slot__passive-desc {
-  font-family: 'IM Fell English', serif;
   font-style: italic;
-  font-size: 10px;
-  color: #93c5fd;
-  line-height: 1.5;
 }
