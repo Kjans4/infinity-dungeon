@@ -2,7 +2,7 @@
 
 import React, { useRef, useEffect, useState, useCallback } from "react";
 import { InputHandler }  from "@/engine/Input";
-import { GameState }     from "@/engine/GameState";
+import { GameState, saveRunRecord } from "@/engine/GameState";
 import { HordeSystem }   from "@/engine/systems/HordeSystem";
 import { BossSystem, getBossName } from "@/engine/systems/BossSystem";
 import { RenderSystem }  from "@/engine/systems/RenderSystem";
@@ -272,6 +272,32 @@ export default function GameCanvas() {
     floorGoldRef.current  = 0;
   }, []);
 
+  // ============================================================
+  // [🧱 BLOCK: Save Current Run]
+  // Persists a RunRecord to localStorage. Called at every
+  // run-ending point before state is reset.
+  // Guard: skip if the run never started (totalKills=0, floor=1,
+  // roomDisplay=1) to avoid polluting history with blank entries
+  // from quitting the menu before ever playing.
+  // ============================================================
+  const saveCurrentRun = useCallback(() => {
+    const state = stateRef.current;
+    const rs    = roomRef.current;
+    if (!state) return;
+
+    // Don't save a blank run
+    if (state.totalKills === 0 && rs.floor === 1 && rs.roomDisplay === 1) return;
+
+    saveRunRecord({
+      floor:      rs.floor,
+      room:       rs.roomDisplay,
+      kills:      state.totalKills,
+      goldEarned: state.totalGoldEarned,
+      elapsedMs:  Date.now() - state.runStartTime,
+      timestamp:  Date.now(),
+    });
+  }, []);
+
   const handleStart = useCallback(() => {
     const rs = initialRoomState();
     roomRef.current = rs;
@@ -294,6 +320,9 @@ export default function GameCanvas() {
   }, [resetFloorTracking, announce]);
 
   const handleRaidAgain = useCallback(() => {
+    // Save before reset wipes totalKills / totalGoldEarned
+    saveCurrentRun();
+
     const rs = initialRoomState();
     roomRef.current = rs;
     stateRef.current!.reset();
@@ -314,9 +343,12 @@ export default function GameCanvas() {
     vignetteAlphaRef.current = 0;
     resetFloorTracking();
     setTimeout(() => announce("PREPARE!", "Room 1 — enemies incoming", "#38bdf8"), 300);
-  }, [resetFloorTracking, announce]);
+  }, [saveCurrentRun, resetFloorTracking, announce]);
 
   const handleQuitToMenu = useCallback(() => {
+    // Save before reset — guard inside saveCurrentRun skips blank runs
+    saveCurrentRun();
+
     stateRef.current!.reset();
     hordeRef.current.reset(stateRef.current!);
     bossRef.current.reset(stateRef.current!);
@@ -334,7 +366,7 @@ export default function GameCanvas() {
     isDyingRef.current = false;
     vignetteAlphaRef.current = 0;
     resetFloorTracking();
-  }, [resetFloorTracking]);
+  }, [saveCurrentRun, resetFloorTracking]);
 
   // ============================================================
   // [🧱 BLOCK: Door Enter]
@@ -446,12 +478,17 @@ export default function GameCanvas() {
     announce("DEV: ROOM SKIPPED", undefined, "#38bdf8");
   }, [handleDoorEnter, announce]);
 
+  // ============================================================
+  // [🧱 BLOCK: Dev Skip Handlers]
+  // roomDisplay uses per-floor values (3 = elite, 4 = boss)
+  // matching the fixed RoomManager convention.
+  // ============================================================
   const handleDevSkipToElite = useCallback(() => {
     const state = stateRef.current;
     if (!state) return;
     const rs: RoomState = {
       floor: roomRef.current.floor, roomInCycle: 3,
-      roomDisplay: (roomRef.current.floor - 1) * 3 + 3, phase: 'elite',
+      roomDisplay: 3, phase: 'elite',
     };
     roomRef.current = rs;
     hordeRef.current.setup(state, rs, WORLD_W, WORLD_H);
@@ -464,7 +501,7 @@ export default function GameCanvas() {
     setShowShop(false);
     const rs: RoomState = {
       floor: roomRef.current.floor, roomInCycle: 3,
-      roomDisplay: (roomRef.current.floor - 1) * 3 + 3, phase: 'boss',
+      roomDisplay: 4, phase: 'boss',
     };
     roomRef.current = rs;
     bossRef.current.setup(state, rs);
@@ -537,6 +574,8 @@ export default function GameCanvas() {
 
       if (elapsed >= DEATH_TOTAL_MS) {
         isDyingRef.current = false;
+        // Save run record before showing game over screen
+        saveCurrentRun();
         setIsGameOver(true);
       }
 
