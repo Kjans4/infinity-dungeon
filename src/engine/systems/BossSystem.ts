@@ -51,6 +51,7 @@ function spawnBossItemDrop(state: GameState, x: number, y: number) {
   const pool = getRandomShopItems(
     [...ownedCharmIds, ...pendingCharmIds],
     ownedWeaponId ?? pendingWeaponId,
+    [],
     1
   );
   if (pool[0]) state.itemDrops.push(new ItemDrop(x, y, pool[0]));
@@ -138,8 +139,10 @@ export class BossSystem {
   // [🧱 BLOCK: Tick Door and Shop Post-Victory]
   // Runs every frame after boss is dead so the door/shop keep
   // animating and responding to player proximity.
+  // Returns goldCollected so the caller can credit state.gold
+  // and floorGoldRef — previously this was silently discarded.
   // ============================================================
-  private tickDoorAndShop(state: GameState, player: Player) {
+  private tickDoorAndShop(state: GameState, player: Player): number {
     if (state.door) {
       state.door.update();
       state.door.checkPlayerProximity(player);
@@ -155,8 +158,13 @@ export class BossSystem {
       player.stamina = Math.min(player.maxStamina, player.stamina + ps.staminaRegenRate);
     }
 
-    // Remaining gold / item drops still collectible
-    state.goldDrops.forEach((drop) => drop.update(player));
+    // Remaining gold drops — accumulate before filtering
+    let goldCollected = 0;
+    state.goldDrops.forEach((drop) => {
+      const was = drop.collected;
+      drop.update(player);
+      if (!was && drop.collected) goldCollected += drop.amount;
+    });
     state.goldDrops = state.goldDrops.filter((d) => !d.collected);
 
     state.itemDrops = state.itemDrops.filter((drop) => {
@@ -168,6 +176,8 @@ export class BossSystem {
       if (pickedUp) { state.pendingLoot.push(drop.item); return false; }
       return !drop.collected;
     });
+
+    return goldCollected;
   }
 
   // ============================================================
@@ -182,9 +192,12 @@ export class BossSystem {
     const boss = state.boss as AnyBoss | null;
 
     // ── Post-victory roam phase — boss already gone ───────────
+    // tickDoorAndShop now returns gold collected so it reaches
+    // GameCanvas and gets credited to state.gold / floorGoldRef.
     if (!boss) {
-      this.tickDoorAndShop(state, player);
-      return { event: null, goldCollected: 0 };
+      const goldCollected = this.tickDoorAndShop(state, player);
+      if (goldCollected > 0) state.totalGoldEarned += goldCollected;
+      return { event: null, goldCollected };
     }
 
     const ps = state.playerStats;

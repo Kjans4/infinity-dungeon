@@ -5,7 +5,7 @@ import React, { useState, useCallback, useRef } from "react";
 import { PlayerStats, STAT_DEFS, StatKey, statCost, statCap } from "@/engine/PlayerStats";
 import { Player }     from "@/engine/Player";
 import { Charm }      from "@/engine/CharmRegistry";
-import { WeaponItem } from "@/engine/items/types";
+import { WeaponItem, ArmorItem } from "@/engine/items/types";
 import { ShopItem }   from "@/engine/items/ItemPool";
 import { getWeaponPassive } from "@/engine/WeaponPassiveRegistry";
 import "@/styles/shop.css";
@@ -114,27 +114,39 @@ function StatRow({ statKey, playerStats, player, gold, floor, onSpend }: {
 
 // ============================================================
 // [🧱 BLOCK: Pending Loot Card]
+// Handles weapon, charm, and armor pending drops.
 // ============================================================
 function PendingLootCard({ item, playerStats, player, onClaim }: {
   item: ShopItem; playerStats: PlayerStats; player: Player; onClaim: () => void;
 }) {
-  const isWeapon    = item.kind === "weapon";
-  const accentColor = isWeapon ? "#60a5fa" : "#a78bfa";
+  const isWeapon = item.kind === "weapon";
+  const isArmor  = item.kind === "armor";
+  const isCharm  = item.kind === "charm";
+
+  const accentColor = isWeapon ? "#60a5fa" : isArmor ? "#4ade80" : "#a78bfa";
   const typeLabel   = isWeapon
     ? `${(item as WeaponItem).weaponType.toUpperCase()} · Spoil`
+    : isArmor
+    ? `${(item as ArmorItem).setName} · Armor · Spoil`
     : "Charm · Spoil";
 
   const alreadyOwned = isWeapon
     ? playerStats.equippedWeaponItem?.id === item.id
+    : isArmor
+    ? playerStats.hasArmorInSlot((item as ArmorItem).slot) &&
+      playerStats.armorSlots[(item as ArmorItem).slot]?.id === item.id
     : playerStats.hasCharm(item.id);
-  const charmsFull = !isWeapon && playerStats.charms.length >= playerStats.maxCharms;
+
+  const charmsFull = isCharm && playerStats.charms.length >= playerStats.maxCharms;
   const willReplace = isWeapon && !!playerStats.equippedWeaponItem;
-  const canClaim    = !alreadyOwned && !charmsFull;
+  const armorReplaces = isArmor && playerStats.hasArmorInSlot((item as ArmorItem).slot);
+  const canClaim = !alreadyOwned && !charmsFull;
 
   function handleClaim() {
     if (!canClaim) return;
-    if (isWeapon) playerStats.claimWeapon(item as WeaponItem, player);
-    else          playerStats.claimCharm(item as Charm, player);
+    if (isWeapon)      playerStats.claimWeapon(item as WeaponItem, player);
+    else if (isArmor)  playerStats.claimArmor(item as ArmorItem, player);
+    else               playerStats.claimCharm(item as Charm, player);
     onClaim();
   }
 
@@ -155,11 +167,16 @@ function PendingLootCard({ item, playerStats, player, onClaim }: {
           </div>
         ) : null;
       })()}
-      {!isWeapon && item.tradeOff && <div className="shop-item-card__tradeoff">⚠ {item.tradeOff}</div>}
+      {isCharm && item.tradeOff && <div className="shop-item-card__tradeoff">⚠ {item.tradeOff}</div>}
       {willReplace && !alreadyOwned && (
         <div className="shop-loot-card__replace-warn">Replaces {playerStats.equippedWeaponItem?.name}</div>
       )}
-      {charmsFull && !isWeapon && <div className="shop-item-card__full-warning">Sell a charm first</div>}
+      {armorReplaces && !alreadyOwned && (
+        <div className="shop-loot-card__replace-warn">
+          Replaces {playerStats.armorSlots[(item as ArmorItem).slot]?.name}
+        </div>
+      )}
+      {charmsFull && <div className="shop-item-card__full-warning">Sell a charm first</div>}
       {alreadyOwned && <div className="shop-item-card__full-warning">Already owned</div>}
       <PillBtn
         label={canClaim ? "Claim" : alreadyOwned ? "Owned" : "No Slots"}
@@ -174,30 +191,47 @@ function PendingLootCard({ item, playerStats, player, onClaim }: {
 
 // ============================================================
 // [🧱 BLOCK: Shop Item Card]
+// Handles weapon, charm, and armor purchaseable items.
 // ============================================================
 function ShopItemCard({ item, gold, playerStats, player, onBuy }: {
   item: ShopItem; gold: number;
   playerStats: PlayerStats; player: Player;
   onBuy: (newGold: number) => void;
 }) {
-  const isWeapon   = item.kind === "weapon";
+  const isWeapon = item.kind === "weapon";
+  const isArmor  = item.kind === "armor";
+  const isCharm  = item.kind === "charm";
+
   const weaponItem = isWeapon ? (item as WeaponItem) : null;
-  const charmItem  = !isWeapon ? (item as Charm & { kind: "charm" }) : null;
+  const armorItem  = isArmor  ? (item as ArmorItem)  : null;
+  const charmItem  = isCharm  ? (item as Charm & { kind: "charm" }) : null;
 
   const alreadyOwned = isWeapon
     ? playerStats.equippedWeaponItem?.id === weaponItem!.id
+    : isArmor
+    ? playerStats.armorSlots[armorItem!.slot]?.id === armorItem!.id
     : playerStats.hasCharm(charmItem!.id);
-  const charmsFull  = !isWeapon && playerStats.charms.length >= playerStats.maxCharms;
+
+  const charmsFull  = isCharm && playerStats.charms.length >= playerStats.maxCharms;
   const canAfford   = gold >= item.cost;
   const canBuy      = !alreadyOwned && canAfford && !charmsFull;
-  const accentColor = isWeapon ? "#60a5fa" : "#f0c040";
-  const typeLabel   = isWeapon ? `${weaponItem!.weaponType.toUpperCase()} · Weapon` : "Charm";
+
+  const accentColor = isWeapon ? "#60a5fa" : isArmor ? "#4ade80" : "#f0c040";
+  const typeLabel   = isWeapon
+    ? `${weaponItem!.weaponType.toUpperCase()} · Weapon`
+    : isArmor
+    ? `${armorItem!.setName} · Armor`
+    : "Charm";
+
+  // Label for auto-replace warning on armor
+  const existingArmor = isArmor ? playerStats.armorSlots[armorItem!.slot] : null;
 
   function handleBuy() {
     if (!canBuy) return;
-    const newGold = isWeapon
-      ? playerStats.equipWeapon(weaponItem!, gold, player)
-      : playerStats.buyCharm(charmItem!, gold, player);
+    let newGold: number;
+    if (isWeapon)     newGold = playerStats.equipWeapon(weaponItem!, gold, player);
+    else if (isArmor) newGold = playerStats.equipArmor(armorItem!, gold, player);
+    else              newGold = playerStats.buyCharm(charmItem!, gold, player);
     onBuy(newGold);
   }
 
@@ -217,9 +251,17 @@ function ShopItemCard({ item, gold, playerStats, player, onBuy }: {
           </div>
         ) : null;
       })()}
-      {!isWeapon && item.tradeOff && <div className="shop-item-card__tradeoff">⚠ {item.tradeOff}</div>}
+      {isArmor && (
+        <div className="shop-item-card__armor-slot">
+          Slot: {armorItem!.slot} · {armorItem!.setName}
+        </div>
+      )}
+      {isCharm && item.tradeOff && <div className="shop-item-card__tradeoff">⚠ {item.tradeOff}</div>}
+      {existingArmor && !alreadyOwned && (
+        <div className="shop-item-card__replace-warn">Replaces {existingArmor.name}</div>
+      )}
       <div className="shop-item-card__cost">{item.cost}g</div>
-      {charmsFull && !isWeapon && <div className="shop-item-card__full-warning">Sell a charm first</div>}
+      {charmsFull && <div className="shop-item-card__full-warning">Sell a charm first</div>}
       <PillBtn
         label={alreadyOwned ? "Owned" : "Acquire"}
         onClick={handleBuy}
@@ -346,8 +388,7 @@ export default function Shop({
   const [, forceUpdate] = useState(0);
   const refresh = useCallback(() => forceUpdate((n) => n + 1), []);
 
-  // Generate shop options exactly once per mount — using a ref avoids
-  // the setState-during-render anti-pattern that caused double renders.
+  // Generate shop options exactly once per mount.
   const shopInitRef = useRef(false);
   if (!shopInitRef.current) {
     playerStats.generateShopOptions();

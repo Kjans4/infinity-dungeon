@@ -6,6 +6,8 @@ import { WEAPON_ITEM_POOL }  from "./WeaponItemRegistry";
 // ============================================================
 // [🧱 BLOCK: Shop Item Union]
 // A shop slot holds either a Charm or a WeaponItem.
+// ArmorItem is intentionally excluded here — armor enters the
+// pool via getRandomShopItems once armor shop support is added.
 // ============================================================
 export type ShopItem =
   | (Charm      & { kind: 'charm'  })
@@ -16,23 +18,27 @@ export type ShopItem =
 // Returns `count` random items from the combined pool,
 // excluding IDs the player already owns.
 //
-// ownedCharmIds   — charm IDs already in charm slots
-// ownedWeaponId   — current equipped weapon ID (or null)
+// ownedCharmIds  — charm IDs already equipped
+// ownedWeaponId  — current equipped weapon ID (or null)
+// ownedArmorIds  — armor piece IDs already in slots (default [])
+//                  reserved for when armor enters the shop pool
+// count          — how many items to return (default 3)
 // ============================================================
 export function getRandomShopItems(
   ownedCharmIds:  string[],
   ownedWeaponId:  string | null,
-  count:          number = 3
+  ownedArmorIds:  string[] = [],
+  count:          number   = 3
 ): ShopItem[] {
   // Build available charms
   const availableCharms: ShopItem[] = CHARM_POOL
-  .filter((c: Charm) => !ownedCharmIds.includes(c.id))
-  .map((c: Charm) => ({ ...c, kind: 'charm' as const }));
+    .filter((c: Charm) => !ownedCharmIds.includes(c.id))
+    .map((c: Charm) => ({ ...c, kind: 'charm' as const }));
 
   // Build available weapons
   const availableWeapons: ShopItem[] = WEAPON_ITEM_POOL
-  .filter((w: WeaponItem) => w.id !== ownedWeaponId)
-  .map((w: WeaponItem) => ({ ...w, kind: 'weapon' as const }));
+    .filter((w: WeaponItem) => w.id !== ownedWeaponId)
+    .map((w: WeaponItem) => ({ ...w, kind: 'weapon' as const }));
 
   // Combine and shuffle
   const combined = [...availableCharms, ...availableWeapons]

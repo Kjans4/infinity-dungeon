@@ -1,10 +1,15 @@
 // src/engine/PlayerStats.ts
 import { Player }        from "./Player";
-import { Charm, CHARM_POOL, PlayerStatModifiers, defaultModifiers } from "./CharmRegistry";
-import { WeaponItem }    from "./items/types";
+import { Charm, PlayerStatModifiers, defaultModifiers } from "./CharmRegistry";
+import { WeaponItem, ArmorItem, ArmorSlot, ArmorSetId } from "./items/types";
 import { Weapon }        from "./items/Weapon";
 import { ShopItem, getRandomShopItems } from "./items/ItemPool";
 import { WeaponPassive, getWeaponPassive } from "./WeaponPassiveRegistry";
+import {
+  computeSetBonusModifiers,
+  resetBloodReaperCounter,
+  SetBonusModifiers,
+} from "./items/ArmorRegistry";
 
 // ============================================================
 // [🧱 BLOCK: Stat Definitions]
@@ -46,30 +51,97 @@ const REROLL_INCREMENT = 20;
 const REROLL_CAP       = 100;
 
 // ============================================================
+// [🧱 BLOCK: Armor Slots]
+// All 5 equipment slots. The weapon slot holds an ArmorItem
+// that counts toward a set bonus (separate from equippedWeaponItem
+// which holds the actual WeaponItem used for combat).
+// ============================================================
+export type ArmorSlots = {
+  helmet: ArmorItem | null;
+  armor:  ArmorItem | null;
+  boots:  ArmorItem | null;
+  gloves: ArmorItem | null;
+  weapon: ArmorItem | null;
+};
+
+function emptyArmorSlots(): ArmorSlots {
+  return { helmet: null, armor: null, boots: null, gloves: null, weapon: null };
+}
+
+// ============================================================
 // [🧱 BLOCK: PlayerStats Class]
+// Single source of truth for all player progression.
+//
+// Set count caching: getEquippedSetCounts() was previously called
+// 6+ times per frame across atkBonus, dashCost, damageReduction,
+// healOnKill, applyToPlayer, and the has*5pc getters — each one
+// iterating all 5 slots and recomputing set bonus modifiers.
+// Now _cachedSetCounts and _cachedSetBonuses are computed once
+// and invalidated via _markDirty() on any equip/sell/reset.
 // ============================================================
 export class PlayerStats {
-  // Stat levels
+  // ── Stat levels ────────────────────────────────────────────
   str: number = 0;
   vit: number = 0;
   agi: number = 0;
   end: number = 0;
 
-  // Charms
+  // ── Charms ─────────────────────────────────────────────────
   charms:    Charm[]             = [];
   maxCharms: number              = 5;
   modifiers: PlayerStatModifiers = defaultModifiers();
 
-  // Equipped weapon item (null = bare fists)
+  // ── Weapon ─────────────────────────────────────────────────
   equippedWeaponItem: WeaponItem | null = null;
 
-  // Shop state
+  // ── Armor ──────────────────────────────────────────────────
+  armorSlots: ArmorSlots = emptyArmorSlots();
+
+  // ── Shop state ─────────────────────────────────────────────
   shopOptions:      ShopItem[] = [];
-  rerollsThisVisit: number     = 0;  // resets each new shop visit
+  rerollsThisVisit: number     = 0;
+
+  // ── Set count cache ─────────────────────────────────────────
+  // Invalidated by _markDirty() after any armor equip/sell/reset.
+  // All getters that need set counts read from these instead of
+  // recomputing independently.
+  private _setCounts:  Record<ArmorSetId, number> | null = null;
+  private _setBonuses: SetBonusModifiers | null          = null;
+
+  private _markDirty(): void {
+    this._setCounts  = null;
+    this._setBonuses = null;
+  }
+
+  // ============================================================
+  // [🧱 BLOCK: Set Count Cache Accessors]
+  // All internal code uses these instead of calling
+  // getEquippedSetCounts() / computeSetBonusModifiers() directly.
+  // ============================================================
+  private _getSetCounts(): Record<ArmorSetId, number> {
+    if (this._setCounts) return this._setCounts;
+    const counts: Record<ArmorSetId, number> = {
+      iron_warden:   0,
+      shadow_walker: 0,
+      blood_reaper:  0,
+    };
+    const slots: ArmorSlot[] = ['helmet', 'armor', 'boots', 'gloves', 'weapon'];
+    slots.forEach((slot) => {
+      const piece = this.armorSlots[slot];
+      if (piece) counts[piece.setId]++;
+    });
+    this._setCounts = counts;
+    return counts;
+  }
+
+  private _getSetBonuses(): SetBonusModifiers {
+    if (this._setBonuses) return this._setBonuses;
+    this._setBonuses = computeSetBonusModifiers(this._getSetCounts());
+    return this._setBonuses;
+  }
 
   // ============================================================
   // [🧱 BLOCK: Reroll Cost]
-  // Computed from how many rerolls have been done this visit.
   // ============================================================
   get rerollCost(): number {
     return Math.min(REROLL_CAP, REROLL_BASE + this.rerollsThisVisit * REROLL_INCREMENT);
@@ -108,7 +180,6 @@ export class PlayerStats {
     return gold - charm.cost;
   }
 
-  // ── Claim charm from pending loot — free ─────────────────
   claimCharm(charm: Charm, player: Player): boolean {
     if (this.charms.length >= this.maxCharms) return false;
     if (this.charms.some((c) => c.id === charm.id)) return false;
@@ -151,7 +222,6 @@ export class PlayerStats {
     return gold - item.cost;
   }
 
-  // ── Claim weapon from pending loot — free ────────────────
   claimWeapon(item: WeaponItem, player: Player): void {
     if (this.equippedWeaponItem) {
       this.removeWeaponPassive(this.equippedWeaponItem, player);
@@ -183,14 +253,102 @@ export class PlayerStats {
   }
 
   // ============================================================
+  // [🧱 BLOCK: Armor Equip / Sell / Claim]
+  // One piece per slot. Selling refunds 50%.
+  // _markDirty() invalidates the set count cache after any change.
+  // applyToPlayer() is called after every change so stats update.
+  // ============================================================
+  canBuyArmor(item: ArmorItem, gold: number): boolean {
+    return gold >= item.cost;
+  }
+
+  equipArmor(item: ArmorItem, gold: number, player: Player): number {
+    if (!this.canBuyArmor(item, gold)) return gold;
+    // Auto-sell the existing piece in this slot if present
+    const existing = this.armorSlots[item.slot];
+    let remaining  = gold - item.cost;
+    if (existing) remaining += Math.ceil(existing.cost * 0.5);
+    this.armorSlots[item.slot] = item;
+    this._markDirty();
+    this.applyToPlayer(player);
+    return remaining;
+  }
+
+  claimArmor(item: ArmorItem, player: Player): boolean {
+    // Free claim — auto-replace existing piece with no refund
+    this.armorSlots[item.slot] = item;
+    this._markDirty();
+    this.applyToPlayer(player);
+    return true;
+  }
+
+  sellArmor(slot: ArmorSlot, gold: number, player: Player): number {
+    const item = this.armorSlots[slot];
+    if (!item) return gold;
+    this.armorSlots[slot] = null;
+    this._markDirty();
+    this.applyToPlayer(player);
+    return gold + Math.ceil(item.cost * 0.5);
+  }
+
+  hasArmorInSlot(slot: ArmorSlot): boolean {
+    return this.armorSlots[slot] !== null;
+  }
+
+  // ============================================================
+  // [🧱 BLOCK: Set Bonus Count — public API]
+  // External callers (Inventory UI) use this.
+  // Internally all code uses _getSetCounts() for the cached path.
+  // ============================================================
+  getEquippedSetCounts(): Record<ArmorSetId, number> {
+    return this._getSetCounts();
+  }
+
+  // ============================================================
+  // [🧱 BLOCK: Active Set Bonuses]
+  // Returns which sets have active bonuses and at what tier.
+  // Used by Inventory UI to display active bonuses.
+  // ============================================================
+  getActiveBonusTiers(): { setId: ArmorSetId; tier: 2 | 4 | 5 }[] {
+    const counts = this._getSetCounts();
+    const result: { setId: ArmorSetId; tier: 2 | 4 | 5 }[] = [];
+    (Object.keys(counts) as ArmorSetId[]).forEach((setId) => {
+      const n = counts[setId];
+      if (n >= 5)      result.push({ setId, tier: 5 });
+      else if (n >= 4) result.push({ setId, tier: 4 });
+      else if (n >= 2) result.push({ setId, tier: 2 });
+    });
+    return result;
+  }
+
+  // ============================================================
+  // [🧱 BLOCK: Set Bonus Convenience Getters]
+  // Read by HordeSystem/BossSystem for 5pc combat effects.
+  // ============================================================
+  get hasShadowWalker5pc(): boolean {
+    return (this._getSetCounts()['shadow_walker'] ?? 0) >= 5;
+  }
+
+  get hasIronWarden5pc(): boolean {
+    return (this._getSetCounts()['iron_warden'] ?? 0) >= 5;
+  }
+
+  get hasBloodReaper5pc(): boolean {
+    return (this._getSetCounts()['blood_reaper'] ?? 0) >= 5;
+  }
+
+  // ============================================================
   // [🧱 BLOCK: Shop Options]
-  // Resets reroll counter on each fresh generation.
+  // Passes owned armor IDs so the pool excludes already-owned
+  // pieces. rerollsThisVisit resets on each fresh generation.
   // ============================================================
   generateShopOptions() {
     const ownedCharmIds = this.charms.map((c) => c.id);
     const ownedWeaponId = this.equippedWeaponItem?.id ?? null;
-    this.shopOptions      = getRandomShopItems(ownedCharmIds, ownedWeaponId, 3);
-    this.rerollsThisVisit = 0;  // ← reset escalating cost
+    const ownedArmorIds = Object.values(this.armorSlots)
+      .filter(Boolean).map((a) => a!.id);
+    this.shopOptions      = getRandomShopItems(ownedCharmIds, ownedWeaponId, ownedArmorIds, 3);
+    this.rerollsThisVisit = 0;
   }
 
   reroll(gold: number): number {
@@ -198,53 +356,84 @@ export class PlayerStats {
     const cost          = this.rerollCost;
     const ownedCharmIds = this.charms.map((c) => c.id);
     const ownedWeaponId = this.equippedWeaponItem?.id ?? null;
-    this.shopOptions    = getRandomShopItems(ownedCharmIds, ownedWeaponId, 3);
+    const ownedArmorIds = Object.values(this.armorSlots)
+      .filter(Boolean).map((a) => a!.id);
+    this.shopOptions     = getRandomShopItems(ownedCharmIds, ownedWeaponId, ownedArmorIds, 3);
     this.rerollsThisVisit++;
     return gold - cost;
   }
 
   // ============================================================
   // [🧱 BLOCK: Apply Stats to Player]
+  // Layers: base + stat levels + charm modifiers + armor pieces
+  // + set bonus modifiers. Called after any equipment change.
+  // Uses cached set counts/bonuses — no redundant recomputation.
   // ============================================================
   applyToPlayer(player: Player) {
-    player.maxHp      = Math.max(1, 100 + (this.vit * 10) + this.modifiers.bonusMaxHp);
+    // ── Armor piece flat stats ──────────────────────────────
+    let armorHp    = 0;
+    let armorSpeed = 0;
+
+    const slots: ArmorSlot[] = ['helmet', 'armor', 'boots', 'gloves', 'weapon'];
+    slots.forEach((slot) => {
+      const piece = this.armorSlots[slot];
+      if (!piece) return;
+      switch (piece.statType) {
+        case 'maxHp':    armorHp    += piece.statValue; break;
+        case 'moveSpeed':armorSpeed += piece.statValue; break;
+        // damageReduction and atk are read via their own getters
+      }
+    });
+
+    // ── Set bonus modifiers — single computation via cache ───
+    const sb = this._getSetBonuses();
+
+    // ── Blood Reaper kill counter — reset if < 5pc ──────────
+    if ((this._getSetCounts()['blood_reaper'] ?? 0) < 5) resetBloodReaperCounter();
+
+    // ── Apply all layers ─────────────────────────────────────
+    player.maxHp = Math.max(1,
+      100
+      + (this.vit * 10)
+      + this.modifiers.bonusMaxHp
+      + armorHp
+      + sb.bonusMaxHp
+    );
     player.hp         = Math.min(player.hp, player.maxHp);
     player.maxStamina = 100 + (this.end * 5) + this.modifiers.bonusMaxStamina;
-    player.maxSpeed   = 5 + (this.agi * 0.3) + this.modifiers.bonusSpeed;
+    player.maxSpeed   = 5 + (this.agi * 0.3) + this.modifiers.bonusSpeed + armorSpeed + sb.bonusMoveSpeed;
     player.dashCost   = this.dashCost;
   }
 
   // ============================================================
   // [🧱 BLOCK: Computed Getters]
+  // All use _getSetCounts() / _getSetBonuses() — single cached
+  // computation shared across the entire frame.
   // ============================================================
   get atkBonus(): number {
-    return (this.str * 3) + this.modifiers.bonusAtk;
+    let armorAtk = 0;
+    const atkSlots: ArmorSlot[] = ['gloves', 'weapon'];
+    atkSlots.forEach((slot) => {
+      const piece = this.armorSlots[slot];
+      if (piece?.statType === 'atk') armorAtk += piece.statValue;
+    });
+    const sb = this._getSetBonuses();
+    return (this.str * 3) + this.modifiers.bonusAtk + armorAtk + sb.bonusAtk;
   }
 
-  // ============================================================
-  // [🧱 BLOCK: Last Stand Bonus]
-  // Returns +15 ATK when the player has the last_stand charm
-  // equipped AND current HP is at or below 25% of max.
-  // Systems call this with the live player reference so the
-  // check reflects real-time HP, not a cached snapshot.
-  // ============================================================
   lastStandBonus(player: Player): number {
     if (!this.hasCharm('last_stand')) return 0;
     return player.hp / player.maxHp <= 0.25 ? 15 : 0;
   }
 
-  // ============================================================
-  // [🧱 BLOCK: Weapon Passive Getter]
-  // Returns the active weapon's passive object, or null if the
-  // player has bare fists or the weapon type has no passive.
-  // ============================================================
   get weaponPassive(): WeaponPassive | null {
     if (!this.equippedWeaponItem) return null;
     return getWeaponPassive(this.equippedWeaponItem.weaponType);
   }
 
   get dashCost(): number {
-    return Math.max(5, 30 - this.modifiers.dashCostReduction);
+    const sb = this._getSetBonuses();
+    return Math.max(5, 30 - this.modifiers.dashCostReduction - sb.dashCostReduction);
   }
 
   get staminaRegenRate(): number {
@@ -252,15 +441,23 @@ export class PlayerStats {
   }
 
   get damageReduction(): number {
-    return Math.min(0.75, this.modifiers.damageReduction);
+    // Charm DR + armor chest piece DR + Iron Warden 4pc DR, capped at 75%
+    let armorDR = 0;
+    const piece = this.armorSlots['armor'];
+    if (piece?.statType === 'damageReduction') armorDR = piece.statValue;
+    const sb = this._getSetBonuses();
+    return Math.min(0.75, this.modifiers.damageReduction + armorDR + sb.bonusDamageReduction);
   }
 
   get healOnKill(): number {
-    return this.modifiers.healOnKill;
+    // Charm heal + Blood Reaper 4pc heal
+    const br4pc = (this._getSetCounts()['blood_reaper'] ?? 0) >= 4 ? 8 : 0;
+    return this.modifiers.healOnKill + br4pc;
   }
 
   // ============================================================
   // [🧱 BLOCK: Reset]
+  // Full wipe — called on new game / retry.
   // ============================================================
   reset(player: Player) {
     if (this.equippedWeaponItem) {
@@ -269,12 +466,15 @@ export class PlayerStats {
     this.charms.forEach((c) => c.onRemove(player, this.modifiers));
 
     this.str = 0; this.vit = 0; this.agi = 0; this.end = 0;
-    this.charms              = [];
-    this.modifiers           = defaultModifiers();
-    this.shopOptions         = [];
-    this.rerollsThisVisit    = 0;
-    this.equippedWeaponItem  = null;
+    this.charms             = [];
+    this.modifiers          = defaultModifiers();
+    this.shopOptions        = [];
+    this.rerollsThisVisit   = 0;
+    this.equippedWeaponItem = null;
+    this.armorSlots         = emptyArmorSlots();
 
+    this._markDirty();
+    resetBloodReaperCounter();
     player.equippedWeapon = new Weapon('fists');
     this.applyToPlayer(player);
   }

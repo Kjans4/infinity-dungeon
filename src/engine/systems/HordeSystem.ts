@@ -20,7 +20,15 @@ import {
   isRendMarked, clearRendMark, REND_BONUS_DAMAGE,
   isRiposteActive, tickRiposte, RIPOSTE_MULT, GLAIVE_EXTRA_COST,
 } from "../WeaponPassiveRegistry";
+import {
+  tryIronWardenReflect,
+  applyShadowWalkerFreeze,
+  onBloodReaperKill,
+} from "../items/ArmorRegistry";
 
+// ============================================================
+// [🧱 BLOCK: Constants]
+// ============================================================
 const WAVE_SIZE              = 8;
 const BASE_THRESHOLD         = 20;
 const THRESHOLD_PER_FLOOR    = 5;
@@ -74,11 +82,15 @@ function rollItemDrop(
   if (Math.random() > chance) return null;
   const ownedCharmIds   = state.playerStats.charms.map((c) => c.id);
   const ownedWeaponId   = state.playerStats.equippedWeaponItem?.id ?? null;
+  const ownedArmorIds   = Object.values(state.playerStats.armorSlots)
+    .filter(Boolean).map((a) => a!.id);
   const pendingCharmIds = state.pendingLoot.filter((i) => i.kind === "charm").map((i) => i.id);
   const pendingWeaponId = state.pendingLoot.find((i) => i.kind === "weapon")?.id ?? null;
+  const pendingArmorIds = state.pendingLoot.filter((i) => i.kind === "armor").map((i) => i.id);
   const pool = getRandomShopItems(
     [...ownedCharmIds, ...pendingCharmIds],
     ownedWeaponId ?? pendingWeaponId,
+    [...ownedArmorIds, ...pendingArmorIds],
     1
   );
   return pool[0] ?? null;
@@ -249,8 +261,6 @@ export class HordeSystem {
 
   // ============================================================
   // [🧱 BLOCK: Handle Bomber Explosion]
-  // Deals AoE damage to player and spawns particles.
-  // Called whenever a Bomber's isExploding flag is true.
   // ============================================================
   private handleBomberExplosion(
     state:  GameState,
@@ -260,11 +270,9 @@ export class HordeSystem {
   ): void {
     const { x: bx, y: by } = rectCenter(bomber);
 
-    // VFX burst
     state.particles.push(...spawnBurst(bx, by, "#f97316", 14, 2.0));
     state.particles.push(...spawnBurst(bx, by, "#ffffff",  6, 1.2));
 
-    // Damage player if in range
     if (bomber.isExplosionHittingPlayer(player) && player.iFrames <= 0) {
       let rawDmg = Math.round(bomber.explodeDamage * (1 - ps.damageReduction));
       rawDmg = this.resolveBlock(player, rawDmg);
@@ -301,10 +309,30 @@ export class HordeSystem {
       state.shopNpc.checkPlayerProximity(player);
     }
 
+    // ── Shadow Walker 5pc — freeze on dash ───────────────────
+    // Player.dashTimer is set when a dash starts; we detect
+    // the leading edge (first frame > 0 after being 0) via a
+    // flag on the player object we stamp each frame.
+    const sw5Count = ps.getEquippedSetCounts()['shadow_walker'] ?? 0;
+    if (sw5Count >= 5) {
+      const wasDashing = (player as any)._wasDashingLastFrame ?? false;
+      const isDashing  = player.dashTimer > 0;
+      if (isDashing && !wasDashing) {
+        applyShadowWalkerFreeze(sw5Count, state.enemies);
+        state.particles.push(...spawnBurst(
+          player.x + player.width  / 2,
+          player.y + player.height / 2,
+          '#7dd3fc', 10, 1.3
+        ));
+      }
+      (player as any)._wasDashingLastFrame = isDashing;
+    }
+
     // ── Enemy update + combat resolution ─────────────────────
+    const iw5Count = ps.getEquippedSetCounts()['iron_warden'] ?? 0;
+
     state.enemies.forEach((enemy) => {
 
-      // Stunned enemies freeze AI
       if (!enemy.isStunned) {
         enemy.update(player, worldW, worldH);
       } else {
@@ -321,15 +349,12 @@ export class HordeSystem {
       }
 
       // ── Bomber explosion detection ────────────────────────
-      // Handle bombs that exploded naturally (fuse expired).
       if (enemy instanceof Bomber) {
         if (enemy.isExploding) {
           this.handleBomberExplosion(state, enemy, player, ps);
-          // isExploding cleared by Bomber.update() next frame
         }
       }
 
-      // ── Skip dead enemies for combat ──────────────────────
       if (enemy.isDead) return;
 
       // ── Windup-phase parry window ─────────────────────────
@@ -346,33 +371,35 @@ export class HordeSystem {
       }
 
       // ── Dasher dash-hit ───────────────────────────────────
-      // Handled separately — Dasher has no isMeleeHittingPlayer,
-      // so it must return early to skip the standard melee block.
       if (enemy instanceof Dasher) {
         if (enemy.isDashHittingPlayer(player) && player.iFrames <= 0) {
           if (player.isParrying) {
             const parried = this.resolveParry(player, enemy, state);
-            if (parried) {
-              enemy.damageCooldown = 600;
-              return;
-            }
+            if (parried) { enemy.damageCooldown = 600; return; }
           }
           let rawDmg = Math.round(enemy.dashDamage * (1 - ps.damageReduction));
           rawDmg = this.resolveBlock(player, rawDmg);
-          if (rawDmg > 0) player.takeHit(rawDmg);
+          if (rawDmg > 0) {
+            player.takeHit(rawDmg);
+            // Iron Warden 5pc reflect
+            tryIronWardenReflect(iw5Count, enemy);
+          }
           enemy.damageCooldown = 800;
         }
-        return; // skip standard melee path for Dasher
+        return;
       }
 
-      // ── Bomber body contact (light) ───────────────────────
+      // ── Bomber body contact ───────────────────────────────
       if (enemy instanceof Bomber) {
         if (enemy.isTouchingPlayer(player) && player.iFrames <= 0) {
           let rawDmg = Math.round(enemy.contactDmg * (1 - ps.damageReduction));
           rawDmg = this.resolveBlock(player, rawDmg);
-          if (rawDmg > 0) player.takeHit(rawDmg);
+          if (rawDmg > 0) {
+            player.takeHit(rawDmg);
+            tryIronWardenReflect(iw5Count, enemy);
+          }
         }
-        return; // skip standard melee path for Bomber
+        return;
       }
 
       // ── Standard melee contact ────────────────────────────
@@ -393,15 +420,22 @@ export class HordeSystem {
         if (rawDmg > 0) {
           player.takeHit(rawDmg);
           enemy.applyKnockback(player);
+          tryIronWardenReflect(iw5Count, enemy);
         }
       } else if (enemy instanceof Shooter) {
         rawDmg = Math.round(8 * (1 - ps.damageReduction));
         rawDmg = this.resolveBlock(player, rawDmg);
-        if (rawDmg > 0) player.takeHit(rawDmg);
+        if (rawDmg > 0) {
+          player.takeHit(rawDmg);
+          tryIronWardenReflect(iw5Count, enemy);
+        }
       } else {
         rawDmg = Math.round(15 * (1 - ps.damageReduction));
         rawDmg = this.resolveBlock(player, rawDmg);
-        if (rawDmg > 0) player.takeHit(rawDmg);
+        if (rawDmg > 0) {
+          player.takeHit(rawDmg);
+          tryIronWardenReflect(iw5Count, enemy);
+        }
       }
     });
 
@@ -432,7 +466,6 @@ export class HordeSystem {
     const momentumMult = passive?.id === 'momentum' && player.dashTimer > 0 ? 2.0          : 1.0;
     const iaijutsuMult = passive?.id === 'iaijutsu' && player.attackType === 'charged_light' ? 1.4 : 1.0;
 
-    // resolveHitsCustom now accepts BaseEnemy[] — onHit narrows with instanceof
     const hitEnemies = this.weaponSystem.resolveHitsCustom(
       player, state.enemies, atkBonus,
       (enemy: BaseEnemy, amount: number) => {
@@ -475,6 +508,8 @@ export class HordeSystem {
     const deadEnemies = state.enemies.filter((e) => e.isDead);
     state.enemies     = state.enemies.filter((e) => !e.isDead);
     const justKilled  = before - state.enemies.length;
+
+    const br5Count = ps.getEquippedSetCounts()['blood_reaper'] ?? 0;
 
     if (justKilled > 0) {
       state.kills      += justKilled;
@@ -527,6 +562,9 @@ export class HordeSystem {
           player.hp = Math.min(player.maxHp, player.hp + ps.healOnKill);
         }
         passive?.onKill?.(player, enemy, state);
+
+        // ── Blood Reaper 5pc — shockwave every 5th kill ────────
+        onBloodReaperKill(br5Count, enemy, state.enemies, state);
       });
     }
 
