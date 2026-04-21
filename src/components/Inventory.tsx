@@ -6,6 +6,7 @@ import { PlayerStats }   from "@/engine/PlayerStats";
 import { Player }        from "@/engine/Player";
 import { Charm }         from "@/engine/CharmRegistry";
 import { WeaponItem, ArmorItem, ArmorSlot } from "@/engine/items/types";
+import { Weapon }           from "@/engine/items/Weapon";
 import { getWeaponPassive } from "@/engine/WeaponPassiveRegistry";
 import { ARMOR_SET_DEFS }   from "@/engine/items/ArmorRegistry";
 import "@/styles/inventory.css";
@@ -51,10 +52,15 @@ function SmallBtn({ label, onClick, color = "#5a4010", danger = false }: {
 
 // ============================================================
 // [🧱 BLOCK: Weapon Slot]
+// Reads attack stats directly from Weapon.getAttack() so the
+// displayed numbers always match what the engine actually uses.
+// Also shows the player's current ATK bonus so they can see
+// the real damage they deal (base weapon + STR + charms + armor).
 // ============================================================
-function WeaponSlot({ item, onUnequip }: {
-  item: WeaponItem | null;
-  onUnequip: () => void;
+function WeaponSlot({ item, playerStats, onUnequip }: {
+  item:        WeaponItem | null;
+  playerStats: PlayerStats;
+  onUnequip:   () => void;
 }) {
   const [confirm, setConfirm] = useState(false);
 
@@ -67,17 +73,20 @@ function WeaponSlot({ item, onUnequip }: {
     );
   }
 
-  const refund = Math.ceil(item.cost * 0.5);
+  const refund  = Math.ceil(item.cost * 0.5);
+  const weapon  = new Weapon(item.weaponType);
+  const atkBonus = playerStats.atkBonus;
+
   const atkStats = [
     {
       label: "Light",
-      dmg:  item.weaponType === "sword" ? 12 : item.weaponType === "axe" ? 15 : 10,
-      stam: item.weaponType === "sword" ? 10 : item.weaponType === "axe" ? 12 : 8,
+      dmg:   weapon.getAttack('light').damage + atkBonus,
+      stam:  weapon.getAttack('light').staminaCost,
     },
     {
       label: "Heavy",
-      dmg:  item.weaponType === "sword" ? 28 : item.weaponType === "axe" ? 40 : 35,
-      stam: item.weaponType === "sword" ? 35 : item.weaponType === "axe" ? 42 : 32,
+      dmg:   weapon.getAttack('heavy').damage + atkBonus,
+      stam:  weapon.getAttack('heavy').staminaCost,
     },
   ];
 
@@ -105,6 +114,10 @@ function WeaponSlot({ item, onUnequip }: {
           </div>
         ) : null;
       })()}
+
+      {atkBonus > 0 && (
+        <p className="inv-weapon-slot__atk-bonus">+{atkBonus} ATK bonus applied</p>
+      )}
 
       <div className="inv-weapon-slot__atk-row">
         {atkStats.map((atk) => (
@@ -184,19 +197,18 @@ function ArmorSlotRow({ slot, item, onSell }: {
 // Shows all 3 sets with their piece count and active bonuses.
 // ============================================================
 function SetBonusPanel({ playerStats }: { playerStats: PlayerStats }) {
-  const counts     = playerStats.getEquippedSetCounts();
+  const counts      = playerStats.getEquippedSetCounts();
   const activeTiers = playerStats.getActiveBonusTiers();
 
   return (
     <div className="inv-set-bonus-panel">
       <p className="inv-set-bonus-panel__title">Armor Set Bonuses</p>
       {ARMOR_SET_DEFS.map((def) => {
-        const count     = counts[def.id] ?? 0;
+        const count      = counts[def.id] ?? 0;
         const activeTier = activeTiers.find((t) => t.setId === def.id);
 
         return (
           <div key={def.id} className="inv-set-bonus-entry">
-            {/* Set header */}
             <div className="inv-set-bonus-entry__header">
               <span className="inv-set-bonus-entry__icon">{def.icon}</span>
               <span
@@ -205,17 +217,10 @@ function SetBonusPanel({ playerStats }: { playerStats: PlayerStats }) {
               >
                 {def.name}
               </span>
-              <span className="inv-set-bonus-entry__count">
-                {count} / 5
-              </span>
+              <span className="inv-set-bonus-entry__count">{count} / 5</span>
             </div>
 
-            {/* Tier rows */}
             {def.tiers.map((tier) => {
-              const reached = count >= tier.pieces;
-              const isActive = activeTier?.tier === tier.pieces ||
-                (activeTier && activeTier.tier > tier.pieces);
-              // A tier is active if we've met or exceeded its threshold
               const tierActive = count >= tier.pieces;
               return (
                 <div
@@ -322,8 +327,12 @@ export default function Inventory({
 
           <GemRule />
 
-          {/* Weapon slot */}
-          <WeaponSlot item={playerStats.equippedWeaponItem} onUnequip={handleUnequipWeapon} />
+          {/* Weapon slot — passes playerStats so atkBonus is live */}
+          <WeaponSlot
+            item={playerStats.equippedWeaponItem}
+            playerStats={playerStats}
+            onUnequip={handleUnequipWeapon}
+          />
 
           <GemRule />
 

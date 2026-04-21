@@ -172,6 +172,14 @@
 
 .inv-weapon-slot__passive-desc { font-size: 10px; color: #64748b; }
 
+/* ATK bonus line — shown when STR / charms / armor add to base damage */
+.inv-weapon-slot__atk-bonus {
+  font-size:      9px;
+  color:          #4ade80;
+  letter-spacing: 0.08em;
+  font-style:     italic;
+}
+
 .inv-weapon-slot__atk-row {
   display: flex;
   gap:     8px;

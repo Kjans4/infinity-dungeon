@@ -72,10 +72,10 @@ export function buildArmorItem(templateId: string, floor: number): ArmorItem | n
   // Human-readable description
   let description = '';
   switch (statType) {
-    case 'maxHp':          description = `+${statValue} Max HP`;                          break;
+    case 'maxHp':          description = `+${statValue} Max HP`;                              break;
     case 'damageReduction':description = `+${Math.round(statValue * 100)}% Damage Reduction`; break;
-    case 'moveSpeed':      description = `+${statValue.toFixed(1)} Move Speed`;           break;
-    case 'atk':            description = `+${statValue} Attack Damage`;                   break;
+    case 'moveSpeed':      description = `+${statValue.toFixed(1)} Move Speed`;               break;
+    case 'atk':            description = `+${statValue} Attack Damage`;                       break;
   }
 
   return {
@@ -172,27 +172,33 @@ export const ARMOR_SET_DEFS: ArmorSetDef[] = [
 
 // ============================================================
 // [🧱 BLOCK: Set Bonus Stat Modifiers]
-// Called by PlayerStats.applySetBonuses() to compute flat
-// stat changes from active set bonuses.
-// Returns additive values to layer on top of base stats.
+// Called by PlayerStats via the cached _getSetBonuses() path.
+// Returns additive/multiplicative values layered on base stats.
+//
+// bonusStaminaRegenMult — multiplicative (1.0 = no change).
+// No set currently grants a stamina regen bonus, but the field
+// is here so future sets or tiers can add one without touching
+// PlayerStats.staminaRegenRate.
 // ============================================================
 export interface SetBonusModifiers {
-  bonusMaxHp:       number;
-  bonusDamageReduction: number;  // fraction e.g. 0.20
-  bonusMoveSpeed:   number;
-  bonusAtk:         number;
-  dashCostReduction:number;
+  bonusMaxHp:            number;
+  bonusDamageReduction:  number;  // fraction e.g. 0.20
+  bonusMoveSpeed:        number;
+  bonusAtk:              number;
+  dashCostReduction:     number;
+  bonusStaminaRegenMult: number;  // multiplier — 1.0 = unchanged
 }
 
 export function computeSetBonusModifiers(
   equippedCounts: Record<ArmorSetId, number>
 ): SetBonusModifiers {
   const out: SetBonusModifiers = {
-    bonusMaxHp:           0,
-    bonusDamageReduction: 0,
-    bonusMoveSpeed:       0,
-    bonusAtk:             0,
-    dashCostReduction:    0,
+    bonusMaxHp:            0,
+    bonusDamageReduction:  0,
+    bonusMoveSpeed:        0,
+    bonusAtk:              0,
+    dashCostReduction:     0,
+    bonusStaminaRegenMult: 1.0,
   };
 
   const iw = equippedCounts['iron_warden']   ?? 0;

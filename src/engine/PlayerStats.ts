@@ -437,7 +437,10 @@ export class PlayerStats {
   }
 
   get staminaRegenRate(): number {
-    return 0.4 * this.modifiers.staminaRegenMult;
+    // modifiers.staminaRegenMult — charm multiplier (Overclock, Berserker)
+    // sb.bonusStaminaRegenMult   — set bonus multiplier (future-proofed)
+    const sb = this._getSetBonuses();
+    return 0.4 * this.modifiers.staminaRegenMult * sb.bonusStaminaRegenMult;
   }
 
   get damageReduction(): number {
