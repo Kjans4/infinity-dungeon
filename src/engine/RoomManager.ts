@@ -34,10 +34,12 @@ export function getBossHpScale(floor: number): number {
 
 // ============================================================
 // [🧱 BLOCK: Room Display Number]
-// Simple linear calculation: Floor 1 (Rooms 1,2,3), Floor 2 (Rooms 4,5,6), etc.
+// Per-floor display: resets to 1 each floor.
+// Room 1 = horde, Room 2 = horde, Room 3 = elite, Room 4 = boss.
+// roomInCycle maps directly to roomDisplay within the floor.
 // ============================================================
 export function getRoomDisplay(floor: number, roomInCycle: 1 | 2 | 3): number {
-  return (floor - 1) * 3 + roomInCycle;
+  return roomInCycle;
 }
 
 // ============================================================
@@ -54,9 +56,12 @@ export function initialRoomState(): RoomState {
 
 // ============================================================
 // [🧱 BLOCK: Advance Room]
-// Room 1 → Room 2 (horde)
-// Room 2 → Room 3 (elite)
-// Room 3 → Boss
+// Per-floor room numbering: 1,2,3,4 each floor regardless of
+// which floor the player is on.
+//
+// Room 1 (horde)  → Room 2 (horde)
+// Room 2 (horde)  → Room 3 (elite)
+// Room 3 (elite)  → Room 4 (boss)
 // ============================================================
 export function advanceRoom(current: RoomState): RoomState {
   const { floor, roomInCycle } = current;
@@ -65,7 +70,7 @@ export function advanceRoom(current: RoomState): RoomState {
     return {
       floor,
       roomInCycle: 2,
-      roomDisplay: getRoomDisplay(floor, 2),
+      roomDisplay: 2,
       phase:       'horde',
     };
   }
@@ -74,19 +79,19 @@ export function advanceRoom(current: RoomState): RoomState {
     return {
       floor,
       roomInCycle: 3,
-      roomDisplay: getRoomDisplay(floor, 3),
+      roomDisplay: 3,
       phase:       'elite',
     };
   }
 
-  // roomInCycle === 3 (elite cleared) → boss
-  // Boss is room 4 in the cycle — its own numbered room, not stuck on 3.
+  // roomInCycle === 3 (elite cleared) → boss (room 4 within floor)
   return { ...current, roomDisplay: 4, phase: 'boss' };
 }
 
 // ============================================================
 // [🧱 BLOCK: Next Floor]
 // Always advances — the run is infinite.
+// roomDisplay resets to 1 for the new floor.
 // ============================================================
 export function nextFloor(current: RoomState): RoomState {
   const floor = current.floor + 1;

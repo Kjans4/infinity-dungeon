@@ -271,6 +271,7 @@
 .shop-items-row {
   display: flex;
   gap: 10px;
+  flex-wrap: wrap;
 }
 
 .shop-item-card {
@@ -336,6 +337,29 @@
   text-align: center;
 }
 
+/* ============================================================
+   [🧱 BLOCK: Armor-specific card labels]
+   ============================================================ */
+.shop-item-card__armor-slot {
+  font-family: 'Cinzel', serif;
+  font-size: 7px;
+  color: #3a5a3a;
+  text-align: center;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  background: rgba(74,222,128,0.05);
+  border: 1px solid rgba(74,222,128,0.15);
+  padding: 3px 6px;
+}
+
+.shop-item-card__replace-warn {
+  font-family: 'IM Fell English', serif;
+  font-style: italic;
+  font-size: 9px;
+  color: #f97316;
+  text-align: center;
+}
+
 .shop-item-card__cost {
   font-family: 'Cinzel', serif;
   font-size: 10px;
@@ -378,7 +402,7 @@
   padding: 6px 10px;
 }
 
-.shop-owned-pill--charm { border-left: 2px solid #8B6914; }
+.shop-owned-pill--charm  { border-left: 2px solid #8B6914; }
 .shop-owned-pill--weapon { border-left: 2px solid #c0860c; }
 
 .shop-owned-pill__icon { font-size: 16px; }
@@ -564,9 +588,9 @@
   color: #f97316;
   text-align: center;
 }
+
 /* ============================================================
    [🧱 BLOCK: Weapon Passive Display]
-   Shown inside ShopItemCard and PendingLootCard for weapons.
    ============================================================ */
 .shop-item-card__passive {
   display: flex;
