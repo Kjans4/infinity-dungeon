@@ -4,7 +4,10 @@ import { Camera }                               from "../Camera";
 import { Door }                                 from "../Door";
 import { ShopNPC }                              from "../ShopNPC";
 import { ItemDrop }                             from "../ItemDrop";
+import { BaseEnemy }                            from "../enemy/BaseEnemy";
 import { Grunt, Shooter, Tank, spawnWave }      from "../enemy";
+import { Dasher }                               from "../enemy/Dasher";
+import { Bomber }                               from "../enemy/Bomber";
 import { spawnEliteWave }                       from "../enemy/spawn";
 import { RoomState }                            from "../RoomManager";
 import { GameState, PENDING_LOOT_CAP }          from "../GameState";
@@ -29,12 +32,8 @@ const GRACE_PERIOD_MS        = 1500;
 // ============================================================
 // [🧱 BLOCK: Parry Constants]
 // ============================================================
-const PARRY_STUN_MS   = 1200;  // horde enemy stun duration on successful parry
-const PARRY_VULN_MULT = 1.5;   // damage bonus vs stunned (parry-vulnerable) enemy
-
-// Radius within which an enemy in windup also counts as
-// "in range" for a player parry. Slightly larger than melee
-// range so the player doesn't have to be pixel-perfect.
+const PARRY_STUN_MS       = 1200;
+const PARRY_VULN_MULT     = 1.5;
 const PARRY_WINDUP_RADIUS = 80;
 
 // ============================================================
@@ -51,8 +50,15 @@ const DROP_CHANCE = {
   grunt:   0.03,
   shooter: 0.06,
   tank:    0.12,
+  dasher:  0.05,
+  bomber:  0.08,
 };
 const ELITE_DROP_MULT = 1.5;
+
+// ============================================================
+// [🧱 BLOCK: AnyHordeEnemy]
+// ============================================================
+type AnyHordeEnemy = Grunt | Shooter | Tank | Dasher | Bomber;
 
 function goldMultiplierForKills(kills: number, threshold: number): number {
   if (kills < threshold) return 1.0;
@@ -140,7 +146,7 @@ export class HordeSystem {
   // [🧱 BLOCK: Separate Enemies]
   // ============================================================
   private separateEnemies(
-    enemies: (Grunt | Shooter | Tank)[],
+    enemies: AnyHordeEnemy[],
     worldW:  number,
     worldH:  number
   ): void {
@@ -189,7 +195,7 @@ export class HordeSystem {
   // [🧱 BLOCK: Enforce Safe Zone]
   // ============================================================
   private enforceSafeZone(
-    enemies: (Grunt | Shooter | Tank)[],
+    enemies: AnyHordeEnemy[],
     npc:     ShopNPC
   ): void {
     for (const enemy of enemies) {
@@ -204,10 +210,8 @@ export class HordeSystem {
 
   // ============================================================
   // [🧱 BLOCK: Is Enemy In Parry Range]
-  // Returns true when an enemy's center is within PARRY_WINDUP_RADIUS
-  // of the player's center. Used to check windup-phase parries.
   // ============================================================
-  private isEnemyInParryRange(player: Player, enemy: Grunt | Shooter | Tank): boolean {
+  private isEnemyInParryRange(player: Player, enemy: AnyHordeEnemy): boolean {
     const { x: px, y: py } = rectCenter(player);
     const { x: ex, y: ey } = rectCenter(enemy);
     return circleCircle(px, py, PARRY_WINDUP_RADIUS, ex, ey, 1);
@@ -215,13 +219,10 @@ export class HordeSystem {
 
   // ============================================================
   // [🧱 BLOCK: Resolve Parry]
-  // Unified parry resolution used for both windup proximity and
-  // direct melee contact. Stuns the enemy and spawns VFX.
-  // Returns true if parry was triggered.
   // ============================================================
   private resolveParry(
     player:  Player,
-    enemy:   Grunt | Shooter | Tank,
+    enemy:   AnyHordeEnemy,
     state:   GameState
   ): boolean {
     if (!player.isParrying) return false;
@@ -234,18 +235,41 @@ export class HordeSystem {
       player.y + player.height / 2,
       "#38bdf8", 10, 1.3
     ));
-    // Weapon passive onParry (e.g. Riposte opens its window)
     state.playerStats.weaponPassive?.onParry?.(player, state);
     return true;
   }
 
   // ============================================================
   // [🧱 BLOCK: Resolve Block]
-  // Returns final damage after block reduction (or full if not blocking).
   // ============================================================
   private resolveBlock(player: Player, rawDamage: number): number {
     if (player.isBlocking) return player.applyBlockedHit(rawDamage);
     return rawDamage;
+  }
+
+  // ============================================================
+  // [🧱 BLOCK: Handle Bomber Explosion]
+  // Deals AoE damage to player and spawns particles.
+  // Called whenever a Bomber's isExploding flag is true.
+  // ============================================================
+  private handleBomberExplosion(
+    state:  GameState,
+    bomber: Bomber,
+    player: Player,
+    ps:     GameState['playerStats']
+  ): void {
+    const { x: bx, y: by } = rectCenter(bomber);
+
+    // VFX burst
+    state.particles.push(...spawnBurst(bx, by, "#f97316", 14, 2.0));
+    state.particles.push(...spawnBurst(bx, by, "#ffffff",  6, 1.2));
+
+    // Damage player if in range
+    if (bomber.isExplosionHittingPlayer(player) && player.iFrames <= 0) {
+      let rawDmg = Math.round(bomber.explodeDamage * (1 - ps.damageReduction));
+      rawDmg = this.resolveBlock(player, rawDmg);
+      if (rawDmg > 0) player.takeHit(rawDmg);
+    }
   }
 
   // ============================================================
@@ -280,7 +304,7 @@ export class HordeSystem {
     // ── Enemy update + combat resolution ─────────────────────
     state.enemies.forEach((enemy) => {
 
-      // Stunned enemies freeze AI but still tick stun timer
+      // Stunned enemies freeze AI
       if (!enemy.isStunned) {
         enemy.update(player, worldW, worldH);
       } else {
@@ -290,38 +314,71 @@ export class HordeSystem {
         enemy.vy = 0;
       }
 
-      // Drain projectiles from Shooters
+      // ── Drain projectiles from Shooters ───────────────────
       if (enemy instanceof Shooter && enemy.pendingProjectiles.length > 0) {
         state.projectiles.push(...enemy.pendingProjectiles);
         enemy.pendingProjectiles = [];
       }
 
-      // ── Windup-phase parry window ─────────────────────────
-      // If the player taps parry while an enemy is winding up
-      // AND within range, count it as a valid parry — this is
-      // the core fix: parry no longer requires waiting for the
-      // strike hitbox to land, which was nearly impossible.
-      if (!enemy.isStunned && !enemy.isDead) {
-        const isWindingUp =
-          (enemy instanceof Grunt    && (enemy as any).attackState === 'windup') ||
-          (enemy instanceof Shooter  && (enemy as any).attackState === 'windup') ||
-          (enemy instanceof Tank     && (enemy as any).tankState   === 'windup');
-
-        if (isWindingUp && this.isEnemyInParryRange(player, enemy)) {
-          // Attempt parry — resolveParry handles the isParrying check
-          this.resolveParry(player, enemy, state);
-          // Note: if parry fires here we don't return — the strike
-          // contact check below will be skipped anyway because the
-          // enemy is now stunned.
+      // ── Bomber explosion detection ────────────────────────
+      // Handle bombs that exploded naturally (fuse expired).
+      if (enemy instanceof Bomber) {
+        if (enemy.isExploding) {
+          this.handleBomberExplosion(state, enemy, player, ps);
+          // isExploding cleared by Bomber.update() next frame
         }
       }
 
-      // ── Melee contact ────────────────────────────────────
-      if (!enemy.isMeleeHittingPlayer(player)) return;
-      if (enemy.isStunned) return;  // stunned enemy can't deal contact damage
+      // ── Skip dead enemies for combat ──────────────────────
+      if (enemy.isDead) return;
 
-      // Parry check on direct contact (fallback for fast enemies
-      // or cases the windup check missed)
+      // ── Windup-phase parry window ─────────────────────────
+      if (!enemy.isStunned) {
+        const isWindingUp =
+          (enemy instanceof Grunt    && (enemy as any).attackState === 'windup') ||
+          (enemy instanceof Shooter  && (enemy as any).attackState === 'windup') ||
+          (enemy instanceof Tank     && (enemy as any).tankState   === 'windup') ||
+          (enemy instanceof Dasher   && (enemy as any).dasherState === 'windup');
+
+        if (isWindingUp && this.isEnemyInParryRange(player, enemy)) {
+          this.resolveParry(player, enemy, state);
+        }
+      }
+
+      // ── Dasher dash-hit ───────────────────────────────────
+      // Handled separately — Dasher has no isMeleeHittingPlayer,
+      // so it must return early to skip the standard melee block.
+      if (enemy instanceof Dasher) {
+        if (enemy.isDashHittingPlayer(player) && player.iFrames <= 0) {
+          if (player.isParrying) {
+            const parried = this.resolveParry(player, enemy, state);
+            if (parried) {
+              enemy.damageCooldown = 600;
+              return;
+            }
+          }
+          let rawDmg = Math.round(enemy.dashDamage * (1 - ps.damageReduction));
+          rawDmg = this.resolveBlock(player, rawDmg);
+          if (rawDmg > 0) player.takeHit(rawDmg);
+          enemy.damageCooldown = 800;
+        }
+        return; // skip standard melee path for Dasher
+      }
+
+      // ── Bomber body contact (light) ───────────────────────
+      if (enemy instanceof Bomber) {
+        if (enemy.isTouchingPlayer(player) && player.iFrames <= 0) {
+          let rawDmg = Math.round(enemy.contactDmg * (1 - ps.damageReduction));
+          rawDmg = this.resolveBlock(player, rawDmg);
+          if (rawDmg > 0) player.takeHit(rawDmg);
+        }
+        return; // skip standard melee path for Bomber
+      }
+
+      // ── Standard melee contact ────────────────────────────
+      if (!enemy.isMeleeHittingPlayer(player)) return;
+      if (enemy.isStunned) return;
+
       if (player.isParrying) {
         const parried = this.resolveParry(player, enemy, state);
         if (parried) return;
@@ -366,47 +423,41 @@ export class HordeSystem {
     const atkBonus = ps.atkBonus + ps.lastStandBonus(player);
     const passive  = ps.weaponPassive;
 
-    // ── Glaive: extra stamina cost per attack ─────────────────
     if (passive?.id === 'glaive' && player.isAttacking) {
       player.stamina = Math.max(0, player.stamina - GLAIVE_EXTRA_COST);
     }
 
-    // ── Riposte: tick window timer, compute multiplier ────────
     tickRiposte(16);
-    const riposteMult = passive?.id === 'riposte' && isRiposteActive()
-      ? RIPOSTE_MULT : 1.0;
+    const riposteMult  = passive?.id === 'riposte'  && isRiposteActive()    ? RIPOSTE_MULT : 1.0;
+    const momentumMult = passive?.id === 'momentum' && player.dashTimer > 0 ? 2.0          : 1.0;
+    const iaijutsuMult = passive?.id === 'iaijutsu' && player.attackType === 'charged_light' ? 1.4 : 1.0;
 
-    // ── Momentum: 2× damage if attacking within 200ms of dash end ─
-    // dashTimer counts down from 200ms; if it's still > 0 the dash just ended.
-    const momentumMult = passive?.id === 'momentum' && player.dashTimer > 0
-      ? 2.0 : 1.0;
-
-    // ── Katana Iaijutsu: +40% on charged light ────────────────
-    const iaijutsuMult = passive?.id === 'iaijutsu' && player.attackType === 'charged_light'
-      ? 1.4 : 1.0;
-
+    // resolveHitsCustom now accepts BaseEnemy[] — onHit narrows with instanceof
     const hitEnemies = this.weaponSystem.resolveHitsCustom(
       player, state.enemies, atkBonus,
-      (enemy, amount) => {
-        // Parry-stunned enemies take bonus damage
+      (enemy: BaseEnemy, amount: number) => {
         let finalAmt = enemy.isStunned ? Math.round(amount * PARRY_VULN_MULT) : amount;
-        // Passive multipliers
         finalAmt = Math.round(finalAmt * riposteMult * momentumMult * iaijutsuMult);
-        // Precision: light attacks ignore 50% of armour reduction on Tank/Colossus
+
+        // ── Bomber: weapon hit triggers explosion ──────────────
+        if (enemy instanceof Bomber && !enemy.hasExploded) {
+          enemy.triggerExplosion();
+          this.handleBomberExplosion(state, enemy, player, ps);
+          return;
+        }
+
         if (passive?.id === 'precision' && isLight && enemy instanceof Tank) {
-          // Force takeDamage instead of takeDamageFrom to bypass shield
           enemy.takeDamage(finalAmt);
         } else if (enemy instanceof Tank) {
           enemy.takeDamageFrom(finalAmt, playerCX, playerCY, isHeavy);
         } else {
           enemy.takeDamage(finalAmt);
         }
-        // Rend: if enemy was marked, deal bonus damage then clear mark
+
         if (isRendMarked(enemy)) {
           enemy.takeDamage(REND_BONUS_DAMAGE);
           clearRendMark(enemy);
         }
-        // Passive onHit hook
         passive?.onHit?.(player, enemy, finalAmt, state);
       }
     );
@@ -431,7 +482,14 @@ export class HordeSystem {
       state.totalKills += justKilled;
 
       deadEnemies.forEach((enemy) => {
-        const type =
+        const type: keyof typeof DROP_CHANCE =
+          enemy instanceof Tank    ? "tank"    :
+          enemy instanceof Shooter ? "shooter" :
+          enemy instanceof Dasher  ? "dasher"  :
+          enemy instanceof Bomber  ? "bomber"  :
+                                     "grunt";
+
+        const goldType: "grunt" | "shooter" | "tank" | "boss" =
           enemy instanceof Tank    ? "tank"    :
           enemy instanceof Shooter ? "shooter" :
                                      "grunt";
@@ -441,7 +499,7 @@ export class HordeSystem {
           state,
           enemy.x + enemy.width  / 2,
           enemy.y + enemy.height / 2,
-          type,
+          goldType,
           multiplier
         );
 
@@ -468,7 +526,6 @@ export class HordeSystem {
         if (ps.healOnKill > 0) {
           player.hp = Math.min(player.maxHp, player.hp + ps.healOnKill);
         }
-        // Weapon passive onKill hook
         passive?.onKill?.(player, enemy, state);
       });
     }
@@ -517,7 +574,7 @@ export class HordeSystem {
       }
     }
 
-    // ── Projectiles (parry deflects, block absorbs) ───────────
+    // ── Projectiles ───────────────────────────────────────────
     state.projectiles.forEach((proj) => {
       proj.update();
       if (!proj.isHittingPlayer(player)) return;
@@ -572,7 +629,7 @@ export class HordeSystem {
   draw(state: GameState, ctx: CanvasRenderingContext2D, camera: Camera, player: Player, worldW: number) {
     state.door?.draw(ctx, camera);
     state.shopNpc?.draw(ctx, camera, worldW);
-    state.enemies.forEach((e)    => e.draw(ctx, camera));
+    state.enemies.forEach((e)     => e.draw(ctx, camera));
     state.projectiles.forEach((p) => p.draw(ctx, camera));
     state.itemDrops.forEach((d)   => d.draw(ctx, camera));
     this.goldSystem.draw(state, ctx, camera);

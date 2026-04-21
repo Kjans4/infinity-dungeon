@@ -12,6 +12,8 @@ export { Projectile }  from "./Projectile";
 export { Grunt }       from "./Grunt";
 export { Shooter }     from "./Shooter";
 export { Tank }        from "./Tank";
+export { Dasher }      from "./Dasher";
+export { Bomber }      from "./Bomber";
 export { spawnWave }   from "./spawn";
 
 // ── Boss system ──────────────────────────────────────────────

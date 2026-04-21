@@ -6,6 +6,8 @@ import { GameState } from "@/engine/GameState";
 import { WORLD_W, WORLD_H, BOSS_WORLD_W, BOSS_WORLD_H } from "@/engine/Camera";
 import { Shooter } from "@/engine/enemy/Shooter";
 import { Tank }    from "@/engine/enemy/Tank";
+import { Dasher }  from "@/engine/enemy/Dasher";
+import { Bomber }  from "@/engine/enemy/Bomber";
 import "@/styles/minimap.css";
 
 // ============================================================
@@ -31,6 +33,8 @@ const LEGEND = [
   { color: "#a855f7", label: "Grunt"   },
   { color: "#c0860c", label: "Shooter" },
   { color: "#5a4010", label: "Tank"    },
+  { color: "#06b6d4", label: "Dasher"  },
+  { color: "#f97316", label: "Bomber"  },
   { color: "#4ade80", label: "Gate"    },
 ];
 
@@ -112,15 +116,36 @@ export default function Minimap({ state, isBoss }: MinimapProps) {
       state.enemies.forEach((enemy) => {
         if (enemy.isDead) return;
         const ep = toMap(enemy.x + enemy.width / 2, enemy.y + enemy.height / 2);
-        const radius = enemy instanceof Tank ? 4 : 2.5;
-        const color  =
-          enemy instanceof Tank    ? "#5a4010" :
-          enemy instanceof Shooter ? "#c0860c" :
-                                     "#a855f7";
-        ctx.beginPath();
-        ctx.arc(ep.x, ep.y, radius, 0, Math.PI * 2);
-        ctx.fillStyle = color;
-        ctx.fill();
+
+        if (enemy instanceof Tank) {
+          ctx.beginPath();
+          ctx.arc(ep.x, ep.y, 4, 0, Math.PI * 2);
+          ctx.fillStyle = "#5a4010";
+          ctx.fill();
+        } else if (enemy instanceof Shooter) {
+          ctx.beginPath();
+          ctx.arc(ep.x, ep.y, 2.5, 0, Math.PI * 2);
+          ctx.fillStyle = "#c0860c";
+          ctx.fill();
+        } else if (enemy instanceof Dasher) {
+          // Diamond shape for Dasher
+          ctx.save();
+          ctx.translate(ep.x, ep.y);
+          ctx.rotate(Math.PI / 4);
+          ctx.fillStyle = "#06b6d4";
+          ctx.fillRect(-2.5, -2.5, 5, 5);
+          ctx.restore();
+        } else if (enemy instanceof Bomber) {
+          // Square for Bomber (pulsing handled via color only — canvas has no animation)
+          ctx.fillStyle = "#f97316";
+          ctx.fillRect(ep.x - 3, ep.y - 3, 6, 6);
+        } else {
+          // Grunt — default purple dot
+          ctx.beginPath();
+          ctx.arc(ep.x, ep.y, 2.5, 0, Math.PI * 2);
+          ctx.fillStyle = "#a855f7";
+          ctx.fill();
+        }
       });
 
       // ── Boss ──────────────────────────────────────────────
@@ -150,12 +175,10 @@ export default function Minimap({ state, isBoss }: MinimapProps) {
         state.player.x + state.player.width  / 2,
         state.player.y + state.player.height / 2
       );
-      // Glow halo
       ctx.beginPath();
       ctx.arc(pp.x, pp.y, 6, 0, Math.PI * 2);
       ctx.fillStyle = "rgba(240,192,64,0.15)";
       ctx.fill();
-      // Diamond shape
       ctx.save();
       ctx.translate(pp.x, pp.y);
       ctx.rotate(Math.PI / 4);

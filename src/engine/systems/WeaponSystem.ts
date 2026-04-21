@@ -1,9 +1,7 @@
 // src/engine/systems/WeaponSystem.ts
-import { Player }  from "../Player";
-import { Camera }  from "../Camera";
-import { Grunt }   from "../enemy/Grunt";
-import { Shooter } from "../enemy/Shooter";
-import { Tank }    from "../enemy/Tank";
+import { Player }     from "../Player";
+import { Camera }     from "../Camera";
+import { BaseEnemy }  from "../enemy/BaseEnemy";
 
 // ============================================================
 // [🧱 BLOCK: Charge Multipliers]
@@ -121,16 +119,18 @@ export class WeaponSystem {
 
   // ============================================================
   // [🧱 BLOCK: Resolve Hits vs Enemies]
+  // Widened to BaseEnemy[] — only .isDead, .x, .y, .width,
+  // .height, and .takeDamage() are accessed here.
   // ============================================================
   resolveHits(
     player:   Player,
-    enemies:  (Grunt | Shooter | Tank)[],
+    enemies:  BaseEnemy[],
     atkBonus: number
-  ): (Grunt | Shooter | Tank)[] {
+  ): BaseEnemy[] {
     if (!player.isAttacking || !player.equippedWeapon || !player.attackType) return [];
 
     const damage = this.computeDamage(player, atkBonus);
-    const hit: (Grunt | Shooter | Tank)[] = [];
+    const hit: BaseEnemy[] = [];
 
     enemies.forEach((enemy) => {
       if (enemy.isDead) return;
@@ -147,17 +147,20 @@ export class WeaponSystem {
 
   // ============================================================
   // [🧱 BLOCK: Resolve Hits Custom]
+  // Widened to BaseEnemy[] so Dasher and Bomber are accepted.
+  // The onHit callback receives BaseEnemy — callers narrow with
+  // instanceof as needed (HordeSystem does this already).
   // ============================================================
   resolveHitsCustom(
     player:   Player,
-    enemies:  (Grunt | Shooter | Tank)[],
+    enemies:  BaseEnemy[],
     atkBonus: number,
-    onHit:    (enemy: Grunt | Shooter | Tank, amount: number) => void
-  ): (Grunt | Shooter | Tank)[] {
+    onHit:    (enemy: BaseEnemy, amount: number) => void
+  ): BaseEnemy[] {
     if (!player.isAttacking || !player.equippedWeapon || !player.attackType) return [];
 
     const damage = this.computeDamage(player, atkBonus);
-    const hit: (Grunt | Shooter | Tank)[] = [];
+    const hit: BaseEnemy[] = [];
 
     enemies.forEach((enemy) => {
       if (enemy.isDead) return;

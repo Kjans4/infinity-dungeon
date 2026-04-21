@@ -8,7 +8,7 @@ import { ShopNPC }     from "./ShopNPC";
 import { Particle }    from "./Particle";
 import { PlayerStats } from "./PlayerStats";
 import { ShopItem }    from "./items/ItemPool";
-import { Grunt, Shooter, Tank, Projectile } from "./enemy";
+import { Grunt, Shooter, Tank, Projectile, Dasher, Bomber } from "./enemy";
 import { AnyBoss }     from "./enemy/boss/index";
 
 // ============================================================
@@ -78,7 +78,7 @@ export class GameState {
   // Entities
   player:      Player;
   camera:      Camera;
-  enemies:     (Grunt | Shooter | Tank)[];
+  enemies:     (Grunt | Shooter | Tank | Dasher | Bomber)[];
   boss:        AnyBoss | null;
   door:        Door | null;
   shopNpc:     ShopNPC | null;
