@@ -339,26 +339,27 @@ export class PlayerStats {
 
   // ============================================================
   // [🧱 BLOCK: Shop Options]
-  // Passes owned armor IDs so the pool excludes already-owned
-  // pieces. rerollsThisVisit resets on each fresh generation.
+  // floor is forwarded to getRandomShopItems so armor stat values
+  // are scaled to the current depth. rerollsThisVisit resets on
+  // each fresh generation.
   // ============================================================
-  generateShopOptions() {
+  generateShopOptions(floor: number = 1) {
     const ownedCharmIds = this.charms.map((c) => c.id);
     const ownedWeaponId = this.equippedWeaponItem?.id ?? null;
     const ownedArmorIds = Object.values(this.armorSlots)
       .filter(Boolean).map((a) => a!.id);
-    this.shopOptions      = getRandomShopItems(ownedCharmIds, ownedWeaponId, ownedArmorIds, 3);
+    this.shopOptions      = getRandomShopItems(ownedCharmIds, ownedWeaponId, ownedArmorIds, 3, floor);
     this.rerollsThisVisit = 0;
   }
 
-  reroll(gold: number): number {
+  reroll(gold: number, floor: number = 1): number {
     if (gold < this.rerollCost) return gold;
     const cost          = this.rerollCost;
     const ownedCharmIds = this.charms.map((c) => c.id);
     const ownedWeaponId = this.equippedWeaponItem?.id ?? null;
     const ownedArmorIds = Object.values(this.armorSlots)
       .filter(Boolean).map((a) => a!.id);
-    this.shopOptions     = getRandomShopItems(ownedCharmIds, ownedWeaponId, ownedArmorIds, 3);
+    this.shopOptions     = getRandomShopItems(ownedCharmIds, ownedWeaponId, ownedArmorIds, 3, floor);
     this.rerollsThisVisit++;
     return gold - cost;
   }
@@ -437,10 +438,7 @@ export class PlayerStats {
   }
 
   get staminaRegenRate(): number {
-    // modifiers.staminaRegenMult — charm multiplier (Overclock, Berserker)
-    // sb.bonusStaminaRegenMult   — set bonus multiplier (future-proofed)
-    const sb = this._getSetBonuses();
-    return 0.4 * this.modifiers.staminaRegenMult * sb.bonusStaminaRegenMult;
+    return 0.4 * this.modifiers.staminaRegenMult;
   }
 
   get damageReduction(): number {

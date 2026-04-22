@@ -20,6 +20,7 @@ import { getRandomShopItems }          from "../items/ItemPool";
 import {
   isRiposteActive, tickRiposte, RIPOSTE_MULT, GLAIVE_EXTRA_COST,
 } from "../WeaponPassiveRegistry";
+import { tryIronWardenReflect }        from "../items/ArmorRegistry";
 
 // ============================================================
 // [🧱 BLOCK: Parry / Stagger Constants]
@@ -42,17 +43,26 @@ function spawnBossGold(state: GameState, x: number, y: number) {
   }
 }
 
-function spawnBossItemDrop(state: GameState, x: number, y: number) {
+// ============================================================
+// [🧱 BLOCK: Spawn Boss Item Drop]
+// floor is forwarded so any armor piece in the drop has stat
+// values scaled to the current depth.
+// ============================================================
+function spawnBossItemDrop(state: GameState, x: number, y: number, floor: number) {
   if (state.pendingLoot.length >= PENDING_LOOT_CAP) return;
   const ownedCharmIds   = state.playerStats.charms.map((c) => c.id);
   const ownedWeaponId   = state.playerStats.equippedWeaponItem?.id ?? null;
+  const ownedArmorIds   = Object.values(state.playerStats.armorSlots)
+    .filter(Boolean).map((a) => a!.id);
   const pendingCharmIds = state.pendingLoot.filter((i) => i.kind === "charm").map((i) => i.id);
   const pendingWeaponId = state.pendingLoot.find((i) => i.kind === "weapon")?.id ?? null;
+  const pendingArmorIds = state.pendingLoot.filter((i) => i.kind === "armor").map((i) => i.id);
   const pool = getRandomShopItems(
     [...ownedCharmIds, ...pendingCharmIds],
     ownedWeaponId ?? pendingWeaponId,
-    [],
-    1
+    [...ownedArmorIds, ...pendingArmorIds],
+    1,
+    floor
   );
   if (pool[0]) state.itemDrops.push(new ItemDrop(x, y, pool[0]));
 }
@@ -80,8 +90,11 @@ interface BossStagger {
 // [🧱 BLOCK: BossSystem]
 // ============================================================
 export class BossSystem {
-  private weaponSystem = new WeaponSystem();
+  private weaponSystem    = new WeaponSystem();
   private stagger: BossStagger = { timer: 0 };
+  // Stored in setup() so the boss death path can pass floor to item drops
+  // without needing to thread RoomState all the way through update().
+  private _currentFloor: number = 1;
 
   get isBossStaggered(): boolean { return this.stagger.timer > 0; }
 
@@ -104,6 +117,7 @@ export class BossSystem {
     state.shopNpc     = null;
 
     state.boss = selectBoss(BOSS_WORLD_W / 2 - 50, 80, rs.floor);
+    this._currentFloor = rs.floor;
     this.stagger = { timer: 0 };
     state.camera.update(state.player, BOSS_WORLD_W, BOSS_WORLD_H);
     state.playerStats.applyToPlayer(state.player);
@@ -192,15 +206,14 @@ export class BossSystem {
     const boss = state.boss as AnyBoss | null;
 
     // ── Post-victory roam phase — boss already gone ───────────
-    // tickDoorAndShop now returns gold collected so it reaches
-    // GameCanvas and gets credited to state.gold / floorGoldRef.
     if (!boss) {
       const goldCollected = this.tickDoorAndShop(state, player);
       if (goldCollected > 0) state.totalGoldEarned += goldCollected;
       return { event: null, goldCollected };
     }
 
-    const ps = state.playerStats;
+    const ps       = state.playerStats;
+    const iw5Count = ps.getEquippedSetCounts()['iron_warden'] ?? 0;
 
     // ── Tick stagger ──────────────────────────────────────────
     if (this.stagger.timer > 0) {
@@ -244,7 +257,11 @@ export class BossSystem {
 
       let rawDmg = Math.round(proj.damage * (1 - ps.damageReduction));
       if (player.isBlocking) rawDmg = player.applyBlockedHit(rawDmg);
-      if (rawDmg > 0) player.takeHit(rawDmg);
+      if (rawDmg > 0) {
+        player.takeHit(rawDmg);
+        // Iron Warden 5pc reflect — triggered by projectile hits too
+        tryIronWardenReflect(iw5Count, boss);
+      }
       proj.isDone = true;
     });
     state.projectiles = state.projectiles.filter((p) => !p.isDone);
@@ -265,7 +282,10 @@ export class BossSystem {
       } else {
         let rawDmg = Math.round(boss.contactDamage * (1 - ps.damageReduction));
         if (player.isBlocking) rawDmg = player.applyBlockedHit(rawDmg);
-        if (rawDmg > 0) player.takeHit(rawDmg);
+        if (rawDmg > 0) {
+          player.takeHit(rawDmg);
+          tryIronWardenReflect(iw5Count, boss);
+        }
         if (boss instanceof Brute || boss instanceof Colossus || boss instanceof Shade) {
           boss.damageCooldown = 800;
         }
@@ -289,7 +309,10 @@ export class BossSystem {
         } else {
           let rawDmg = Math.round(boss.lungeDamage * (1 - ps.damageReduction));
           if (player.isBlocking) rawDmg = player.applyBlockedHit(rawDmg);
-          if (rawDmg > 0) player.takeHit(rawDmg);
+          if (rawDmg > 0) {
+            player.takeHit(rawDmg);
+            tryIronWardenReflect(iw5Count, boss);
+          }
         }
       }
     }
@@ -298,7 +321,10 @@ export class BossSystem {
     if (boss.isSlamHittingPlayer(player) && player.iFrames <= 0 && !this.isBossStaggered) {
       let rawDmg = Math.round(boss.slamDamage * (1 - ps.damageReduction));
       if (player.isBlocking) rawDmg = player.applyBlockedHit(rawDmg);
-      if (rawDmg > 0) player.takeHit(rawDmg);
+      if (rawDmg > 0) {
+        player.takeHit(rawDmg);
+        tryIronWardenReflect(iw5Count, boss);
+      }
     }
 
     // ── Weapon input + hit vs boss ─────────────────────────────
@@ -349,10 +375,12 @@ export class BossSystem {
     // ── Boss death ────────────────────────────────────────────
     if (boss.isDead) {
       state.totalKills += 1;
-      const bx = boss.x + boss.width  / 2;
-      const by = boss.y + boss.height / 2;
+      const bx    = boss.x + boss.width  / 2;
+      const by    = boss.y + boss.height / 2;
+      // Use floor stored in setup() so armor item drops are stat-scaled
+      const floor = this._currentFloor;
       spawnBossGold(state, bx, by);
-      spawnBossItemDrop(state, bx, by);
+      spawnBossItemDrop(state, bx, by, floor);
       state.particles.push(...spawnBurst(bx, by, boss.color, 12, 1.8));
 
       if (ps.hasCharm('executioner')) {

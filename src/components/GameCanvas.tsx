@@ -132,20 +132,6 @@ export default function GameCanvas() {
   const floorGoldRef  = useRef(0);
 
   // ============================================================
-  // [🧱 BLOCK: Game Started Ref]
-  // Flips to true when the player actually starts a run (via
-  // handleStart or handleRaidAgain). Reset to false after
-  // saveCurrentRun consumes it so repeated quit-from-menu
-  // calls after returning to the main screen never double-save.
-  //
-  // This replaces the old stats-based guard which incorrectly
-  // skipped saving any run where the player died in Room 1
-  // Floor 1 before earning a single kill — keeping the
-  // leaderboard permanently empty for early-game deaths.
-  // ============================================================
-  const gameStartedRef = useRef(false);
-
-  // ============================================================
   // [🧱 BLOCK: Victory UI State]
   // isVictory      — overlay is visible (not minimized)
   // victoryMinimized — overlay closed, badge shown instead
@@ -219,7 +205,7 @@ export default function GameCanvas() {
 
         // Shop NPC interaction — works in all phases including victory
         if (state.shopNpc?.playerIsNear) {
-          state.playerStats.generateShopOptions();
+          state.playerStats.generateShopOptions(roomRef.current.floor);
           setIsMidRoom(true);
           setShowShop(true);
         }
@@ -289,23 +275,18 @@ export default function GameCanvas() {
   // ============================================================
   // [🧱 BLOCK: Save Current Run]
   // Persists a RunRecord to localStorage. Called at every
-  // run-ending point (death, quit, raid-again) before state
-  // is reset.
-  //
-  // Guard: only skip if gameStartedRef is false, meaning the
-  // player never actually started a run (e.g. quit straight
-  // from the main menu without pressing Start). This correctly
-  // saves every real run including deaths with 0 kills.
+  // run-ending point before state is reset.
+  // Guard: skip if the run never started (totalKills=0, floor=1,
+  // roomDisplay=1) to avoid polluting history with blank entries
+  // from quitting the menu before ever playing.
   // ============================================================
   const saveCurrentRun = useCallback(() => {
-    if (!gameStartedRef.current) return;
-
-    // Mark as saved so a second quit-from-menu call is a no-op
-    gameStartedRef.current = false;
-
     const state = stateRef.current;
     const rs    = roomRef.current;
     if (!state) return;
+
+    // Don't save a blank run
+    if (state.totalKills === 0 && rs.floor === 1 && rs.roomDisplay === 1) return;
 
     saveRunRecord({
       floor:      rs.floor,
@@ -334,7 +315,6 @@ export default function GameCanvas() {
     lastAnnouncedRemainingRef.current = null;
     isDyingRef.current = false;
     vignetteAlphaRef.current = 0;
-    gameStartedRef.current = true;
     resetFloorTracking();
     setTimeout(() => announce("PREPARE!", "Room 1 — enemies incoming", "#38bdf8"), 300);
   }, [resetFloorTracking, announce]);
@@ -361,13 +341,12 @@ export default function GameCanvas() {
     lastAnnouncedRemainingRef.current = null;
     isDyingRef.current = false;
     vignetteAlphaRef.current = 0;
-    gameStartedRef.current = true;
     resetFloorTracking();
     setTimeout(() => announce("PREPARE!", "Room 1 — enemies incoming", "#38bdf8"), 300);
   }, [saveCurrentRun, resetFloorTracking, announce]);
 
   const handleQuitToMenu = useCallback(() => {
-    // Save before reset — guard inside saveCurrentRun skips if game never started
+    // Save before reset — guard inside saveCurrentRun skips blank runs
     saveCurrentRun();
 
     stateRef.current!.reset();

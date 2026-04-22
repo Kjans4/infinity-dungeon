@@ -388,16 +388,18 @@ export default function Shop({
   const [, forceUpdate] = useState(0);
   const refresh = useCallback(() => forceUpdate((n) => n + 1), []);
 
-  // Generate shop options exactly once per mount.
+  // Generate shop options exactly once per mount, forwarding floor
+  // so any armor pieces in the pool have stat values scaled to the
+  // current depth.
   const shopInitRef = useRef(false);
   if (!shopInitRef.current) {
-    playerStats.generateShopOptions();
+    playerStats.generateShopOptions(floor);
     shopInitRef.current = true;
   }
 
   const handleStatSpend  = (ng: number) => { onGoldChange(ng); refresh(); };
   const handleBuy        = (ng: number) => { onGoldChange(ng); refresh(); };
-  const handleReroll     = () => { onGoldChange(playerStats.reroll(gold)); refresh(); };
+  const handleReroll     = () => { onGoldChange(playerStats.reroll(gold, floor)); refresh(); };
   const handleSellCharm  = (id: string) => { onGoldChange(playerStats.sellCharm(id, gold, player)); refresh(); };
   const handleSellWeapon = () => { onGoldChange(playerStats.unequipWeapon(gold, player)); refresh(); };
   const handleHeal       = (ng: number) => { onGoldChange(ng); refresh(); };

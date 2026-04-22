@@ -75,9 +75,15 @@ function goldMultiplierForKills(kills: number, threshold: number): number {
   return Math.max(0.20, 1.0 - tier * 0.20);
 }
 
+// ============================================================
+// [🧱 BLOCK: Roll Item Drop]
+// floor is forwarded to getRandomShopItems so any armor pieces
+// in the roll have stat values scaled to the current depth.
+// ============================================================
 function rollItemDrop(
   state:  GameState,
-  chance: number
+  chance: number,
+  floor:  number
 ): import("../items/ItemPool").ShopItem | null {
   if (Math.random() > chance) return null;
   const ownedCharmIds   = state.playerStats.charms.map((c) => c.id);
@@ -91,7 +97,8 @@ function rollItemDrop(
     [...ownedCharmIds, ...pendingCharmIds],
     ownedWeaponId ?? pendingWeaponId,
     [...ownedArmorIds, ...pendingArmorIds],
-    1
+    1,
+    floor
   );
   return pool[0] ?? null;
 }
@@ -381,7 +388,6 @@ export class HordeSystem {
           rawDmg = this.resolveBlock(player, rawDmg);
           if (rawDmg > 0) {
             player.takeHit(rawDmg);
-            // Iron Warden 5pc reflect
             tryIronWardenReflect(iw5Count, enemy);
           }
           enemy.damageCooldown = 800;
@@ -547,7 +553,8 @@ export class HordeSystem {
         if (state.pendingLoot.length < PENDING_LOOT_CAP) {
           const baseChance = DROP_CHANCE[type];
           const chance     = isElite ? baseChance * ELITE_DROP_MULT : baseChance;
-          const dropped    = rollItemDrop(state, chance);
+          // Pass rs.floor so dropped armor has correct stat scaling
+          const dropped    = rollItemDrop(state, chance, rs.floor);
           if (dropped) {
             state.itemDrops.push(new ItemDrop(
               enemy.x + enemy.width  / 2,
