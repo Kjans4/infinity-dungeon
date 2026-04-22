@@ -6,7 +6,8 @@ import { PlayerStats }   from "@/engine/PlayerStats";
 import { Player }        from "@/engine/Player";
 import { Charm }         from "@/engine/CharmRegistry";
 import { WeaponItem, ArmorItem, ArmorSlot } from "@/engine/items/types";
-import { Weapon }           from "@/engine/items/Weapon";
+import { ItemDrop }      from "@/engine/ItemDrop";
+import { ShopItem }      from "@/engine/items/ItemPool";
 import { getWeaponPassive } from "@/engine/WeaponPassiveRegistry";
 import { ARMOR_SET_DEFS }   from "@/engine/items/ArmorRegistry";
 import "@/styles/inventory.css";
@@ -15,11 +16,13 @@ import "@/styles/inventory.css";
 // [🧱 BLOCK: Props]
 // ============================================================
 interface InventoryProps {
-  playerStats:  PlayerStats;
-  player:       Player;
-  gold:         number;
-  onGoldChange: (newGold: number) => void;
-  onClose:      () => void;
+  playerStats:   PlayerStats;
+  player:        Player;
+  gold:          number;
+  nearbyDrops:   ItemDrop[];
+  onGoldChange:  (newGold: number) => void;
+  onEquipDrop:   (drop: ItemDrop) => void;   // caller removes drop + spawns swap if needed
+  onClose:       () => void;
 }
 
 // ============================================================
@@ -36,14 +39,15 @@ function GemRule() {
 // ============================================================
 // [🧱 BLOCK: Small Button]
 // ============================================================
-function SmallBtn({ label, onClick, color = "#5a4010", danger = false }: {
-  label: string; onClick: () => void; color?: string; danger?: boolean;
+function SmallBtn({ label, onClick, color = "#5a4010", danger = false, disabled = false }: {
+  label: string; onClick: () => void; color?: string; danger?: boolean; disabled?: boolean;
 }) {
   return (
     <button
       onClick={onClick}
-      className={`inv-small-btn ${danger ? "inv-small-btn--danger" : "inv-small-btn--default"}`}
-      style={!danger ? ({ "--btn-color": color } as React.CSSProperties) : undefined}
+      disabled={disabled}
+      className={`inv-small-btn ${danger ? "inv-small-btn--danger" : "inv-small-btn--default"} ${disabled ? "inv-small-btn--disabled" : ""}`}
+      style={!danger && !disabled ? ({ "--btn-color": color } as React.CSSProperties) : undefined}
     >
       {label}
     </button>
@@ -51,16 +55,143 @@ function SmallBtn({ label, onClick, color = "#5a4010", danger = false }: {
 }
 
 // ============================================================
-// [🧱 BLOCK: Weapon Slot]
-// Reads attack stats directly from Weapon.getAttack() so the
-// displayed numbers always match what the engine actually uses.
-// Also shows the player's current ATK bonus so they can see
-// the real damage they deal (base weapon + STR + charms + armor).
+// [🧱 BLOCK: Nearby Drop Card]
+// Shown for each ItemDrop where playerIsNear === true.
+// Equip button — slot empty:  equips immediately, drop removed.
+// Swap button  — slot occupied: equipped item drops at player pos,
+//                               new item equips. Caller handles it.
 // ============================================================
-function WeaponSlot({ item, playerStats, onUnequip }: {
-  item:        WeaponItem | null;
+function NearbyDropCard({ drop, playerStats, onEquip }: {
+  drop:        ItemDrop;
   playerStats: PlayerStats;
-  onUnequip:   () => void;
+  onEquip:     (drop: ItemDrop) => void;
+}) {
+  const item      = drop.item;
+  const isWeapon  = item.kind === "weapon";
+  const isArmor   = item.kind === "armor";
+  const isCharm   = item.kind === "charm";
+
+  const accentColor =
+    isWeapon ? "#60a5fa" :
+    isArmor  ? "#4ade80" :
+               "#a78bfa";
+
+  const kindLabel =
+    isWeapon ? `${(item as WeaponItem).weaponType.toUpperCase()} · Weapon` :
+    isArmor  ? `${(item as ArmorItem).setName} · ${(item as ArmorItem).slot}` :
+               "Charm";
+
+  // Determine slot occupancy
+  const isSlotOccupied =
+    isWeapon ? !!playerStats.equippedWeaponItem :
+    isArmor  ? playerStats.hasArmorInSlot((item as ArmorItem).slot) :
+               false;
+
+  const isCharmsFull  = isCharm && playerStats.charms.length >= playerStats.maxCharms;
+  const alreadyEquipped =
+    isWeapon ? playerStats.equippedWeaponItem?.id === item.id :
+    isArmor  ? playerStats.armorSlots[(item as ArmorItem).slot]?.id === item.id :
+               playerStats.hasCharm(item.id);
+
+  const canEquip = !alreadyEquipped && !isCharmsFull;
+
+  const btnLabel =
+    alreadyEquipped  ? "Equipped"  :
+    isCharmsFull     ? "Full"      :
+    isSlotOccupied   ? "Swap"      :
+                       "Equip";
+
+  // What gets displaced (shown as warning)
+  const swapTarget =
+    isWeapon ? playerStats.equippedWeaponItem?.name :
+    isArmor  ? playerStats.armorSlots[(item as ArmorItem).slot]?.name :
+               null;
+
+  const passive = isWeapon ? getWeaponPassive((item as WeaponItem).weaponType) : null;
+
+  return (
+    <div className="inv-drop-card" style={{ borderColor: `${accentColor}44` }}>
+      <div className="inv-drop-card__header">
+        <span className="inv-drop-card__icon">{item.icon}</span>
+        <div className="inv-drop-card__info">
+          <p className="inv-drop-card__kind" style={{ color: accentColor }}>{kindLabel}</p>
+          <p className="inv-drop-card__name">{item.name}</p>
+          <p className="inv-drop-card__desc">{item.description}</p>
+          {(item as any).tradeOff && (
+            <p className="inv-drop-card__tradeoff">⚠ {(item as any).tradeOff}</p>
+          )}
+        </div>
+      </div>
+
+      {passive && (
+        <div className="inv-drop-card__passive">
+          <span className="inv-drop-card__passive-label">Passive · {passive.name}</span>
+          <span className="inv-drop-card__passive-desc">{passive.description}</span>
+        </div>
+      )}
+
+      {isSlotOccupied && !alreadyEquipped && swapTarget && (
+        <p className="inv-drop-card__swap-warn">
+          ↕ Drops: {swapTarget}
+        </p>
+      )}
+
+      {isCharmsFull && (
+        <p className="inv-drop-card__swap-warn">Sell a charm first</p>
+      )}
+
+      <SmallBtn
+        label={btnLabel}
+        onClick={() => canEquip && onEquip(drop)}
+        disabled={!canEquip}
+        color={accentColor}
+      />
+    </div>
+  );
+}
+
+// ============================================================
+// [🧱 BLOCK: Nearby Drops Section]
+// Always rendered. Empty state when no drops are in range.
+// ============================================================
+function NearbyDropsSection({ drops, playerStats, onEquip }: {
+  drops:       ItemDrop[];
+  playerStats: PlayerStats;
+  onEquip:     (drop: ItemDrop) => void;
+}) {
+  return (
+    <div className="inv-nearby-section">
+      <p className="inv-nearby-section__label">
+        ✦ Nearby Drops
+        {drops.length > 0 && (
+          <span className="inv-nearby-section__count">{drops.length}</span>
+        )}
+      </p>
+
+      {drops.length === 0 ? (
+        <p className="inv-nearby-empty">No items nearby — walk close to a drop to inspect it.</p>
+      ) : (
+        <div className="inv-drop-list">
+          {drops.map((drop, i) => (
+            <NearbyDropCard
+              key={`${drop.item.id}-${i}`}
+              drop={drop}
+              playerStats={playerStats}
+              onEquip={onEquip}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ============================================================
+// [🧱 BLOCK: Weapon Slot]
+// ============================================================
+function WeaponSlot({ item, onUnequip }: {
+  item: WeaponItem | null;
+  onUnequip: () => void;
 }) {
   const [confirm, setConfirm] = useState(false);
 
@@ -73,20 +204,17 @@ function WeaponSlot({ item, playerStats, onUnequip }: {
     );
   }
 
-  const refund  = Math.ceil(item.cost * 0.5);
-  const weapon  = new Weapon(item.weaponType);
-  const atkBonus = playerStats.atkBonus;
-
+  const refund = Math.ceil(item.cost * 0.5);
   const atkStats = [
     {
       label: "Light",
-      dmg:   weapon.getAttack('light').damage + atkBonus,
-      stam:  weapon.getAttack('light').staminaCost,
+      dmg:  item.weaponType === "sword" ? 12 : item.weaponType === "axe" ? 15 : 10,
+      stam: item.weaponType === "sword" ? 10 : item.weaponType === "axe" ? 12 : 8,
     },
     {
       label: "Heavy",
-      dmg:   weapon.getAttack('heavy').damage + atkBonus,
-      stam:  weapon.getAttack('heavy').staminaCost,
+      dmg:  item.weaponType === "sword" ? 28 : item.weaponType === "axe" ? 40 : 35,
+      stam: item.weaponType === "sword" ? 35 : item.weaponType === "axe" ? 42 : 32,
     },
   ];
 
@@ -115,10 +243,6 @@ function WeaponSlot({ item, playerStats, onUnequip }: {
         ) : null;
       })()}
 
-      {atkBonus > 0 && (
-        <p className="inv-weapon-slot__atk-bonus">+{atkBonus} ATK bonus applied</p>
-      )}
-
       <div className="inv-weapon-slot__atk-row">
         {atkStats.map((atk) => (
           <div key={atk.label} className="inv-weapon-slot__atk-card">
@@ -143,8 +267,6 @@ function WeaponSlot({ item, playerStats, onUnequip }: {
 
 // ============================================================
 // [🧱 BLOCK: Armor Slot Row]
-// Displays a single armor slot (helmet/armor/boots/gloves/weapon).
-// Shows the piece if equipped, empty state if not.
 // ============================================================
 const SLOT_LABELS: Record<ArmorSlot, string> = {
   helmet: '🪖 Helmet',
@@ -194,7 +316,6 @@ function ArmorSlotRow({ slot, item, onSell }: {
 
 // ============================================================
 // [🧱 BLOCK: Set Bonus Display]
-// Shows all 3 sets with their piece count and active bonuses.
 // ============================================================
 function SetBonusPanel({ playerStats }: { playerStats: PlayerStats }) {
   const counts      = playerStats.getEquippedSetCounts();
@@ -275,7 +396,7 @@ function CharmRow({ charm, onSell }: { charm: Charm; onSell: () => void }) {
 // [🧱 BLOCK: Inventory Main]
 // ============================================================
 export default function Inventory({
-  playerStats, player, gold, onGoldChange, onClose,
+  playerStats, player, gold, nearbyDrops, onGoldChange, onEquipDrop, onClose,
 }: InventoryProps) {
   const [, forceUpdate] = useState(0);
   const refresh = () => forceUpdate((n) => n + 1);
@@ -306,6 +427,11 @@ export default function Inventory({
     refresh();
   };
 
+  const handleEquipDrop = (drop: ItemDrop) => {
+    onEquipDrop(drop);
+    refresh();
+  };
+
   const ARMOR_SLOTS: ArmorSlot[] = ['helmet', 'armor', 'boots', 'gloves', 'weapon'];
 
   return (
@@ -327,12 +453,17 @@ export default function Inventory({
 
           <GemRule />
 
-          {/* Weapon slot — passes playerStats so atkBonus is live */}
-          <WeaponSlot
-            item={playerStats.equippedWeaponItem}
+          {/* ── Nearby Drops — always visible ── */}
+          <NearbyDropsSection
+            drops={nearbyDrops}
             playerStats={playerStats}
-            onUnequip={handleUnequipWeapon}
+            onEquip={handleEquipDrop}
           />
+
+          <GemRule />
+
+          {/* Weapon slot */}
+          <WeaponSlot item={playerStats.equippedWeaponItem} onUnequip={handleUnequipWeapon} />
 
           <GemRule />
 
@@ -380,7 +511,7 @@ export default function Inventory({
             <SmallBtn label="Return to Battle" onClick={onClose} color="#8B6914" />
           </div>
           <p className="inv-footer__hint">
-            "Acquire armor &amp; weapons from the merchant · Hold I to close"
+            "Walk near a drop to inspect · Hold I to close"
           </p>
 
         </div>

@@ -8,7 +8,7 @@ import { Colossus }                    from "../enemy/boss/Colossus";
 import { Mage }                        from "../enemy/boss/Mage";
 import { Shade }                       from "../enemy/boss/Shade";
 import { RoomState }                   from "../RoomManager";
-import { GameState, PENDING_LOOT_CAP } from "../GameState";
+import { GameState }                   from "../GameState";
 import { BOSS_WORLD_W, BOSS_WORLD_H }  from "../Camera";
 import { GoldDrop }                    from "../GoldDrop";
 import { ItemDrop }                    from "../ItemDrop";
@@ -45,22 +45,26 @@ function spawnBossGold(state: GameState, x: number, y: number) {
 
 // ============================================================
 // [🧱 BLOCK: Spawn Boss Item Drop]
-// floor is forwarded so any armor piece in the drop has stat
-// values scaled to the current depth.
+// No pendingLoot cap. Excludes items already on the ground
+// so duplicates don't accumulate. floor scales armor stats.
 // ============================================================
 function spawnBossItemDrop(state: GameState, x: number, y: number, floor: number) {
-  if (state.pendingLoot.length >= PENDING_LOOT_CAP) return;
-  const ownedCharmIds   = state.playerStats.charms.map((c) => c.id);
-  const ownedWeaponId   = state.playerStats.equippedWeaponItem?.id ?? null;
-  const ownedArmorIds   = Object.values(state.playerStats.armorSlots)
+  const ownedCharmIds  = state.playerStats.charms.map((c) => c.id);
+  const ownedWeaponId  = state.playerStats.equippedWeaponItem?.id ?? null;
+  const ownedArmorIds  = Object.values(state.playerStats.armorSlots)
     .filter(Boolean).map((a) => a!.id);
-  const pendingCharmIds = state.pendingLoot.filter((i) => i.kind === "charm").map((i) => i.id);
-  const pendingWeaponId = state.pendingLoot.find((i) => i.kind === "weapon")?.id ?? null;
-  const pendingArmorIds = state.pendingLoot.filter((i) => i.kind === "armor").map((i) => i.id);
+
+  const groundCharmIds = state.itemDrops
+    .filter((d) => !d.collected && d.item.kind === "charm").map((d) => d.item.id);
+  const groundWeaponId = state.itemDrops
+    .find((d) => !d.collected && d.item.kind === "weapon")?.item.id ?? null;
+  const groundArmorIds = state.itemDrops
+    .filter((d) => !d.collected && d.item.kind === "armor").map((d) => d.item.id);
+
   const pool = getRandomShopItems(
-    [...ownedCharmIds, ...pendingCharmIds],
-    ownedWeaponId ?? pendingWeaponId,
-    [...ownedArmorIds, ...pendingArmorIds],
+    [...ownedCharmIds, ...groundCharmIds],
+    ownedWeaponId ?? groundWeaponId,
+    [...ownedArmorIds, ...groundArmorIds],
     1,
     floor
   );
@@ -92,8 +96,8 @@ interface BossStagger {
 export class BossSystem {
   private weaponSystem    = new WeaponSystem();
   private stagger: BossStagger = { timer: 0 };
-  // Stored in setup() so the boss death path can pass floor to item drops
-  // without needing to thread RoomState all the way through update().
+  // Stored in setup() so spawnBossItemDrop can use it at boss death
+  // without needing to thread RoomState through update().
   private _currentFloor: number = 1;
 
   get isBossStaggered(): boolean { return this.stagger.timer > 0; }
@@ -181,15 +185,9 @@ export class BossSystem {
     });
     state.goldDrops = state.goldDrops.filter((d) => !d.collected);
 
-    state.itemDrops = state.itemDrops.filter((drop) => {
-      if (drop.collected) return false;
-      if (state.pendingLoot.length >= PENDING_LOOT_CAP) {
-        drop.update(player); return !drop.collected;
-      }
-      const pickedUp = drop.update(player);
-      if (pickedUp) { state.pendingLoot.push(drop.item); return false; }
-      return !drop.collected;
-    });
+    // Item drops — tick proximity only, filter collected
+    state.itemDrops.forEach((drop) => drop.update(player));
+    state.itemDrops = state.itemDrops.filter((drop) => !drop.collected);
 
     return goldCollected;
   }
@@ -206,6 +204,8 @@ export class BossSystem {
     const boss = state.boss as AnyBoss | null;
 
     // ── Post-victory roam phase — boss already gone ───────────
+    // tickDoorAndShop now returns gold collected so it reaches
+    // GameCanvas and gets credited to state.gold / floorGoldRef.
     if (!boss) {
       const goldCollected = this.tickDoorAndShop(state, player);
       if (goldCollected > 0) state.totalGoldEarned += goldCollected;
@@ -259,7 +259,6 @@ export class BossSystem {
       if (player.isBlocking) rawDmg = player.applyBlockedHit(rawDmg);
       if (rawDmg > 0) {
         player.takeHit(rawDmg);
-        // Iron Warden 5pc reflect — triggered by projectile hits too
         tryIronWardenReflect(iw5Count, boss);
       }
       proj.isDone = true;
@@ -357,15 +356,9 @@ export class BossSystem {
     state.goldDrops = state.goldDrops.filter((d) => !d.collected);
     state.totalGoldEarned += goldCollected;
 
-    state.itemDrops = state.itemDrops.filter((drop) => {
-      if (drop.collected) return false;
-      if (state.pendingLoot.length >= PENDING_LOOT_CAP) {
-        drop.update(player); return !drop.collected;
-      }
-      const pickedUp = drop.update(player);
-      if (pickedUp) { state.pendingLoot.push(drop.item); return false; }
-      return !drop.collected;
-    });
+    // ── Item drops — tick proximity only, filter collected ────
+    state.itemDrops.forEach((drop) => drop.update(player));
+    state.itemDrops = state.itemDrops.filter((drop) => !drop.collected);
 
     // ── Enrage event ──────────────────────────────────────────
     if (boss.justEnragedThisFrame) {
@@ -375,12 +368,10 @@ export class BossSystem {
     // ── Boss death ────────────────────────────────────────────
     if (boss.isDead) {
       state.totalKills += 1;
-      const bx    = boss.x + boss.width  / 2;
-      const by    = boss.y + boss.height / 2;
-      // Use floor stored in setup() so armor item drops are stat-scaled
-      const floor = this._currentFloor;
+      const bx = boss.x + boss.width  / 2;
+      const by = boss.y + boss.height / 2;
       spawnBossGold(state, bx, by);
-      spawnBossItemDrop(state, bx, by, floor);
+      spawnBossItemDrop(state, bx, by, this._currentFloor);
       state.particles.push(...spawnBurst(bx, by, boss.color, 12, 1.8));
 
       if (ps.hasCharm('executioner')) {

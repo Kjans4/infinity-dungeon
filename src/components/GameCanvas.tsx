@@ -23,7 +23,9 @@ import PauseOverlay          from "@/components/overlays/PauseOverlay";
 import WaveClearAnnouncement from "@/components/overlays/WaveClearAnnouncement";
 import FloorTransition       from "@/components/overlays/FloorTransition";
 import { spawnBurst }        from "@/engine/Particle";
-import { ShopItem }          from "@/engine/items/ItemPool";
+import { ItemDrop }          from "@/engine/ItemDrop";
+import { WeaponItem, ArmorItem } from "@/engine/items/types";
+import { Charm }             from "@/engine/CharmRegistry";
 import "@/styles/victory.css";
 
 import "@/styles/dev-panel.css";
@@ -424,11 +426,45 @@ export default function GameCanvas() {
     setIsMidRoom(false);
   }, []);
 
-  const handleClaimLoot = useCallback((item: ShopItem) => {
+  // ============================================================
+  // [🧱 BLOCK: Handle Equip Drop]
+  // Called by Inventory when the player equips a ground drop.
+  // If the slot was occupied, the displaced item spawns as a new
+  // ItemDrop near the player so it stays in the world for later.
+  // ============================================================
+  const handleEquipDrop = useCallback((drop: ItemDrop) => {
     const state = stateRef.current;
     if (!state) return;
-    const idx = state.pendingLoot.findIndex((i) => i.id === item.id);
-    if (idx !== -1) state.pendingLoot.splice(idx, 1);
+
+    const ps     = state.playerStats;
+    const player = state.player;
+    const item   = drop.item;
+
+    const spawnSwapped = (swapped: typeof item) => {
+      const ox = (Math.random() - 0.5) * 48;
+      const oy = (Math.random() - 0.5) * 48;
+      state.itemDrops.push(new ItemDrop(
+        player.x + player.width  / 2 + ox,
+        player.y + player.height / 2 + oy,
+        swapped
+      ));
+    };
+
+    if (item.kind === "weapon") {
+      if (ps.equippedWeaponItem) spawnSwapped({ ...ps.equippedWeaponItem });
+      ps.claimWeapon(item as WeaponItem, player);
+    } else if (item.kind === "armor") {
+      const armorItem = item as ArmorItem;
+      const existing  = ps.armorSlots[armorItem.slot];
+      if (existing) spawnSwapped({ ...existing });
+      ps.claimArmor(armorItem, player);
+    } else if (item.kind === "charm") {
+      ps.claimCharm(item as Charm, player);
+    }
+
+    // Mark collected so it's filtered out next game loop tick
+    drop.collected  = true;
+    state.itemDrops = state.itemDrops.filter((d) => !d.collected);
   }, []);
 
   const handleTransitionComplete = useCallback(() => {
@@ -718,10 +754,8 @@ export default function GameCanvas() {
         <Shop
           floor={roomRef.current.floor} room={roomRef.current.roomDisplay}
           gold={gold} playerStats={state.playerStats} player={state.player}
-          pendingLoot={state.pendingLoot}
           isMidRoom={isMidRoom}
           onGoldChange={handleGoldChange}
-          onClaimLoot={handleClaimLoot}
           onContinue={handleNpcClose}
           onClose={handleNpcClose}
         />
@@ -730,7 +764,11 @@ export default function GameCanvas() {
       {showInventory && state && (
         <Inventory
           playerStats={state.playerStats} player={state.player}
-          gold={gold} onGoldChange={handleGoldChange} onClose={handleInventoryClose}
+          gold={gold}
+          nearbyDrops={state.itemDrops.filter((d) => !d.collected && d.playerIsNear)}
+          onGoldChange={handleGoldChange}
+          onEquipDrop={handleEquipDrop}
+          onClose={handleInventoryClose}
         />
       )}
 

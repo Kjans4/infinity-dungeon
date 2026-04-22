@@ -7,14 +7,8 @@ import { ItemDrop }    from "./ItemDrop";
 import { ShopNPC }     from "./ShopNPC";
 import { Particle }    from "./Particle";
 import { PlayerStats } from "./PlayerStats";
-import { ShopItem }    from "./items/ItemPool";
 import { Grunt, Shooter, Tank, Projectile, Dasher, Bomber } from "./enemy";
 import { AnyBoss }     from "./enemy/boss/index";
-
-// ============================================================
-// [🧱 BLOCK: Pending Loot Cap]
-// ============================================================
-export const PENDING_LOOT_CAP = 3;
 
 // ============================================================
 // [🧱 BLOCK: Run Record — localStorage persistence]
@@ -91,9 +85,6 @@ export class GameState {
   gold:        number;
   playerStats: PlayerStats;
 
-  // ── Pending loot ─────────────────────────────────────────
-  pendingLoot: ShopItem[];
-
   // Horde tracking (resets per room)
   kills:         number;
   alive:         number;
@@ -126,7 +117,6 @@ export class GameState {
 
     this.gold        = 0;
     this.playerStats = new PlayerStats();
-    this.pendingLoot = [];
 
     this.kills         = 0;
     this.alive         = 0;
@@ -157,7 +147,6 @@ export class GameState {
     this.alive         = 0;
     this.lastSpawn     = 0;
     this.roomEntryTime = 0;
-    this.pendingLoot = [];
 
     this.totalKills      = 0;
     this.totalGoldEarned = 0;

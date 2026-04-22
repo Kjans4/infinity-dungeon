@@ -19,10 +19,8 @@ interface ShopProps {
   gold:         number;
   playerStats:  PlayerStats;
   player:       Player;
-  pendingLoot:  ShopItem[];
   isMidRoom:    boolean;
   onGoldChange: (newGold: number) => void;
-  onClaimLoot:  (item: ShopItem) => void;
   onContinue:   () => void;
   onClose:      () => void;
 }
@@ -113,83 +111,6 @@ function StatRow({ statKey, playerStats, player, gold, floor, onSpend }: {
 }
 
 // ============================================================
-// [🧱 BLOCK: Pending Loot Card]
-// Handles weapon, charm, and armor pending drops.
-// ============================================================
-function PendingLootCard({ item, playerStats, player, onClaim }: {
-  item: ShopItem; playerStats: PlayerStats; player: Player; onClaim: () => void;
-}) {
-  const isWeapon = item.kind === "weapon";
-  const isArmor  = item.kind === "armor";
-  const isCharm  = item.kind === "charm";
-
-  const accentColor = isWeapon ? "#60a5fa" : isArmor ? "#4ade80" : "#a78bfa";
-  const typeLabel   = isWeapon
-    ? `${(item as WeaponItem).weaponType.toUpperCase()} · Spoil`
-    : isArmor
-    ? `${(item as ArmorItem).setName} · Armor · Spoil`
-    : "Charm · Spoil";
-
-  const alreadyOwned = isWeapon
-    ? playerStats.equippedWeaponItem?.id === item.id
-    : isArmor
-    ? playerStats.hasArmorInSlot((item as ArmorItem).slot) &&
-      playerStats.armorSlots[(item as ArmorItem).slot]?.id === item.id
-    : playerStats.hasCharm(item.id);
-
-  const charmsFull = isCharm && playerStats.charms.length >= playerStats.maxCharms;
-  const willReplace = isWeapon && !!playerStats.equippedWeaponItem;
-  const armorReplaces = isArmor && playerStats.hasArmorInSlot((item as ArmorItem).slot);
-  const canClaim = !alreadyOwned && !charmsFull;
-
-  function handleClaim() {
-    if (!canClaim) return;
-    if (isWeapon)      playerStats.claimWeapon(item as WeaponItem, player);
-    else if (isArmor)  playerStats.claimArmor(item as ArmorItem, player);
-    else               playerStats.claimCharm(item as Charm, player);
-    onClaim();
-  }
-
-  return (
-    <div className="shop-loot-card">
-      <div className="shop-loot-card__badge" style={{ background: accentColor }}>FREE</div>
-      <div className="shop-item-card__icon">{item.icon}</div>
-      <div className="shop-item-card__type" style={{ color: accentColor }}>{typeLabel}</div>
-      <div className="shop-item-card__name">{item.name}</div>
-      <div className="shop-item-card__desc">{item.description}</div>
-      {isWeapon && (() => {
-        const p = getWeaponPassive((item as WeaponItem).weaponType);
-        return p ? (
-          <div className="shop-item-card__passive">
-            <span className="shop-item-card__passive-label">Passive · {p.name}</span>
-            <span className="shop-item-card__passive-desc">{p.description}</span>
-            {p.tradeOff && <span className="shop-item-card__tradeoff">⚠ {p.tradeOff}</span>}
-          </div>
-        ) : null;
-      })()}
-      {isCharm && item.tradeOff && <div className="shop-item-card__tradeoff">⚠ {item.tradeOff}</div>}
-      {willReplace && !alreadyOwned && (
-        <div className="shop-loot-card__replace-warn">Replaces {playerStats.equippedWeaponItem?.name}</div>
-      )}
-      {armorReplaces && !alreadyOwned && (
-        <div className="shop-loot-card__replace-warn">
-          Replaces {playerStats.armorSlots[(item as ArmorItem).slot]?.name}
-        </div>
-      )}
-      {charmsFull && <div className="shop-item-card__full-warning">Sell a charm first</div>}
-      {alreadyOwned && <div className="shop-item-card__full-warning">Already owned</div>}
-      <PillBtn
-        label={canClaim ? "Claim" : alreadyOwned ? "Owned" : "No Slots"}
-        onClick={handleClaim}
-        disabled={!canClaim}
-        color={accentColor}
-        small
-      />
-    </div>
-  );
-}
-
-// ============================================================
 // [🧱 BLOCK: Shop Item Card]
 // Handles weapon, charm, and armor purchaseable items.
 // ============================================================
@@ -223,7 +144,6 @@ function ShopItemCard({ item, gold, playerStats, player, onBuy }: {
     ? `${armorItem!.setName} · Armor`
     : "Charm";
 
-  // Label for auto-replace warning on armor
   const existingArmor = isArmor ? playerStats.armorSlots[armorItem!.slot] : null;
 
   function handleBuy() {
@@ -382,15 +302,12 @@ function HealingSection({ player, gold, floor, onHeal }: {
 // ============================================================
 export default function Shop({
   floor, room, gold, playerStats, player,
-  pendingLoot, isMidRoom,
-  onGoldChange, onClaimLoot, onContinue, onClose,
+  isMidRoom,
+  onGoldChange, onContinue, onClose,
 }: ShopProps) {
   const [, forceUpdate] = useState(0);
   const refresh = useCallback(() => forceUpdate((n) => n + 1), []);
 
-  // Generate shop options exactly once per mount, forwarding floor
-  // so any armor pieces in the pool have stat values scaled to the
-  // current depth.
   const shopInitRef = useRef(false);
   if (!shopInitRef.current) {
     playerStats.generateShopOptions(floor);
@@ -403,7 +320,6 @@ export default function Shop({
   const handleSellCharm  = (id: string) => { onGoldChange(playerStats.sellCharm(id, gold, player)); refresh(); };
   const handleSellWeapon = () => { onGoldChange(playerStats.unequipWeapon(gold, player)); refresh(); };
   const handleHeal       = (ng: number) => { onGoldChange(ng); refresh(); };
-  const handleClaim      = (item: ShopItem) => { onClaimLoot(item); refresh(); };
 
   const cap            = statCap(floor);
   const nextRerollCost = playerStats.rerollCost;
@@ -429,27 +345,6 @@ export default function Shop({
           </div>
 
           <GemRule />
-
-          {/* ── Pending Loot ── */}
-          {pendingLoot.length > 0 && (
-            <>
-              <div className="shop-section shop-section--loot">
-                <p className="shop-section__label">
-                  ✦ Spoils of Battle — Claim for Free ({pendingLoot.length}/3)
-                </p>
-                <div className="shop-items-row">
-                  {pendingLoot.map((item, i) => (
-                    <PendingLootCard
-                      key={`${item.id}-${i}`}
-                      item={item} playerStats={playerStats} player={player}
-                      onClaim={() => handleClaim(item)}
-                    />
-                  ))}
-                </div>
-              </div>
-              <GemRule />
-            </>
-          )}
 
           {/* ── Main panels ── */}
           <div className="shop-main">

@@ -8,6 +8,148 @@
 }
 
 /* ============================================================
+   [🧱 BLOCK: Nearby Drops Section]
+   Always visible at the top of the inventory. Empty state shown
+   when player is not near any item drop.
+   ============================================================ */
+.inv-nearby-section {
+  display:        flex;
+  flex-direction: column;
+  gap:            8px;
+}
+
+.inv-nearby-section__label {
+  font-size:      9px;
+  font-weight:    700;
+  color:          #4ade80;
+  letter-spacing: 0.25em;
+  text-transform: uppercase;
+  display:        flex;
+  align-items:    center;
+  gap:            8px;
+}
+
+.inv-nearby-section__count {
+  display:         inline-flex;
+  align-items:     center;
+  justify-content: center;
+  width:           18px;
+  height:          18px;
+  border-radius:   50%;
+  background:      rgba(74, 222, 128, 0.15);
+  border:          1px solid rgba(74, 222, 128, 0.4);
+  font-size:       9px;
+  font-weight:     700;
+  color:           #4ade80;
+}
+
+.inv-nearby-empty {
+  font-size:  10px;
+  color:      #1e293b;
+  font-style: italic;
+  padding:    10px 0 4px;
+}
+
+/* ── Drop card list ── */
+.inv-drop-list {
+  display:        flex;
+  flex-direction: column;
+  gap:            8px;
+}
+
+/* ── Individual drop card ── */
+.inv-drop-card {
+  border:        1px solid rgba(74, 222, 128, 0.15);
+  border-radius: 6px;
+  padding:       10px 12px;
+  background:    rgba(74, 222, 128, 0.03);
+  display:       flex;
+  flex-direction:column;
+  gap:           6px;
+}
+
+.inv-drop-card__header {
+  display:     flex;
+  align-items: flex-start;
+  gap:         10px;
+}
+
+.inv-drop-card__icon {
+  font-size:  20px;
+  flex-shrink:0;
+  margin-top: 2px;
+}
+
+.inv-drop-card__info {
+  flex: 1;
+  display:        flex;
+  flex-direction: column;
+  gap:            2px;
+  min-width:      0;
+}
+
+.inv-drop-card__kind {
+  font-size:      8px;
+  font-weight:    700;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+}
+
+.inv-drop-card__name {
+  font-size:   12px;
+  font-weight: 700;
+  color:       #e2e8f0;
+}
+
+.inv-drop-card__desc {
+  font-size: 10px;
+  color:     #64748b;
+}
+
+.inv-drop-card__tradeoff {
+  font-size: 10px;
+  color:     #f87171;
+}
+
+.inv-drop-card__passive {
+  background:    rgba(96, 165, 250, 0.06);
+  border:        1px solid rgba(96, 165, 250, 0.18);
+  border-left:   2px solid #60a5fa;
+  padding:       5px 8px;
+  display:       flex;
+  flex-direction:column;
+  gap:           2px;
+}
+
+.inv-drop-card__passive-label {
+  font-size:      8px;
+  font-weight:    700;
+  color:          #60a5fa;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.inv-drop-card__passive-desc {
+  font-size: 9px;
+  color:     #93c5fd;
+}
+
+.inv-drop-card__swap-warn {
+  font-size:  9px;
+  color:      #f97316;
+  font-style: italic;
+}
+
+/* ============================================================
+   [🧱 BLOCK: Small Button — disabled state]
+   ============================================================ */
+.inv-small-btn--disabled {
+  opacity:        0.35;
+  cursor:         not-allowed;
+  pointer-events: none;
+}
+
+/* ============================================================
    [🧱 BLOCK: Backdrop & Panel]
    ============================================================ */
 .inv-backdrop {
@@ -171,14 +313,6 @@
 }
 
 .inv-weapon-slot__passive-desc { font-size: 10px; color: #64748b; }
-
-/* ATK bonus line — shown when STR / charms / armor add to base damage */
-.inv-weapon-slot__atk-bonus {
-  font-size:      9px;
-  color:          #4ade80;
-  letter-spacing: 0.08em;
-  font-style:     italic;
-}
 
 .inv-weapon-slot__atk-row {
   display: flex;
