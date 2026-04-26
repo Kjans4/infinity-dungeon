@@ -1,5 +1,5 @@
 // src/engine/enemy/Tank.ts
-import { BaseEnemy }  from "./BaseEnemy";
+import { BaseEnemy, rollVariants }  from "./BaseEnemy";
 import { Player }     from "../Player";
 import { Camera }     from "../Camera";
 import { getEnemySpeedScale, getEnemyHpScale } from "../RoomManager";
@@ -7,8 +7,9 @@ import { circleCircle, knockbackDir, rectCenter } from "../Collision";
 
 // ============================================================
 // [🧱 BLOCK: Constants]
+// HP buffed: 120 → 180 base
 // ============================================================
-const BASE_HP         = 120;
+const BASE_HP         = 180;   // ↑ was 120
 const BASE_SPEED      = 0.75;
 const SIZE            = 48;
 const MELEE_RANGE     = 64;
@@ -53,6 +54,7 @@ export class Tank extends BaseEnemy {
       COLOR_SHIELDED
     );
     this.floor = floor;
+    this.applyVariants(rollVariants(floor));
   }
 
   // ============================================================
@@ -82,16 +84,20 @@ export class Tank extends BaseEnemy {
   }
 
   // ============================================================
-  // [🧱 BLOCK: takeDamage Override]
+  // [🧱 BLOCK: takeDamage Override — shield + armored variant]
   // ============================================================
   takeDamage(amount: number, isHeavy = false): void {
     if (this.isDead) return;
     let final = amount;
+    // Armored variant reduction stacks additively with shield
+    const variantDR = this.damageReduction;
     if (this.isShielded) {
       const reduction = isHeavy
         ? SHIELD_REDUCTION * (1 - HEAVY_SHIELD_PIERCE)
         : SHIELD_REDUCTION;
-      final = Math.round(amount * (1 - reduction));
+      final = Math.max(1, Math.round(amount * (1 - reduction) * (1 - variantDR)));
+    } else if (variantDR > 0) {
+      final = Math.max(1, Math.round(amount * (1 - variantDR)));
     }
     super.takeDamage(final);
     if (!this.isShielded) this.color = COLOR_BROKEN;
@@ -105,18 +111,28 @@ export class Tank extends BaseEnemy {
   ): void {
     if (this.isDead) return;
     let final = amount;
+    const variantDR = this.damageReduction;
     if (this.isShielded && this.isFrontHit(playerX, playerY)) {
       const reduction = isHeavy
         ? SHIELD_REDUCTION * (1 - HEAVY_SHIELD_PIERCE)
         : SHIELD_REDUCTION;
-      final = Math.round(amount * (1 - reduction));
+      final = Math.max(1, Math.round(amount * (1 - reduction) * (1 - variantDR)));
+    } else if (variantDR > 0) {
+      final = Math.max(1, Math.round(amount * (1 - variantDR)));
     }
     super.takeDamage(final);
     if (!this.isShielded) this.color = COLOR_BROKEN;
   }
 
   // ============================================================
-  // [🧱 BLOCK: isMeleeHittingPlayer — uses circleCircle]
+  // [🧱 BLOCK: Effective Melee Damage]
+  // ============================================================
+  get meleeDamage(): number {
+    return Math.round(BASE_DAMAGE * this.damageMult);
+  }
+
+  // ============================================================
+  // [🧱 BLOCK: isMeleeHittingPlayer]
   // ============================================================
   isMeleeHittingPlayer(player: Player): boolean {
     if (this.tankState !== "strike" || this.isDead) return false;
@@ -126,7 +142,7 @@ export class Tank extends BaseEnemy {
   }
 
   // ============================================================
-  // [🧱 BLOCK: applyKnockback — uses knockbackDir]
+  // [🧱 BLOCK: applyKnockback]
   // ============================================================
   applyKnockback(player: Player): void {
     const { x: cx, y: cy } = rectCenter(this);
@@ -143,6 +159,8 @@ export class Tank extends BaseEnemy {
     if (this.isDead) return;
 
     this.tickHitFlash();
+    this.tickVariantPulse();
+    this.tickRegen();
 
     const { x: cx, y: cy } = rectCenter(this);
     const { x: px, y: py } = rectCenter(player);
@@ -211,7 +229,6 @@ export class Tank extends BaseEnemy {
     const cx = sx + SIZE / 2;
     const cy = sy + SIZE / 2;
 
-    // ── Windup ring ──────────────────────────────────────
     if (this.tankState === "windup" && this.windupMs > 0) {
       const progress = 1 - this.stateTimer / this.windupMs;
       ctx.beginPath();
@@ -223,7 +240,6 @@ export class Tank extends BaseEnemy {
       ctx.globalAlpha = 1;
     }
 
-    // ── Floor 4+ danger indicator ────────────────────────
     if (this.floor >= 4 && this.tankState === "chase") {
       ctx.beginPath();
       ctx.arc(cx, cy, SIZE / 2 + 6, 0, Math.PI * 2);
@@ -232,9 +248,9 @@ export class Tank extends BaseEnemy {
       ctx.stroke();
     }
 
+    this.drawVariantAura(ctx, sx, sy);
     this.drawBody(ctx, sx, sy);
 
-    // ── Shield arc ────────────────────────────────────────
     if (this.isShielded) {
       const angle = Math.atan2(this.facingY, this.facingX);
       const arc   = Math.PI * 0.75;
@@ -255,14 +271,13 @@ export class Tank extends BaseEnemy {
 
     this.drawHpBar(ctx, sx, sy);
 
-    // Shield threshold marker
     if (this.isShielded) {
       const barY    = sy - 8;
       const markerX = sx + SIZE * SHIELD_HP_THRESHOLD;
       ctx.fillStyle = "rgba(255,255,255,0.5)";
       ctx.fillRect(markerX - 1, barY - 1, 2, 6);
     }
-  }
 
-  get meleeDamage(): number { return BASE_DAMAGE; }
+    this.drawVariantIndicators(ctx, sx, sy);
+  }
 }

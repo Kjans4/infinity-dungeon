@@ -1,37 +1,34 @@
 // src/engine/enemy/boss/Colossus.ts
 import { Player }                         from "../../Player";
 import { Camera }                         from "../../Camera";
-import { BaseEnemy }                      from "../BaseEnemy";
+import { BaseEnemy, rollVariants }        from "../BaseEnemy";
 import { Projectile }                     from "../Projectile";
 import { rectCenter, circleCircle }       from "../../Collision";
 
 // ============================================================
 // [🧱 BLOCK: Colossus States]
-// The Colossus is a slow juggernaut. While armored (above 50%
-// HP) it takes heavily reduced damage. Below 50% the armor
-// shatters and it gains stomp chains.
 // ============================================================
 type ColossusState =
   | 'chase'
-  | 'warn_stomp'      // winding up a stomp AoE
-  | 'stomping'        // stomp wave active
-  | 'stomp_chain'     // rage only — immediate second stomp
-  | 'warn_quake'      // enraged ground-slam that fires 4 projectiles
+  | 'warn_stomp'
+  | 'stomping'
+  | 'stomp_chain'
+  | 'warn_quake'
   | 'quaking'
   | 'cooldown';
 
 // ============================================================
 // [🧱 BLOCK: Stats]
+// HP buffed: 500 → 650 base
 // ============================================================
 const STATS = {
-  baseHp:           500,   // tankiest boss
-  size:             100,   // largest body
-  speed:            0.7,   // slowest boss
+  baseHp:           650,   // ↑ was 500
+  size:             100,
+  speed:            0.7,
   rageSpeed:        1.3,
   xpValue:          20,
-  color:            '#475569',   // armored grey
-  armorBrokenColor: '#dc2626',   // exposed red
-  xpValue2:         20,
+  color:            '#475569',
+  armorBrokenColor: '#dc2626',
   contactDamage:    25,
   stompDamage:      35,
   stompRadius:      150,
@@ -39,17 +36,15 @@ const STATS = {
   damageCooldown:   800,
 };
 
-// Armor — reduces incoming damage while above 50% HP
-const ARMOR_REDUCTION   = 0.65; // 65% of damage blocked
-// Heavy attacks pierce armor more
+const ARMOR_REDUCTION    = 0.65;
 const HEAVY_ARMOR_PIERCE = 0.35;
 
-const WARN_MS       = 1800;
-const WARN_RAGE     = 1100;
-const CHASE_MS      = 2500;
-const CHASE_RAGE    = 1600;
-const COOL_MS       = 1200;
-const COOL_RAGE     = 700;
+const WARN_MS    = 1800;
+const WARN_RAGE  = 1100;
+const CHASE_MS   = 2500;
+const CHASE_RAGE = 1600;
+const COOL_MS    = 1200;
+const COOL_RAGE  = 700;
 
 // ============================================================
 // [🧱 BLOCK: Colossus Class]
@@ -60,7 +55,6 @@ export class Colossus extends BaseEnemy {
   colossusState: ColossusState = 'chase';
   stateTimer:    number        = CHASE_MS;
 
-  // Stomp AoE
   stompRadius:  number  = 0;
   stompActive:  boolean = false;
   stomp2Radius: number  = 0;
@@ -83,6 +77,7 @@ export class Colossus extends BaseEnemy {
     super(x, y, STATS.size, STATS.speed,
       Math.round(STATS.baseHp * hpScale), STATS.xpValue, STATS.color);
     this.floor = floor;
+    this.applyVariants(rollVariants(floor, true));
   }
 
   // ============================================================
@@ -93,22 +88,32 @@ export class Colossus extends BaseEnemy {
   }
 
   // ============================================================
-  // [🧱 BLOCK: takeDamage Override — armor absorption]
+  // [🧱 BLOCK: Effective Damage]
+  // ============================================================
+  get contactDamage() { return Math.round(STATS.contactDamage * this.damageMult); }
+  get slamDamage()    { return Math.round(STATS.stompDamage   * this.damageMult); }
+  get shootDamage()   { return Math.round(STATS.quakeDamage   * this.damageMult); }
+
+  // ============================================================
+  // [🧱 BLOCK: takeDamage Override — armor + variant DR]
   // ============================================================
   takeDamage(amount: number, isHeavy = false): void {
     if (this.isDead) return;
     let final = amount;
+    const variantDR = this.damageReduction;
     if (this.isArmored) {
       const reduction = isHeavy
         ? ARMOR_REDUCTION * (1 - HEAVY_ARMOR_PIERCE)
         : ARMOR_REDUCTION;
-      final = Math.max(1, Math.round(amount * (1 - reduction)));
+      final = Math.max(1, Math.round(amount * (1 - reduction) * (1 - variantDR)));
+    } else if (variantDR > 0) {
+      final = Math.max(1, Math.round(amount * (1 - variantDR)));
     }
     super.takeDamage(final);
   }
 
   // ============================================================
-  // [🧱 BLOCK: Rage Check — armor shatters at 50%]
+  // [🧱 BLOCK: Rage Check]
   // ============================================================
   private checkRage(): void {
     if (!this.isEnraged && this.hp / this.maxHp <= 0.5) {
@@ -121,16 +126,14 @@ export class Colossus extends BaseEnemy {
 
   // ============================================================
   // [🧱 BLOCK: Fire Quake Projectiles]
-  // 4 cardinal-direction projectiles on ground-slam.
   // ============================================================
   private fireQuake(ecx: number, ecy: number): void {
     const angles = [0, Math.PI / 2, Math.PI, Math.PI * 1.5];
+    const dmg    = this.shootDamage;
     angles.forEach((angle) => {
       const tx = ecx + Math.cos(angle) * 400;
       const ty = ecy + Math.sin(angle) * 400;
-      this.pendingProjectiles.push(
-        new Projectile(ecx, ecy, tx, ty, STATS.quakeDamage)
-      );
+      this.pendingProjectiles.push(new Projectile(ecx, ecy, tx, ty, dmg));
     });
   }
 
@@ -138,10 +141,6 @@ export class Colossus extends BaseEnemy {
   private get chaseMs(): number { return this.isEnraged ? CHASE_RAGE : CHASE_MS; }
   private get coolMs():  number { return this.isEnraged ? COOL_RAGE  : COOL_MS;  }
 
-  // ============================================================
-  // [🧱 BLOCK: Pick Next Attack]
-  // Armored: stomp only. Enraged: stomp chain or quake.
-  // ============================================================
   private pickAttack(): ColossusState {
     if (!this.isEnraged) return 'warn_stomp';
     return Math.random() < 0.5 ? 'warn_stomp' : 'warn_quake';
@@ -155,6 +154,8 @@ export class Colossus extends BaseEnemy {
 
     this.justEnragedThisFrame = false;
     this.tickHitFlash();
+    this.tickVariantPulse();
+    this.tickRegen();
     this.stateTimer     -= 16;
     this.indicatorPulse += 16;
     if (this.damageCooldown > 0) this.damageCooldown -= 16;
@@ -173,8 +174,6 @@ export class Colossus extends BaseEnemy {
     const dist = Math.sqrt(dx * dx + dy * dy) || 1;
 
     switch (this.colossusState) {
-
-      // ── Chase ─────────────────────────────────────────────
       case 'chase':
         this.vx = (dx / dist) * this.speed;
         this.vy = (dy / dist) * this.speed;
@@ -187,7 +186,6 @@ export class Colossus extends BaseEnemy {
         }
         break;
 
-      // ── Warn Stomp ────────────────────────────────────────
       case 'warn_stomp':
         this.vx = 0; this.vy = 0;
         this.stompRadius = STATS.stompRadius * (1 - this.stateTimer / this.warnMs);
@@ -199,14 +197,12 @@ export class Colossus extends BaseEnemy {
         }
         break;
 
-      // ── Stomping ──────────────────────────────────────────
       case 'stomping':
         if (this.stateTimer <= 0) {
           this.stompActive = false; this.stompRadius = 0;
-          // Enraged: chain a second stomp immediately
           if (this.isEnraged) {
             this.colossusState = 'stomp_chain';
-            this.stateTimer    = this.warnMs * 0.6; // shorter windup
+            this.stateTimer    = this.warnMs * 0.6;
             this.stomp2Radius  = 0;
           } else {
             this.colossusState = 'cooldown';
@@ -215,7 +211,6 @@ export class Colossus extends BaseEnemy {
         }
         break;
 
-      // ── Stomp Chain (enraged) ─────────────────────────────
       case 'stomp_chain':
         this.stomp2Radius = STATS.stompRadius * 0.75 * (1 - this.stateTimer / (this.warnMs * 0.6));
         if (this.stateTimer <= 0) {
@@ -227,7 +222,6 @@ export class Colossus extends BaseEnemy {
         }
         break;
 
-      // ── Warn Quake ────────────────────────────────────────
       case 'warn_quake':
         this.vx = 0; this.vy = 0;
         if (this.stateTimer <= 0) {
@@ -237,21 +231,13 @@ export class Colossus extends BaseEnemy {
         }
         break;
 
-      // ── Quaking ───────────────────────────────────────────
       case 'quaking':
-        if (this.stateTimer <= 0) {
-          this.colossusState = 'cooldown';
-          this.stateTimer    = this.coolMs;
-        }
+        if (this.stateTimer <= 0) { this.colossusState = 'cooldown'; this.stateTimer = this.coolMs; }
         break;
 
-      // ── Cooldown ──────────────────────────────────────────
       case 'cooldown':
         this.vx = 0; this.vy = 0;
-        if (this.stateTimer <= 0) {
-          this.colossusState = 'chase';
-          this.stateTimer    = this.chaseMs;
-        }
+        if (this.stateTimer <= 0) { this.colossusState = 'chase'; this.stateTimer = this.chaseMs; }
         break;
     }
 
@@ -272,14 +258,10 @@ export class Colossus extends BaseEnemy {
   isSlamHittingPlayer(player: Player): boolean {
     const { x: cx, y: cy } = rectCenter(this);
     const { x: px, y: py } = rectCenter(player);
-    if (this.stompActive  && circleCircle(cx, cy, this.stompRadius,       px, py, 1)) return true;
-    if (this.stomp2Active && circleCircle(cx, cy, this.stomp2Radius,      px, py, 1)) return true;
+    if (this.stompActive  && circleCircle(cx, cy, this.stompRadius,  px, py, 1)) return true;
+    if (this.stomp2Active && circleCircle(cx, cy, this.stomp2Radius, px, py, 1)) return true;
     return false;
   }
-
-  get contactDamage() { return STATS.contactDamage; }
-  get slamDamage()    { return STATS.stompDamage; }
-  get shootDamage()   { return STATS.quakeDamage; }
 
   // ============================================================
   // [🧱 BLOCK: Draw]
@@ -292,7 +274,6 @@ export class Colossus extends BaseEnemy {
     const cx = sx + this.width  / 2;
     const cy = sy + this.height / 2;
 
-    // ── Stomp 1 ───────────────────────────────────────────
     if (this.colossusState === 'warn_stomp' || this.stompActive) {
       const pulse = Math.sin(this.indicatorPulse / 140) * 0.3 + 0.7;
       ctx.beginPath(); ctx.arc(cx, cy, Math.max(1, this.stompRadius), 0, Math.PI * 2);
@@ -304,7 +285,6 @@ export class Colossus extends BaseEnemy {
       }
     }
 
-    // ── Stomp 2 chain ─────────────────────────────────────
     if (this.colossusState === 'stomp_chain' || this.stomp2Active) {
       const pulse = Math.sin(this.indicatorPulse / 110) * 0.3 + 0.7;
       ctx.beginPath(); ctx.arc(cx, cy, Math.max(1, this.stomp2Radius), 0, Math.PI * 2);
@@ -316,7 +296,6 @@ export class Colossus extends BaseEnemy {
       }
     }
 
-    // ── Quake warn — cross lines ───────────────────────────
     if (this.colossusState === 'warn_quake') {
       const pulse = Math.sin(this.indicatorPulse / 100) * 0.4 + 0.6;
       [0, Math.PI / 2, Math.PI, Math.PI * 1.5].forEach((angle) => {
@@ -328,19 +307,19 @@ export class Colossus extends BaseEnemy {
       });
     }
 
-    // ── Armor indicator (above 50%) ───────────────────────
     if (this.isArmored) {
       const pulse = Math.sin(this.indicatorPulse / 200) * 0.15 + 0.35;
       ctx.beginPath(); ctx.arc(cx, cy, this.width / 2 + 12, 0, Math.PI * 2);
       ctx.strokeStyle = `rgba(148,163,184,${pulse})`; ctx.lineWidth = 5; ctx.stroke();
     }
 
-    // ── Enrage aura ───────────────────────────────────────
     if (this.isEnraged) {
       const pulse = Math.sin(this.indicatorPulse / 80) * 0.3 + 0.4;
       ctx.beginPath(); ctx.arc(cx, cy, this.width / 2 + 10, 0, Math.PI * 2);
       ctx.strokeStyle = `rgba(220,38,38,${pulse})`; ctx.lineWidth = 4; ctx.stroke();
     }
+
+    this.drawVariantAura(ctx, sx, sy);
 
     const bodyColor =
       this.isHit                          ? '#ffffff' :
@@ -352,28 +331,25 @@ export class Colossus extends BaseEnemy {
 
     this.drawBody(ctx, sx, sy, bodyColor);
 
-    // Wide HP bar
     const barW = this.width * 2.2;
     this.drawHpBar(ctx, sx - this.width * 0.6, sy, barW, -16);
 
-    // Armor threshold marker
     if (!this.isEnraged) {
       const markerX = sx - this.width * 0.6 + barW * 0.5;
       ctx.fillStyle = "rgba(148,163,184,0.8)";
       ctx.fillRect(markerX - 1, sy - 17, 2, 7);
     }
 
-    // Label
     const label = this.isArmored
       ? `🛡 ${this.bossName}`
-      : this.isEnraged
-        ? `⚡ UNSHACKLED`
-        : this.bossName;
+      : this.isEnraged ? `⚡ UNSHACKLED` : this.bossName;
 
     ctx.fillStyle = this.isEnraged ? "#f87171" : this.isArmored ? "#94a3b8" : "rgba(255,255,255,0.7)";
     ctx.font      = `bold 10px 'Courier New'`;
     ctx.textAlign = "center";
     ctx.fillText(label, cx, sy - 22);
     ctx.textAlign = "left";
+
+    this.drawVariantIndicators(ctx, sx - this.width * 0.6, sy, barW, -16);
   }
 }

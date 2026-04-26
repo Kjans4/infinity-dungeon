@@ -23,11 +23,10 @@ import PauseOverlay          from "@/components/overlays/PauseOverlay";
 import WaveClearAnnouncement from "@/components/overlays/WaveClearAnnouncement";
 import FloorTransition       from "@/components/overlays/FloorTransition";
 import { spawnBurst }        from "@/engine/Particle";
+import { ShopItem }          from "@/engine/items/ItemPool";
 import { ItemDrop }          from "@/engine/ItemDrop";
 import { WeaponItem, ArmorItem } from "@/engine/items/types";
-import { Charm }             from "@/engine/CharmRegistry";
 import "@/styles/victory.css";
-
 import "@/styles/dev-panel.css";
 
 // ============================================================
@@ -134,9 +133,7 @@ export default function GameCanvas() {
   const floorGoldRef  = useRef(0);
 
   // ============================================================
-  // [🧱 BLOCK: Victory UI State]
-  // isVictory      — overlay is visible (not minimized)
-  // victoryMinimized — overlay closed, badge shown instead
+  // [🧱 BLOCK: UI State]
   // ============================================================
   const [showMenu,           setShowMenu]           = useState(true);
   const [isGameOver,         setIsGameOver]          = useState(false);
@@ -162,7 +159,6 @@ export default function GameCanvas() {
   const [transitionFloor, setTransitionFloor] = useState(2);
   const pendingContinueRef = useRef<(() => void) | null>(null);
 
-  // Victory phase is active (overlay visible or minimized to badge)
   const isVictoryPhase = isVictory || victoryMinimized;
 
   useEffect(() => {
@@ -199,15 +195,13 @@ export default function GameCanvas() {
         const state = stateRef.current;
         if (!state) return;
 
-        // Door interaction — works in all phases including victory
         if (state.door?.playerIsNear) {
           handleDoorEnter();
           return;
         }
 
-        // Shop NPC interaction — works in all phases including victory
         if (state.shopNpc?.playerIsNear) {
-          state.playerStats.generateShopOptions(roomRef.current.floor);
+          state.playerStats.generateShopOptions();
           setIsMidRoom(true);
           setShowShop(true);
         }
@@ -276,20 +270,12 @@ export default function GameCanvas() {
 
   // ============================================================
   // [🧱 BLOCK: Save Current Run]
-  // Persists a RunRecord to localStorage. Called at every
-  // run-ending point before state is reset.
-  // Guard: skip if the run never started (totalKills=0, floor=1,
-  // roomDisplay=1) to avoid polluting history with blank entries
-  // from quitting the menu before ever playing.
   // ============================================================
   const saveCurrentRun = useCallback(() => {
     const state = stateRef.current;
     const rs    = roomRef.current;
     if (!state) return;
-
-    // Don't save a blank run
     if (state.totalKills === 0 && rs.floor === 1 && rs.roomDisplay === 1) return;
-
     saveRunRecord({
       floor:      rs.floor,
       room:       rs.roomDisplay,
@@ -322,9 +308,7 @@ export default function GameCanvas() {
   }, [resetFloorTracking, announce]);
 
   const handleRaidAgain = useCallback(() => {
-    // Save before reset wipes totalKills / totalGoldEarned
     saveCurrentRun();
-
     const rs = initialRoomState();
     roomRef.current = rs;
     stateRef.current!.reset();
@@ -348,9 +332,7 @@ export default function GameCanvas() {
   }, [saveCurrentRun, resetFloorTracking, announce]);
 
   const handleQuitToMenu = useCallback(() => {
-    // Save before reset — guard inside saveCurrentRun skips blank runs
     saveCurrentRun();
-
     stateRef.current!.reset();
     hordeRef.current.reset(stateRef.current!);
     bossRef.current.reset(stateRef.current!);
@@ -372,13 +354,10 @@ export default function GameCanvas() {
 
   // ============================================================
   // [🧱 BLOCK: Door Enter]
-  // Handles F-press at any door. In victory phase it triggers
-  // the floor transition instead of advanceRoom.
   // ============================================================
   const handleDoorEnter = useCallback(() => {
     const rs = roomRef.current;
 
-    // Victory phase door → next floor
     if (rs.phase === 'victory') {
       const nextFloorNum = rs.floor + 1;
       pendingContinueRef.current = () => {
@@ -401,16 +380,13 @@ export default function GameCanvas() {
       return;
     }
 
-    // Normal room advance
     const newRs = advanceRoom(rs);
     roomRef.current = newRs;
     lastAnnouncedRemainingRef.current = null;
 
     if (newRs.phase === 'boss') {
       bossRef.current.setup(stateRef.current!, newRs);
-      const bossName = stateRef.current?.boss
-        ? getBossName(stateRef.current.boss)
-        : 'BOSS';
+      const bossName = stateRef.current?.boss ? getBossName(stateRef.current.boss) : 'BOSS';
       announce(`${bossName} INCOMING`, "Prepare yourself!", "#ef4444");
     } else if (newRs.phase === 'elite') {
       hordeRef.current.setup(stateRef.current!, newRs, WORLD_W, WORLD_H);
@@ -426,45 +402,22 @@ export default function GameCanvas() {
     setIsMidRoom(false);
   }, []);
 
-  // ============================================================
-  // [🧱 BLOCK: Handle Equip Drop]
-  // Called by Inventory when the player equips a ground drop.
-  // If the slot was occupied, the displaced item spawns as a new
-  // ItemDrop near the player so it stays in the world for later.
-  // ============================================================
   const handleEquipDrop = useCallback((drop: ItemDrop) => {
     const state = stateRef.current;
     if (!state) return;
 
-    const ps     = state.playerStats;
-    const player = state.player;
-    const item   = drop.item;
-
-    const spawnSwapped = (swapped: typeof item) => {
-      const ox = (Math.random() - 0.5) * 48;
-      const oy = (Math.random() - 0.5) * 48;
-      state.itemDrops.push(new ItemDrop(
-        player.x + player.width  / 2 + ox,
-        player.y + player.height / 2 + oy,
-        swapped
-      ));
-    };
-
-    if (item.kind === "weapon") {
-      if (ps.equippedWeaponItem) spawnSwapped({ ...ps.equippedWeaponItem });
-      ps.claimWeapon(item as WeaponItem, player);
-    } else if (item.kind === "armor") {
-      const armorItem = item as ArmorItem;
-      const existing  = ps.armorSlots[armorItem.slot];
-      if (existing) spawnSwapped({ ...existing });
-      ps.claimArmor(armorItem, player);
-    } else if (item.kind === "charm") {
-      ps.claimCharm(item as Charm, player);
+    const item = drop.item;
+    if (item.kind === 'weapon') {
+      state.playerStats.equipWeapon(item as WeaponItem, state.gold, state.player);
+    } else if (item.kind === 'armor') {
+      state.playerStats.equipArmor(item as ArmorItem, state.gold, state.player);
+    } else if (item.kind === 'charm') {
+      state.playerStats.buyCharm(item as any, state.gold, state.player);
     }
 
-    // Mark collected so it's filtered out next game loop tick
-    drop.collected  = true;
-    state.itemDrops = state.itemDrops.filter((d) => !d.collected);
+    drop.collected = true;
+    const idx = state.itemDrops.findIndex((d) => d === drop);
+    if (idx !== -1) state.itemDrops.splice(idx, 1);
   }, []);
 
   const handleTransitionComplete = useCallback(() => {
@@ -476,15 +429,8 @@ export default function GameCanvas() {
   // ============================================================
   // [🧱 BLOCK: Victory Minimize / Restore]
   // ============================================================
-  const handleVictoryClose = useCallback(() => {
-    setIsVictory(false);
-    setVictoryMinimized(true);
-  }, []);
-
-  const handleVictoryRestore = useCallback(() => {
-    setVictoryMinimized(false);
-    setIsVictory(true);
-  }, []);
+  const handleVictoryClose   = useCallback(() => { setIsVictory(false); setVictoryMinimized(true); }, []);
+  const handleVictoryRestore = useCallback(() => { setVictoryMinimized(false); setIsVictory(true); }, []);
 
   const handleGoldChange = useCallback((newGold: number) => {
     if (stateRef.current) stateRef.current.gold = newGold;
@@ -496,6 +442,9 @@ export default function GameCanvas() {
     setIsPaused(false);
   }, []);
 
+  // ============================================================
+  // [🧱 BLOCK: Dev Handlers]
+  // ============================================================
   const handleDevKillAll = useCallback(() => {
     const state = stateRef.current;
     if (!state) return;
@@ -514,11 +463,6 @@ export default function GameCanvas() {
     announce("DEV: ROOM SKIPPED", undefined, "#38bdf8");
   }, [handleDoorEnter, announce]);
 
-  // ============================================================
-  // [🧱 BLOCK: Dev Skip Handlers]
-  // roomDisplay uses per-floor values (3 = elite, 4 = boss)
-  // matching the fixed RoomManager convention.
-  // ============================================================
   const handleDevSkipToElite = useCallback(() => {
     const state = stateRef.current;
     if (!state) return;
@@ -553,6 +497,9 @@ export default function GameCanvas() {
     announce("DEV: +200 GOLD", undefined, "#4ade80");
   }, [announce]);
 
+  // ============================================================
+  // [🧱 BLOCK: Game Loop]
+  // ============================================================
   useGameLoop((_dt: number) => {
     const canvas = canvasRef.current;
     const state  = stateRef.current;
@@ -561,8 +508,6 @@ export default function GameCanvas() {
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
 
-    // ── Overlays that fully pause the game loop ───────────────
-    // Victory is intentionally NOT in this list — player can roam.
     if (showMenu || showShop || isGameOver || isPaused || showInventory || showTransition) return;
 
     const rs      = roomRef.current;
@@ -571,14 +516,15 @@ export default function GameCanvas() {
     const worldW  = isBoss ? BOSS_WORLD_W : WORLD_W;
     const worldH  = isBoss ? BOSS_WORLD_H : WORLD_H;
     const player  = state.player;
+    const render  = renderRef.current;
 
     // ── Death sequence ────────────────────────────────────────
     if (isDyingRef.current) {
       const elapsed = Date.now() - deathStartRef.current;
 
-      renderRef.current.clear(ctx, state.screenW, state.screenH);
+      render.clear(ctx, state.screenW, state.screenH);
       state.camera.update(player, worldW, worldH);
-      renderRef.current.drawWorld(ctx, state.camera, state.screenW, state.screenH, isBoss);
+      render.drawWorld(ctx, state.camera, state.screenW, state.screenH, isBoss);
       if (isBoss) bossRef.current.draw(state, ctx, state.camera, player);
       else         hordeRef.current.draw(state, ctx, state.camera, player, worldW);
 
@@ -610,7 +556,6 @@ export default function GameCanvas() {
 
       if (elapsed >= DEATH_TOTAL_MS) {
         isDyingRef.current = false;
-        // Save run record before showing game over screen
         saveCurrentRun();
         setIsGameOver(true);
       }
@@ -621,7 +566,7 @@ export default function GameCanvas() {
     if (player.hp <= 0 && !isDyingRef.current) {
       isDyingRef.current    = true;
       deathStartRef.current = Date.now();
-      renderRef.current.shake("heavy");
+      render.shake("heavy");
       const px = player.x + player.width  / 2;
       const py = player.y + player.height / 2;
       state.particles.push(...spawnBurst(px, py, "#ef4444", 20, 2.5));
@@ -629,9 +574,9 @@ export default function GameCanvas() {
       return;
     }
 
-    renderRef.current.clear(ctx, state.screenW, state.screenH);
+    render.clear(ctx, state.screenW, state.screenH);
     state.camera.update(player, worldW, worldH);
-    renderRef.current.drawWorld(ctx, state.camera, state.screenW, state.screenH, isBoss);
+    render.drawWorld(ctx, state.camera, state.screenW, state.screenH, isBoss);
 
     player.update(input);
     player.x = Math.max(0, Math.min(worldW - player.width,  player.x));
@@ -640,9 +585,10 @@ export default function GameCanvas() {
     if (isHorde) {
       const prevKills = state.totalKills;
       const prevHp    = player.hp;
-      const { goldCollected } = hordeRef.current.update(state, player, rs, worldW, worldH);
+      // ── Pass render into horde update for hit feedback ──────
+      const { goldCollected } = hordeRef.current.update(state, player, rs, worldW, worldH, render);
 
-      if (player.hp < prevHp) renderRef.current.shake("light");
+      if (player.hp < prevHp) render.shake("light");
       if (goldCollected > 0) {
         state.gold           += goldCollected;
         floorGoldRef.current += goldCollected;
@@ -678,9 +624,10 @@ export default function GameCanvas() {
     if (isBoss) {
       const prevKills = state.totalKills;
       const prevHp    = player.hp;
-      const { event, goldCollected } = bossRef.current.update(state, player, worldW, worldH);
+      // ── Pass render into boss update for hit feedback ────────
+      const { event, goldCollected } = bossRef.current.update(state, player, worldW, worldH, render);
 
-      if (player.hp < prevHp) renderRef.current.shake((prevHp - player.hp) >= 25 ? "heavy" : "medium");
+      if (player.hp < prevHp) render.shake((prevHp - player.hp) >= 25 ? "heavy" : "medium");
       if (goldCollected > 0) {
         state.gold           += goldCollected;
         floorGoldRef.current += goldCollected;
@@ -697,7 +644,7 @@ export default function GameCanvas() {
           bossName === 'SHADE'    ? "⚡ PHANTOM STEP"  :
                                     "⚡ ENRAGED";
         announce(enrageMsg, "Boss enters rage mode!", "#ef4444");
-        renderRef.current.shake("heavy");
+        render.shake("heavy");
       }
 
       if (event === "victory") {
@@ -705,13 +652,8 @@ export default function GameCanvas() {
           kills: floorKillsRef.current,
           gold:  floorGoldRef.current,
         });
-
-        // Mark room as victory phase so door F-press triggers nextFloor
         roomRef.current = { ...rs, phase: 'victory' };
-
         announce("BOSS SLAIN", "Approach the gate to descend", "#4ade80");
-
-        // Show overlay after brief delay — game loop keeps running
         setTimeout(() => setIsVictory(true), 1200);
       }
 
@@ -719,6 +661,9 @@ export default function GameCanvas() {
     }
 
     player.draw(ctx, state.camera);
+
+    // ── Draw damage numbers last (on top of everything) ───────
+    render.drawDamageNumbers(ctx, state.camera, state.damageNumbers);
   });
 
   const gameActive   = !showMenu && !isGameOver;
@@ -764,15 +709,11 @@ export default function GameCanvas() {
       {showInventory && state && (
         <Inventory
           playerStats={state.playerStats} player={state.player}
-          gold={gold}
-          nearbyDrops={state.itemDrops.filter((d) => !d.collected && d.playerIsNear)}
-          onGoldChange={handleGoldChange}
-          onEquipDrop={handleEquipDrop}
-          onClose={handleInventoryClose}
+          gold={gold} nearbyDrops={state.itemDrops} onGoldChange={handleGoldChange}
+          onEquipDrop={handleEquipDrop} onClose={handleInventoryClose}
         />
       )}
 
-      {/* ── Victory overlay — only shown when not minimized ── */}
       {isVictory && state && (
         <VictoryOverlay
           floor={hud.floor}
@@ -787,7 +728,6 @@ export default function GameCanvas() {
         />
       )}
 
-      {/* ── Victory badge — shown when overlay is minimized ── */}
       {victoryMinimized && (
         <button className="victory-badge" onClick={handleVictoryRestore}>
           <span className="victory-badge__gem" />
@@ -795,7 +735,6 @@ export default function GameCanvas() {
         </button>
       )}
 
-      {/* ── Floor Transition Overlay ── */}
       {showTransition && (
         <FloorTransition
           targetFloor={transitionFloor}

@@ -1,17 +1,19 @@
 // src/engine/enemy/Shooter.ts
 import { Player } from "../Player";
 import { Camera } from "../Camera";
-import { BaseEnemy } from "./BaseEnemy";
+import { BaseEnemy, rollVariants } from "./BaseEnemy";
 import { Projectile } from "./Projectile";
 import { AttackState } from "./types";
 import { getEnemySpeedScale, getEnemyHpScale } from "../RoomManager";
+import { rectCenter } from "../Collision";
 
 // ============================================================
 // [🧱 BLOCK: Shooter Stats]
+// HP buffed: 45 → 70 base
 // ============================================================
 const SHOOTER_STATS = {
   speed:          1.1,
-  hp:             45,
+  hp:             70,   // ↑ was 45
   size:           24,
   color:          '#f59e0b',
   xpValue:        2,
@@ -24,17 +26,13 @@ const SHOOTER_STATS = {
   meleeWindup:    400,
   meleeDamage:    8,
   meleeCooldown:  1200,
+  hitKnockback:   2.0,
 };
 
-// Spread shot constants (Floor 2+)
-// Three projectiles fired at -15°, 0°, +15° from aim direction
-const SPREAD_ANGLES = [-Math.PI / 12, 0, Math.PI / 12]; // ±15°
+const SPREAD_ANGLES = [-Math.PI / 12, 0, Math.PI / 12];
 
 // ============================================================
 // [🧱 BLOCK: Shooter Class]
-// Floor 1:  1 projectile, cooldown 2000ms
-// Floor 2-3: 3 projectiles (spread), cooldown 2000ms
-// Floor 4+: 3 projectiles (spread), cooldown 1400ms
 // ============================================================
 export class Shooter extends BaseEnemy {
   attackState:        AttackState              = 'chase';
@@ -42,12 +40,8 @@ export class Shooter extends BaseEnemy {
   attackCooldown:     number                   = 0;
   currentMode:        'melee' | 'ranged'       = 'ranged';
   strikeDir:          { x: number; y: number } = { x: 0, y: 1 };
-
-  // Changed from single to array — HordeSystem drains this each frame
   pendingProjectiles: Projectile[]             = [];
 
-  // Keep singular alias so HordeSystem legacy code still compiles
-  // (HordeSystem will be updated to use the array)
   get pendingProjectile(): Projectile | null {
     return this.pendingProjectiles[0] ?? null;
   }
@@ -64,41 +58,53 @@ export class Shooter extends BaseEnemy {
       SHOOTER_STATS.color,
     );
     this.floor = floor;
+    this.applyVariants(rollVariants(floor));
   }
 
   // ============================================================
+  // [🧱 BLOCK: Effective Damage with Berserker Mult]
+  // ============================================================
+  get meleeDamage()  { return Math.round(SHOOTER_STATS.meleeDamage  * this.damageMult); }
+  get rangedDamage() { return Math.round(SHOOTER_STATS.rangedDamage * this.damageMult); }
+
+  // ============================================================
   // [🧱 BLOCK: Fire Projectiles]
-  // Floor 1: single shot
-  // Floor 2+: 3-way spread at ±15°
   // ============================================================
   private fireProjectiles(ecx: number, ecy: number, pcx: number, pcy: number) {
     const baseAngle = Math.atan2(pcy - ecy, pcx - ecx);
+    const dmg       = this.rangedDamage;
 
     if (this.floor < 2) {
-      // Single shot
       this.pendingProjectiles.push(
-        new Projectile(ecx, ecy, pcx, pcy, SHOOTER_STATS.rangedDamage)
+        new Projectile(ecx, ecy, pcx, pcy, dmg)
       );
     } else {
-      // 3-way spread
       SPREAD_ANGLES.forEach((offset) => {
         const angle = baseAngle + offset;
         const tx    = ecx + Math.cos(angle) * 200;
         const ty    = ecy + Math.sin(angle) * 200;
         this.pendingProjectiles.push(
-          new Projectile(ecx, ecy, tx, ty, SHOOTER_STATS.rangedDamage)
+          new Projectile(ecx, ecy, tx, ty, dmg)
         );
       });
     }
   }
 
-  // ============================================================
-  // [🧱 BLOCK: Ranged Cooldown — floor-scaled]
-  // ============================================================
   private get rangedCooldown(): number {
-    return this.floor >= 4
-      ? 1400   // ↓ was 2000 — faster fire rate on Floor 4+
-      : SHOOTER_STATS.rangedCooldown;
+    return this.floor >= 4 ? 1400 : SHOOTER_STATS.rangedCooldown;
+  }
+
+  // ============================================================
+  // [🧱 BLOCK: Apply Hit Knockback to Player]
+  // ============================================================
+  applyHitKnockbackToPlayer(player: Player): void {
+    const { x: ecx, y: ecy } = rectCenter(this);
+    const { x: pcx, y: pcy } = rectCenter(player);
+    const dx   = pcx - ecx;
+    const dy   = pcy - ecy;
+    const dist = Math.sqrt(dx * dx + dy * dy) || 1;
+    player.vx += (dx / dist) * SHOOTER_STATS.hitKnockback;
+    player.vy += (dy / dist) * SHOOTER_STATS.hitKnockback;
   }
 
   // ============================================================
@@ -108,6 +114,8 @@ export class Shooter extends BaseEnemy {
     if (this.isDead) return;
 
     this.tickHitFlash();
+    this.tickVariantPulse();
+    this.tickRegen();
     this.attackTimer    -= 16;
     this.attackCooldown -= 16;
 
@@ -178,9 +186,6 @@ export class Shooter extends BaseEnemy {
     this.clampToWorld(worldW, worldH);
   }
 
-  // ============================================================
-  // [🧱 BLOCK: Maintain Preferred Distance]
-  // ============================================================
   private maintainDistance(dx: number, dy: number, dist: number) {
     const diff = dist - SHOOTER_STATS.preferredDist;
     if (Math.abs(diff) > 20) {
@@ -210,8 +215,6 @@ export class Shooter extends BaseEnemy {
     return distSq < hitSize * hitSize;
   }
 
-  get meleeDamage() { return SHOOTER_STATS.meleeDamage; }
-
   // ============================================================
   // [🧱 BLOCK: Draw]
   // ============================================================
@@ -224,7 +227,6 @@ export class Shooter extends BaseEnemy {
     const cx = sx + this.width  / 2;
     const cy = sy + this.height / 2;
 
-    // ── Floor badge (F2+: show spread count) ──────────────
     if (this.floor >= 2 && this.attackState === 'windup' && this.currentMode === 'ranged') {
       ctx.fillStyle = "rgba(250,204,21,0.9)";
       ctx.font      = "bold 8px 'Courier New'";
@@ -249,10 +251,8 @@ export class Shooter extends BaseEnemy {
       ctx.stroke();
 
       if (this.currentMode === 'ranged') {
-        // Draw spread aim lines for Floor 2+
-        const angles = this.floor >= 2 ? SPREAD_ANGLES : [0];
+        const angles    = this.floor >= 2 ? SPREAD_ANGLES : [0];
         const baseAngle = Math.atan2(this.strikeDir.y, this.strikeDir.x);
-
         angles.forEach((offset) => {
           const a = baseAngle + offset;
           ctx.strokeStyle = `rgba(250, 204, 21, ${offset === 0 ? 0.35 : 0.18})`;
@@ -276,6 +276,8 @@ export class Shooter extends BaseEnemy {
       ctx.fill();
     }
 
+    this.drawVariantAura(ctx, sx, sy);
+
     const bodyColor =
       this.attackState === 'windup' && this.currentMode === 'ranged'  ? '#fde047' :
       this.attackState === 'windup' && this.currentMode === 'melee'   ? '#fb923c' :
@@ -285,5 +287,6 @@ export class Shooter extends BaseEnemy {
 
     this.drawBody(ctx, sx, sy, bodyColor);
     this.drawHpBar(ctx, sx, sy);
+    this.drawVariantIndicators(ctx, sx, sy);
   }
 }

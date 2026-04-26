@@ -1,7 +1,7 @@
 // src/engine/enemy/boss/Brute.ts
 import { Player }                               from "../../Player";
 import { Camera }                               from "../../Camera";
-import { BaseEnemy }                            from "../BaseEnemy";
+import { BaseEnemy, rollVariants }              from "../BaseEnemy";
 import { Projectile }                           from "../Projectile";
 import { rectOverlap, circleCircle, rectCenter } from "../../Collision";
 
@@ -21,11 +21,12 @@ type BruteState =
 
 // ============================================================
 // [🧱 BLOCK: Stats]
+// HP buffed: 300 → 420 base
 // ============================================================
 const STATS = {
   baseSpeed:      1.2,
   rageSpeed:      2.0,
-  baseHp:         300,
+  baseHp:         420,   // ↑ was 300
   size:           80,
   color:          '#dc2626',
   rageColor:      '#7f1d1d',
@@ -49,9 +50,6 @@ const SPREAD_ANGLES = [-Math.PI / 9, 0, Math.PI / 9];
 
 // ============================================================
 // [🧱 BLOCK: Brute Class]
-// Floor 1: charge | slam
-// Floor 2+: charge | slam | shoot
-// Floor 3+: charge | double-slam | shoot
 // ============================================================
 export class Brute extends BaseEnemy {
   readonly bossName = 'BRUTE';
@@ -83,6 +81,8 @@ export class Brute extends BaseEnemy {
     super(x, y, STATS.size, STATS.baseSpeed,
       Math.round(STATS.baseHp * hpScale), STATS.xpValue, STATS.color);
     this.floor = floor;
+    // Bosses use a lower variant chance (isBoss = true)
+    this.applyVariants(rollVariants(floor, true));
   }
 
   // ============================================================
@@ -99,6 +99,13 @@ export class Brute extends BaseEnemy {
   private get currentChargeSpeed(): number {
     return this.isEnraged ? STATS.rageChargeSpeed : STATS.chargeSpeed;
   }
+
+  // ============================================================
+  // [🧱 BLOCK: Effective Damage with Variant Mult]
+  // ============================================================
+  get contactDamage() { return Math.round(STATS.damage      * this.damageMult); }
+  get slamDamage()    { return Math.round(STATS.slamDamage  * this.damageMult); }
+  get shootDamage()   { return Math.round(STATS.shootDamage * this.damageMult); }
 
   // ============================================================
   // [🧱 BLOCK: Pick Next Attack]
@@ -132,7 +139,7 @@ export class Brute extends BaseEnemy {
       const angle = baseAngle + offset;
       const tx = ecx + Math.cos(angle) * 300;
       const ty = ecy + Math.sin(angle) * 300;
-      this.pendingProjectiles.push(new Projectile(ecx, ecy, tx, ty, STATS.shootDamage));
+      this.pendingProjectiles.push(new Projectile(ecx, ecy, tx, ty, this.shootDamage));
     });
   }
 
@@ -144,6 +151,8 @@ export class Brute extends BaseEnemy {
 
     this.justEnragedThisFrame = false;
     this.tickHitFlash();
+    this.tickVariantPulse();
+    this.tickRegen();
     this.stateTimer     -= 16;
     this.indicatorPulse += 16;
     if (this.damageCooldown > 0) this.damageCooldown -= 16;
@@ -252,10 +261,6 @@ export class Brute extends BaseEnemy {
     return false;
   }
 
-  get contactDamage() { return STATS.damage; }
-  get slamDamage()    { return STATS.slamDamage; }
-  get shootDamage()   { return STATS.shootDamage; }
-
   // ============================================================
   // [🧱 BLOCK: Draw]
   // ============================================================
@@ -267,7 +272,6 @@ export class Brute extends BaseEnemy {
     const cx = sx + this.width  / 2;
     const cy = sy + this.height / 2;
 
-    // Slam 1
     if (this.bossState === 'warn_slam' || this.bossState === 'slamming') {
       const pulse = Math.sin(this.indicatorPulse / 150) * 0.3 + 0.7;
       if (this.bossState === 'slamming') {
@@ -280,7 +284,6 @@ export class Brute extends BaseEnemy {
       }
     }
 
-    // Slam 2
     if (this.bossState === 'slamming2' || this.slam2Active) {
       const pulse = Math.sin(this.indicatorPulse / 120) * 0.3 + 0.7;
       ctx.beginPath(); ctx.arc(cx, cy, this.slam2Radius || STATS.slam2MaxRadius, 0, Math.PI * 2);
@@ -292,7 +295,6 @@ export class Brute extends BaseEnemy {
       }
     }
 
-    // Charge warn
     if (this.bossState === 'warn_charge') {
       const pulse = Math.sin(this.indicatorPulse / 100) * 0.4 + 0.6;
       ctx.beginPath(); ctx.arc(cx, cy, 65, 0, Math.PI * 2);
@@ -302,7 +304,6 @@ export class Brute extends BaseEnemy {
       ctx.strokeStyle = `rgba(250,204,21,${pulse})`; ctx.lineWidth = 2; ctx.stroke();
     }
 
-    // Shoot warn
     if (this.bossState === 'warn_shoot') {
       const pulse = Math.sin(this.indicatorPulse / 100) * 0.4 + 0.6;
       ctx.beginPath(); ctx.arc(cx, cy, 55, 0, Math.PI * 2);
@@ -318,12 +319,13 @@ export class Brute extends BaseEnemy {
       });
     }
 
-    // Rage aura
     if (this.isEnraged) {
       const pulse = Math.sin(this.indicatorPulse / 80) * 0.3 + 0.4;
       ctx.beginPath(); ctx.arc(cx, cy, this.width / 2 + 8, 0, Math.PI * 2);
       ctx.strokeStyle = `rgba(127,29,29,${pulse})`; ctx.lineWidth = 3; ctx.stroke();
     }
+
+    this.drawVariantAura(ctx, sx, sy);
 
     const bodyColor =
       this.isHit                    ? '#ffffff' :
@@ -350,5 +352,7 @@ export class Brute extends BaseEnemy {
     ctx.textAlign = "center";
     ctx.fillText(this.isEnraged ? "⚡ ENRAGED" : this.bossName, cx, sy - 20);
     ctx.textAlign = "left";
+
+    this.drawVariantIndicators(ctx, sx - this.width / 2, sy, barW, -14);
   }
 }

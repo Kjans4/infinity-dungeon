@@ -10,10 +10,11 @@ import { Dasher }                               from "../enemy/Dasher";
 import { Bomber }                               from "../enemy/Bomber";
 import { spawnEliteWave }                       from "../enemy/spawn";
 import { RoomState }                            from "../RoomManager";
-import { GameState }                            from "../GameState";
+import { GameState, PENDING_LOOT_CAP }          from "../GameState";
 import { GoldSystem }                           from "./GoldSystem";
 import { WeaponSystem }                         from "./WeaponSystem";
-import { spawnBurst }                           from "../Particle";
+import { RenderSystem }                         from "./RenderSystem";
+import { spawnBurst, spawnHitSpark, spawnDamageNumber } from "../Particle";
 import { getRandomShopItems }                   from "../items/ItemPool";
 import { circleCircle, rectCenter }             from "../Collision";
 import {
@@ -64,8 +65,12 @@ const DROP_CHANCE = {
 const ELITE_DROP_MULT = 1.5;
 
 // ============================================================
-// [🧱 BLOCK: AnyHordeEnemy]
+// [🧱 BLOCK: Volatile Explosion Constants]
+// Smaller radius than Bomber's natural explosion.
 // ============================================================
+const VOLATILE_EXPLODE_RADIUS = 55;
+const VOLATILE_EXPLODE_DAMAGE = 20;
+
 type AnyHordeEnemy = Grunt | Shooter | Tank | Dasher | Bomber;
 
 function goldMultiplierForKills(kills: number, threshold: number): number {
@@ -75,38 +80,23 @@ function goldMultiplierForKills(kills: number, threshold: number): number {
   return Math.max(0.20, 1.0 - tier * 0.20);
 }
 
-// ============================================================
-// [🧱 BLOCK: Roll Item Drop]
-// No pendingLoot cap — items sit on the ground until the
-// player equips them via Inventory. Already-grounded items
-// are excluded so duplicates don't stack up.
-// ============================================================
 function rollItemDrop(
   state:  GameState,
-  chance: number,
-  floor:  number
+  chance: number
 ): import("../items/ItemPool").ShopItem | null {
   if (Math.random() > chance) return null;
-
-  const ownedCharmIds = state.playerStats.charms.map((c) => c.id);
-  const ownedWeaponId = state.playerStats.equippedWeaponItem?.id ?? null;
-  const ownedArmorIds = Object.values(state.playerStats.armorSlots)
+  const ownedCharmIds   = state.playerStats.charms.map((c) => c.id);
+  const ownedWeaponId   = state.playerStats.equippedWeaponItem?.id ?? null;
+  const ownedArmorIds   = Object.values(state.playerStats.armorSlots)
     .filter(Boolean).map((a) => a!.id);
-
-  // Exclude items already sitting on the ground
-  const groundCharmIds = state.itemDrops
-    .filter((d) => !d.collected && d.item.kind === "charm").map((d) => d.item.id);
-  const groundWeaponId = state.itemDrops
-    .find((d) => !d.collected && d.item.kind === "weapon")?.item.id ?? null;
-  const groundArmorIds = state.itemDrops
-    .filter((d) => !d.collected && d.item.kind === "armor").map((d) => d.item.id);
-
+  const pendingCharmIds = state.pendingLoot.filter((i) => i.kind === "charm").map((i) => i.id);
+  const pendingWeaponId = state.pendingLoot.find((i) => i.kind === "weapon")?.id ?? null;
+  const pendingArmorIds = state.pendingLoot.filter((i) => i.kind === "armor").map((i) => i.id);
   const pool = getRandomShopItems(
-    [...ownedCharmIds, ...groundCharmIds],
-    ownedWeaponId ?? groundWeaponId,
-    [...ownedArmorIds, ...groundArmorIds],
-    1,
-    floor
+    [...ownedCharmIds, ...pendingCharmIds],
+    ownedWeaponId ?? pendingWeaponId,
+    [...ownedArmorIds, ...pendingArmorIds],
+    1
   );
   return pool[0] ?? null;
 }
@@ -138,12 +128,14 @@ export class HordeSystem {
     state.alive         = 0;
     state.lastSpawn     = 0;
     state.roomEntryTime = Date.now();
-    state.projectiles = [];
-    state.goldDrops   = [];
-    state.itemDrops   = [];
-    state.particles   = [];
-    state.boss        = null;
-    state.enemies     = [];
+    state.projectiles   = [];
+    state.goldDrops     = [];
+    state.itemDrops     = [];
+    state.particles     = [];
+    state.hitSparks     = [];
+    state.damageNumbers = [];
+    state.boss          = null;
+    state.enemies       = [];
 
     state.door          = new Door(worldW);
     state.door.isActive = false;
@@ -157,16 +149,18 @@ export class HordeSystem {
   // [🧱 BLOCK: Reset]
   // ============================================================
   reset(state: GameState) {
-    state.enemies     = [];
-    state.projectiles = [];
-    state.goldDrops   = [];
-    state.itemDrops   = [];
-    state.particles   = [];
-    state.door        = null;
-    state.shopNpc     = null;
-    state.kills       = 0;
-    state.alive       = 0;
-    state.lastSpawn   = 0;
+    state.enemies       = [];
+    state.projectiles   = [];
+    state.goldDrops     = [];
+    state.itemDrops     = [];
+    state.particles     = [];
+    state.hitSparks     = [];
+    state.damageNumbers = [];
+    state.door          = null;
+    state.shopNpc       = null;
+    state.kills         = 0;
+    state.alive         = 0;
+    state.lastSpawn     = 0;
   }
 
   // ============================================================
@@ -178,15 +172,15 @@ export class HordeSystem {
         const a = enemies[i];
         if (a.isDead) continue;
         const aRadius = a.width / 2 + (a instanceof Tank ? TANK_RADIUS_BONUS : 0);
-        const acx = a.x + a.width / 2;
-        const acy = a.y + a.height / 2;
+        const acx     = a.x + a.width  / 2;
+        const acy     = a.y + a.height / 2;
 
         for (let j = i + 1; j < enemies.length; j++) {
           const b = enemies[j];
           if (b.isDead) continue;
           const bRadius = b.width / 2 + (b instanceof Tank ? TANK_RADIUS_BONUS : 0);
-          const bcx = b.x + b.width / 2;
-          const bcy = b.y + b.height / 2;
+          const bcx     = b.x + b.width  / 2;
+          const bcy     = b.y + b.height / 2;
 
           const dx   = bcx - acx;
           const dy   = bcy - acy;
@@ -195,15 +189,16 @@ export class HordeSystem {
           if (dist >= minD) continue;
 
           const overlap  = (minD - dist) * SEPARATION_STRENGTH;
-          const nx = dx / dist;
-          const ny = dy / dist;
+          const nx       = dx / dist;
+          const ny       = dy / dist;
           const aIsHeavy = a instanceof Tank;
           const bIsHeavy = b instanceof Tank;
-          const pushA = aIsHeavy ? overlap * 0.25 : (bIsHeavy ? overlap * 0.75 : overlap * 0.5);
-          const pushB = bIsHeavy ? overlap * 0.25 : (aIsHeavy ? overlap * 0.75 : overlap * 0.5);
+          const pushA    = aIsHeavy ? overlap * 0.25 : (bIsHeavy ? overlap * 0.75 : overlap * 0.5);
+          const pushB    = bIsHeavy ? overlap * 0.25 : (aIsHeavy ? overlap * 0.75 : overlap * 0.5);
 
           a.x -= nx * pushA; a.y -= ny * pushA;
           b.x += nx * pushB; b.y += ny * pushB;
+
           a.x = Math.max(0, Math.min(worldW - a.width,  a.x));
           a.y = Math.max(0, Math.min(worldH - a.height, a.y));
           b.x = Math.max(0, Math.min(worldW - b.width,  b.x));
@@ -265,8 +260,10 @@ export class HordeSystem {
   // [🧱 BLOCK: Handle Bomber Explosion]
   // ============================================================
   private handleBomberExplosion(
-    state: GameState, bomber: Bomber,
-    player: Player, ps: GameState['playerStats']
+    state:  GameState,
+    bomber: Bomber,
+    player: Player,
+    ps:     GameState['playerStats']
   ): void {
     const { x: bx, y: by } = rectCenter(bomber);
     state.particles.push(...spawnBurst(bx, by, "#f97316", 14, 2.0));
@@ -279,6 +276,75 @@ export class HordeSystem {
   }
 
   // ============================================================
+  // [🧱 BLOCK: Handle Volatile Death Explosion]
+  // Triggered when a volatile-variant enemy dies (not a Bomber).
+  // Smaller radius than Bomber, but still area damage.
+  // ============================================================
+  private handleVolatileExplosion(
+    state:  GameState,
+    enemy:  BaseEnemy,
+    player: Player,
+    ps:     GameState['playerStats'],
+    render: RenderSystem
+  ): void {
+    const cx = enemy.x + enemy.width  / 2;
+    const cy = enemy.y + enemy.height / 2;
+
+    // Visual flash
+    state.particles.push(...spawnBurst(cx, cy, "#f97316", 12, 1.8));
+    state.particles.push(...spawnBurst(cx, cy, "#ffffff",  5, 1.0));
+    render.shake('medium');
+
+    // Damage player if in range
+    const { x: px, y: py } = rectCenter(player);
+    const dx   = px - cx;
+    const dy   = py - cy;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+    if (dist < VOLATILE_EXPLODE_RADIUS + player.width / 2 && player.iFrames <= 0) {
+      let rawDmg = Math.round(VOLATILE_EXPLODE_DAMAGE * (1 - ps.damageReduction));
+      rawDmg = this.resolveBlock(player, rawDmg);
+      if (rawDmg > 0) player.takeHit(rawDmg);
+    }
+
+    // Chain damage nearby enemies
+    state.enemies.forEach((e) => {
+      if (e.isDead || e === enemy) return;
+      const ex = e.x + e.width  / 2;
+      const ey = e.y + e.height / 2;
+      if (Math.sqrt((cx - ex) ** 2 + (cy - ey) ** 2) < VOLATILE_EXPLODE_RADIUS) {
+        e.takeDamage(VOLATILE_EXPLODE_DAMAGE);
+      }
+    });
+  }
+
+  // ============================================================
+  // [🧱 BLOCK: Emit Hit Feedback]
+  // Called for every successful weapon hit. Spawns sparks,
+  // damage number, and triggers micro screen shake.
+  // ============================================================
+  private emitHitFeedback(
+    state:      GameState,
+    enemy:      BaseEnemy,
+    damage:     number,
+    attackType: string | null,
+    render:     RenderSystem
+  ): void {
+    const cx = enemy.x + enemy.width  / 2;
+    const cy = enemy.y + enemy.height / 2;
+
+    // Spark color matches attack type
+    const sparkColor =
+      attackType === 'charged_heavy' ? '#ef4444' :
+      attackType === 'heavy'         ? '#fb923c' :
+      attackType === 'charged_light' ? '#facc15' :
+                                       '#f1f5f9';
+
+    state.hitSparks.push(...spawnHitSpark(cx, cy, sparkColor, 4));
+    state.damageNumbers.push(spawnDamageNumber(cx, cy - enemy.height / 2, damage, attackType));
+    render.shake('micro');
+  }
+
+  // ============================================================
   // [🧱 BLOCK: Update]
   // ============================================================
   update(
@@ -286,11 +352,12 @@ export class HordeSystem {
     player: Player,
     rs:     RoomState,
     worldW: number,
-    worldH: number
+    worldH: number,
+    render: RenderSystem
   ): { event: null; goldCollected: number } {
-    const ps           = state.playerStats;
-    const isElite      = rs.phase === 'elite';
-    const threshold    = this.getThreshold(rs.floor, isElite);
+    const ps        = state.playerStats;
+    const isElite   = rs.phase === 'elite';
+    const threshold = this.getThreshold(rs.floor, isElite);
     const thresholdMet = state.kills >= threshold;
 
     // ── Door ─────────────────────────────────────────────────
@@ -332,16 +399,21 @@ export class HordeSystem {
       } else {
         (enemy as any).stunTimer -= 16;
         if ((enemy as any).stunTimer < 0) (enemy as any).stunTimer = 0;
-        enemy.vx = 0; enemy.vy = 0;
+        enemy.vx = 0;
+        enemy.vy = 0;
       }
 
+      // ── Drain projectiles from Shooters ───────────────────
       if (enemy instanceof Shooter && enemy.pendingProjectiles.length > 0) {
         state.projectiles.push(...enemy.pendingProjectiles);
         enemy.pendingProjectiles = [];
       }
 
-      if (enemy instanceof Bomber && enemy.isExploding) {
-        this.handleBomberExplosion(state, enemy, player, ps);
+      // ── Bomber explosion detection ────────────────────────
+      if (enemy instanceof Bomber) {
+        if (enemy.isExploding) {
+          this.handleBomberExplosion(state, enemy, player, ps);
+        }
       }
 
       if (enemy.isDead) return;
@@ -349,10 +421,11 @@ export class HordeSystem {
       // ── Windup-phase parry window ─────────────────────────
       if (!enemy.isStunned) {
         const isWindingUp =
-          (enemy instanceof Grunt   && (enemy as any).attackState === 'windup') ||
-          (enemy instanceof Shooter && (enemy as any).attackState === 'windup') ||
-          (enemy instanceof Tank    && (enemy as any).tankState   === 'windup') ||
-          (enemy instanceof Dasher  && (enemy as any).dasherState === 'windup');
+          (enemy instanceof Grunt    && (enemy as any).attackState === 'windup') ||
+          (enemy instanceof Shooter  && (enemy as any).attackState === 'windup') ||
+          (enemy instanceof Tank     && (enemy as any).tankState   === 'windup') ||
+          (enemy instanceof Dasher   && (enemy as any).dasherState === 'windup');
+
         if (isWindingUp && this.isEnemyInParryRange(player, enemy)) {
           this.resolveParry(player, enemy, state);
         }
@@ -367,7 +440,10 @@ export class HordeSystem {
           }
           let rawDmg = Math.round(enemy.dashDamage * (1 - ps.damageReduction));
           rawDmg = this.resolveBlock(player, rawDmg);
-          if (rawDmg > 0) { player.takeHit(rawDmg); tryIronWardenReflect(iw5Count, enemy); }
+          if (rawDmg > 0) {
+            player.takeHit(rawDmg);
+            tryIronWardenReflect(iw5Count, enemy);
+          }
           enemy.damageCooldown = 800;
         }
         return;
@@ -378,7 +454,10 @@ export class HordeSystem {
         if (enemy.isTouchingPlayer(player) && player.iFrames <= 0) {
           let rawDmg = Math.round(enemy.contactDmg * (1 - ps.damageReduction));
           rawDmg = this.resolveBlock(player, rawDmg);
-          if (rawDmg > 0) { player.takeHit(rawDmg); tryIronWardenReflect(iw5Count, enemy); }
+          if (rawDmg > 0) {
+            player.takeHit(rawDmg);
+            tryIronWardenReflect(iw5Count, enemy);
+          }
         }
         return;
       }
@@ -386,7 +465,12 @@ export class HordeSystem {
       // ── Standard melee contact ────────────────────────────
       if (!enemy.isMeleeHittingPlayer(player)) return;
       if (enemy.isStunned) return;
-      if (player.isParrying) { if (this.resolveParry(player, enemy, state)) return; }
+
+      if (player.isParrying) {
+        const parried = this.resolveParry(player, enemy, state);
+        if (parried) return;
+      }
+
       if (player.iFrames > 0) return;
 
       let rawDmg: number;
@@ -399,19 +483,40 @@ export class HordeSystem {
           tryIronWardenReflect(iw5Count, enemy);
         }
       } else if (enemy instanceof Shooter) {
-        rawDmg = Math.round(8 * (1 - ps.damageReduction));
+        rawDmg = Math.round(enemy.meleeDamage * (1 - ps.damageReduction));
         rawDmg = this.resolveBlock(player, rawDmg);
-        if (rawDmg > 0) { player.takeHit(rawDmg); tryIronWardenReflect(iw5Count, enemy); }
+        if (rawDmg > 0) {
+          player.takeHit(rawDmg);
+          // Knockback on Shooter hit
+          enemy.applyHitKnockbackToPlayer(player);
+          tryIronWardenReflect(iw5Count, enemy);
+        }
+      } else if (enemy instanceof Grunt) {
+        rawDmg = Math.round(enemy.meleeDamage * (1 - ps.damageReduction));
+        rawDmg = this.resolveBlock(player, rawDmg);
+        if (rawDmg > 0) {
+          player.takeHit(rawDmg);
+          // Knockback on Grunt hit
+          enemy.applyHitKnockbackToPlayer(player);
+          tryIronWardenReflect(iw5Count, enemy);
+        }
       } else {
         rawDmg = Math.round(15 * (1 - ps.damageReduction));
         rawDmg = this.resolveBlock(player, rawDmg);
-        if (rawDmg > 0) { player.takeHit(rawDmg); tryIronWardenReflect(iw5Count, enemy); }
+        if (rawDmg > 0) {
+          player.takeHit(rawDmg);
+          tryIronWardenReflect(iw5Count, enemy);
+        }
       }
     });
 
     // ── Separation ────────────────────────────────────────────
     this.separateEnemies(state.enemies, worldW, worldH);
-    if (state.shopNpc?.isActive) this.enforceSafeZone(state.enemies, state.shopNpc);
+
+    // ── Safe zone barrier ─────────────────────────────────────
+    if (state.shopNpc?.isActive) {
+      this.enforceSafeZone(state.enemies, state.shopNpc);
+    }
 
     // ── Weapon input + hit resolution ─────────────────────────
     this.weaponSystem.processInput(player);
@@ -438,6 +543,7 @@ export class HordeSystem {
         let finalAmt = enemy.isStunned ? Math.round(amount * PARRY_VULN_MULT) : amount;
         finalAmt = Math.round(finalAmt * riposteMult * momentumMult * iaijutsuMult);
 
+        // ── Bomber: weapon hit triggers explosion ──────────────
         if (enemy instanceof Bomber && !enemy.hasExploded) {
           enemy.triggerExplosion();
           this.handleBomberExplosion(state, enemy, player, ps);
@@ -452,8 +558,14 @@ export class HordeSystem {
           enemy.takeDamage(finalAmt);
         }
 
-        if (isRendMarked(enemy)) { enemy.takeDamage(REND_BONUS_DAMAGE); clearRendMark(enemy); }
+        if (isRendMarked(enemy)) {
+          enemy.takeDamage(REND_BONUS_DAMAGE);
+          clearRendMark(enemy);
+        }
         passive?.onHit?.(player, enemy, finalAmt, state);
+
+        // ── Hit feedback: sparks + damage number + micro shake ─
+        this.emitHitFeedback(state, enemy, finalAmt, player.attackType, render);
       }
     );
 
@@ -470,7 +582,8 @@ export class HordeSystem {
     const deadEnemies = state.enemies.filter((e) => e.isDead);
     state.enemies     = state.enemies.filter((e) => !e.isDead);
     const justKilled  = before - state.enemies.length;
-    const br5Count    = ps.getEquippedSetCounts()['blood_reaper'] ?? 0;
+
+    const br5Count = ps.getEquippedSetCounts()['blood_reaper'] ?? 0;
 
     if (justKilled > 0) {
       state.kills      += justKilled;
@@ -482,18 +595,23 @@ export class HordeSystem {
           enemy instanceof Tank    ? "tank"    :
           enemy instanceof Shooter ? "shooter" :
           enemy instanceof Dasher  ? "dasher"  :
-          enemy instanceof Bomber  ? "bomber"  : "grunt";
+          enemy instanceof Bomber  ? "bomber"  :
+                                     "grunt";
 
         const goldType: "grunt" | "shooter" | "tank" | "boss" =
           enemy instanceof Tank    ? "tank"    :
-          enemy instanceof Shooter ? "shooter" : "grunt";
+          enemy instanceof Shooter ? "shooter" :
+                                     "grunt";
 
-        const multiplier = goldMultiplierForKills(state.kills, threshold);
+        const killMult   = goldMultiplierForKills(state.kills, threshold);
+        // Variant gold multiplier stacks with kill multiplier
+        const variantMult = enemy.goldMultiplier;
         this.goldSystem.spawnFromEnemy(
           state,
           enemy.x + enemy.width  / 2,
           enemy.y + enemy.height / 2,
-          goldType, multiplier
+          goldType,
+          killMult * variantMult
         );
 
         state.particles.push(...spawnBurst(
@@ -502,31 +620,45 @@ export class HordeSystem {
           enemy.color, 6
         ));
 
-        // Spawn item on the ground — no cap, no auto-collect.
-        // Player opens Inventory while nearby to equip it.
-        const baseChance = DROP_CHANCE[type];
-        const chance     = isElite ? baseChance * ELITE_DROP_MULT : baseChance;
-        const dropped    = rollItemDrop(state, chance, rs.floor);
-        if (dropped) {
-          state.itemDrops.push(new ItemDrop(
-            enemy.x + enemy.width  / 2,
-            enemy.y + enemy.height / 2,
-            dropped
-          ));
+        // ── Volatile variant explosion on death ────────────────
+        if (enemy.isVolatile && !(enemy instanceof Bomber)) {
+          this.handleVolatileExplosion(state, enemy, player, ps, render);
+        }
+
+        if (state.pendingLoot.length < PENDING_LOOT_CAP) {
+          const baseChance = DROP_CHANCE[type];
+          const chance     = isElite ? baseChance * ELITE_DROP_MULT : baseChance;
+          const dropped    = rollItemDrop(state, chance);
+          if (dropped) {
+            state.itemDrops.push(new ItemDrop(
+              enemy.x + enemy.width  / 2,
+              enemy.y + enemy.height / 2,
+              dropped
+            ));
+          }
         }
 
         ps.charms.forEach((charm) => charm.onKill?.(player, ps.modifiers));
-        if (ps.healOnKill > 0) player.hp = Math.min(player.maxHp, player.hp + ps.healOnKill);
+        if (ps.healOnKill > 0) {
+          player.hp = Math.min(player.maxHp, player.hp + ps.healOnKill);
+        }
         passive?.onKill?.(player, enemy, state);
+
+        // ── Blood Reaper 5pc ───────────────────────────────────
         onBloodReaperKill(br5Count, enemy, state.enemies, state);
       });
     }
 
-    // ── Item drops — tick proximity only, filter collected ────
-    // No auto-pickup: update() just refreshes playerIsNear so the
-    // Inventory panel shows/hides drop cards reactively each frame.
-    state.itemDrops.forEach((drop) => drop.update(player));
-    state.itemDrops = state.itemDrops.filter((drop) => !drop.collected);
+    // ── Item drop pickup ──────────────────────────────────────
+    state.itemDrops = state.itemDrops.filter((drop) => {
+      if (drop.collected) return false;
+      drop.update(player);
+      if (state.pendingLoot.length >= PENDING_LOOT_CAP) {
+        return !drop.collected;
+      }
+      if (drop.playerIsNear) { state.pendingLoot.push(drop.item); return false; }
+      return !drop.collected;
+    });
 
     // ── Wave spawning ─────────────────────────────────────────
     const now          = Date.now();
@@ -540,9 +672,11 @@ export class HordeSystem {
         const spawnCount = isElite
           ? Math.min(Math.round(WAVE_SIZE * ELITE_WAVE_MULT), killsLeft)
           : baseCount;
+
         const newWave = isElite
           ? spawnEliteWave(spawnCount, worldW, worldH, rs.floor)
           : spawnWave(spawnCount, worldW, worldH, rs.roomInCycle, rs.floor);
+
         state.enemies.push(...newWave);
         state.alive     = spawnCount;
         state.lastSpawn = now;
@@ -562,6 +696,7 @@ export class HordeSystem {
     state.projectiles.forEach((proj) => {
       proj.update();
       if (!proj.isHittingPlayer(player)) return;
+
       if (player.isParrying) {
         const parried = player.tryParry();
         if (parried) {
@@ -571,7 +706,9 @@ export class HordeSystem {
           return;
         }
       }
+
       if (player.iFrames > 0) { proj.isDone = true; return; }
+
       let rawDmg = Math.round(proj.damage * (1 - ps.damageReduction));
       rawDmg = this.resolveBlock(player, rawDmg);
       if (rawDmg > 0) player.takeHit(rawDmg);
@@ -606,6 +743,8 @@ export class HordeSystem {
 
   // ============================================================
   // [🧱 BLOCK: Draw]
+  // Draws enemies, projectiles, items, gold, particles,
+  // hit sparks, and weapon visuals.
   // ============================================================
   draw(state: GameState, ctx: CanvasRenderingContext2D, camera: Camera, player: Player, worldW: number) {
     state.door?.draw(ctx, camera);
@@ -614,9 +753,16 @@ export class HordeSystem {
     state.projectiles.forEach((p) => p.draw(ctx, camera));
     state.itemDrops.forEach((d)   => d.draw(ctx, camera));
     this.goldSystem.draw(state, ctx, camera);
+
     state.particles.forEach((p)   => p.update());
     state.particles = state.particles.filter((p) => !p.isDone);
     state.particles.forEach((p)   => p.draw(ctx, camera));
+
+    // ── Hit sparks ─────────────────────────────────────────
+    state.hitSparks.forEach((s)   => s.update());
+    state.hitSparks = state.hitSparks.filter((s) => !s.isDone);
+    state.hitSparks.forEach((s)   => s.draw(ctx, camera));
+
     this.weaponSystem.draw(ctx, player, camera);
   }
 }

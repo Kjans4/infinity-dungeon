@@ -1,17 +1,18 @@
 // src/engine/enemy/Grunt.ts
 import { Player }       from "../Player";
 import { Camera }       from "../Camera";
-import { BaseEnemy }    from "./BaseEnemy";
+import { BaseEnemy, rollVariants }    from "./BaseEnemy";
 import { AttackState }  from "./types";
 import { getEnemySpeedScale, getEnemyHpScale } from "../RoomManager";
 import { circleRect, rectCenter }              from "../Collision";
 
 // ============================================================
 // [🧱 BLOCK: Grunt Stats]
+// HP buffed: 65 → 100 base
 // ============================================================
 const GRUNT_STATS = {
   speed:         1.4,
-  hp:            65,
+  hp:            100,   // ↑ was 65
   size:          28,
   color:         '#a855f7',
   xpValue:       1,
@@ -19,9 +20,10 @@ const GRUNT_STATS = {
   meleeWindup:   600,
   meleeDamage:   15,
   meleeCooldown: 1500,
-  // Hitbox circle radius for strike check
   strikeRadius:  28,
-  strikeOffset:  45,   // how far ahead of center the hitbox spawns
+  strikeOffset:  45,
+  // Knockback applied on hit
+  hitKnockback:  2.5,
 };
 
 // Dash lunge constants (Floor 3+)
@@ -33,8 +35,6 @@ type GruntState = AttackState | 'dash';
 
 // ============================================================
 // [🧱 BLOCK: Grunt Class]
-// Floor 1-2: chase → windup → strike → cooldown
-// Floor 3+:  chase → dash → windup → strike → cooldown
 // ============================================================
 export class Grunt extends BaseEnemy {
   attackState:    GruntState = 'chase';
@@ -56,6 +56,15 @@ export class Grunt extends BaseEnemy {
       GRUNT_STATS.color,
     );
     this.floor = floor;
+    this.applyVariants(rollVariants(floor));
+  }
+
+  // ============================================================
+  // [🧱 BLOCK: Effective Melee Damage]
+  // Multiplied by damageMult from Berserker variant.
+  // ============================================================
+  get meleeDamage() {
+    return Math.round(GRUNT_STATS.meleeDamage * this.damageMult);
   }
 
   // ============================================================
@@ -65,6 +74,8 @@ export class Grunt extends BaseEnemy {
     if (this.isDead) return;
 
     this.tickHitFlash();
+    this.tickVariantPulse();
+    this.tickRegen();
     this.attackTimer    -= 16;
     this.attackCooldown -= 16;
 
@@ -74,14 +85,12 @@ export class Grunt extends BaseEnemy {
     const dy   = pcy - ecy;
     const dist = Math.sqrt(dx * dx + dy * dy) || 1;
 
-    // Fade out dash trail every frame
     this.dashTrail = this.dashTrail
       .map((p) => ({ ...p, alpha: p.alpha - 0.08 }))
       .filter((p) => p.alpha > 0);
 
     switch (this.attackState) {
 
-      // ── Chase ───────────────────────────────────────────
       case 'chase':
         this.vx = (dx / dist) * this.speed;
         this.vy = (dy / dist) * this.speed;
@@ -101,7 +110,6 @@ export class Grunt extends BaseEnemy {
         }
         break;
 
-      // ── Dash (Floor 3+ only) ────────────────────────────
       case 'dash': {
         this.x += this.strikeDir.x * DASH_SPEED;
         this.y += this.strikeDir.y * DASH_SPEED;
@@ -124,7 +132,6 @@ export class Grunt extends BaseEnemy {
         break;
       }
 
-      // ── Windup ──────────────────────────────────────────
       case 'windup':
         this.vx = 0; this.vy = 0;
         if (this.attackTimer <= 100) {
@@ -136,7 +143,6 @@ export class Grunt extends BaseEnemy {
         }
         break;
 
-      // ── Strike ──────────────────────────────────────────
       case 'strike':
         this.x += this.strikeDir.x * 2;
         this.y += this.strikeDir.y * 2;
@@ -147,7 +153,6 @@ export class Grunt extends BaseEnemy {
         }
         break;
 
-      // ── Cooldown ────────────────────────────────────────
       case 'cooldown':
         this.vx = (dx / dist) * this.speed;
         this.vy = (dy / dist) * this.speed;
@@ -163,9 +168,7 @@ export class Grunt extends BaseEnemy {
   }
 
   // ============================================================
-  // [🧱 BLOCK: Melee Hit Check — uses circleRect from Collision]
-  // The strike hitbox is a circle projected ahead of the grunt
-  // center in the strike direction.
+  // [🧱 BLOCK: Melee Hit Check]
   // ============================================================
   isMeleeHittingPlayer(player: Player): boolean {
     if (this.attackState !== 'strike') return false;
@@ -175,7 +178,19 @@ export class Grunt extends BaseEnemy {
     return circleRect(hitX, hitY, GRUNT_STATS.strikeRadius, player);
   }
 
-  get meleeDamage() { return GRUNT_STATS.meleeDamage; }
+  // ============================================================
+  // [🧱 BLOCK: Apply Hit Knockback to Player]
+  // Small push-back on weapon hit for juice.
+  // ============================================================
+  applyHitKnockbackToPlayer(player: Player): void {
+    const { x: ecx, y: ecy } = rectCenter(this);
+    const { x: pcx, y: pcy } = rectCenter(player);
+    const dx   = pcx - ecx;
+    const dy   = pcy - ecy;
+    const dist = Math.sqrt(dx * dx + dy * dy) || 1;
+    player.vx += (dx / dist) * GRUNT_STATS.hitKnockback;
+    player.vy += (dy / dist) * GRUNT_STATS.hitKnockback;
+  }
 
   // ============================================================
   // [🧱 BLOCK: Draw]
@@ -189,7 +204,7 @@ export class Grunt extends BaseEnemy {
     const cx = sx + this.width  / 2;
     const cy = sy + this.height / 2;
 
-    // ── Dash trail (Floor 3+) ────────────────────────────
+    // Dash trail
     this.dashTrail.forEach((p) => {
       const tx = camera.toScreenX(p.x - this.width  / 2);
       const ty = camera.toScreenY(p.y - this.height / 2);
@@ -199,7 +214,7 @@ export class Grunt extends BaseEnemy {
     });
     ctx.globalAlpha = 1;
 
-    // ── Dash indicator ring ──────────────────────────────
+    // Dash indicator ring
     if (this.attackState === 'dash') {
       ctx.beginPath();
       ctx.arc(cx, cy, 20, 0, Math.PI * 2);
@@ -208,7 +223,7 @@ export class Grunt extends BaseEnemy {
       ctx.stroke();
     }
 
-    // ── Windup indicator ────────────────────────────────
+    // Windup indicator
     if (this.attackState === 'windup') {
       const progress = 1 - Math.max(0, this.attackTimer) / GRUNT_STATS.meleeWindup;
       const r        = 36 * (1 - progress * 0.5);
@@ -219,7 +234,7 @@ export class Grunt extends BaseEnemy {
       ctx.stroke();
     }
 
-    // ── Strike hitbox ────────────────────────────────────
+    // Strike hitbox
     if (this.attackState === 'strike') {
       const hitX = cx + this.strikeDir.x * GRUNT_STATS.strikeOffset;
       const hitY = cy + this.strikeDir.y * GRUNT_STATS.strikeOffset;
@@ -229,6 +244,9 @@ export class Grunt extends BaseEnemy {
       ctx.fill();
     }
 
+    // Variant aura (drawn before body)
+    this.drawVariantAura(ctx, sx, sy);
+
     const bodyColor =
       this.attackState === 'dash'   ? '#c084fc' :
       this.attackState === 'windup' ? '#fb923c' :
@@ -237,5 +255,6 @@ export class Grunt extends BaseEnemy {
 
     this.drawBody(ctx, sx, sy, bodyColor);
     this.drawHpBar(ctx, sx, sy);
+    this.drawVariantIndicators(ctx, sx, sy);
   }
 }

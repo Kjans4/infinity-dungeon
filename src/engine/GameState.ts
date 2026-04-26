@@ -5,15 +5,19 @@ import { Door }        from "./Door";
 import { GoldDrop }    from "./GoldDrop";
 import { ItemDrop }    from "./ItemDrop";
 import { ShopNPC }     from "./ShopNPC";
-import { Particle }    from "./Particle";
+import { Particle, HitSpark, DamageNumber } from "./Particle";
 import { PlayerStats } from "./PlayerStats";
+import { ShopItem }    from "./items/ItemPool";
 import { Grunt, Shooter, Tank, Projectile, Dasher, Bomber } from "./enemy";
 import { AnyBoss }     from "./enemy/boss/index";
 
 // ============================================================
+// [🧱 BLOCK: Pending Loot Cap]
+// ============================================================
+export const PENDING_LOOT_CAP = 3;
+
+// ============================================================
 // [🧱 BLOCK: Run Record — localStorage persistence]
-// Stores the stats of a single completed run.
-// "Best" is determined by floor reached, then kills as tiebreak.
 // ============================================================
 export interface RunRecord {
   floor:      number;
@@ -21,7 +25,7 @@ export interface RunRecord {
   kills:      number;
   goldEarned: number;
   elapsedMs:  number;
-  timestamp:  number;   // Date.now() at run end
+  timestamp:  number;
 }
 
 const LS_KEY_BEST    = "id_best_run";
@@ -30,7 +34,6 @@ const HISTORY_CAP    = 10;
 
 export function saveRunRecord(record: RunRecord): void {
   try {
-    // ── Update best ───────────────────────────────────────────
     const raw  = localStorage.getItem(LS_KEY_BEST);
     const best: RunRecord | null = raw ? JSON.parse(raw) : null;
     const isBetter =
@@ -39,14 +42,13 @@ export function saveRunRecord(record: RunRecord): void {
       (record.floor === best.floor && record.kills > best.kills);
     if (isBetter) localStorage.setItem(LS_KEY_BEST, JSON.stringify(record));
 
-    // ── Append to history (newest first, capped) ──────────────
     const histRaw = localStorage.getItem(LS_KEY_HISTORY);
     const history: RunRecord[] = histRaw ? JSON.parse(histRaw) : [];
     history.unshift(record);
     if (history.length > HISTORY_CAP) history.length = HISTORY_CAP;
     localStorage.setItem(LS_KEY_HISTORY, JSON.stringify(history));
   } catch {
-    // localStorage unavailable (SSR / private browsing) — silently skip
+    // localStorage unavailable — silently skip
   }
 }
 
@@ -81,17 +83,28 @@ export class GameState {
   itemDrops:   ItemDrop[];
   particles:   Particle[];
 
+  // ============================================================
+  // [🧱 BLOCK: Hit Feedback Arrays]
+  // hitSparks    — small sparks on weapon hit, drawn in systems
+  // damageNumbers — floating damage text, drawn by RenderSystem
+  // ============================================================
+  hitSparks:     HitSpark[];
+  damageNumbers: DamageNumber[];
+
   // Economy
   gold:        number;
   playerStats: PlayerStats;
 
-  // Horde tracking (resets per room)
+  // Pending loot
+  pendingLoot: ShopItem[];
+
+  // Horde tracking
   kills:         number;
   alive:         number;
   lastSpawn:     number;
   roomEntryTime: number;
 
-  // ── Run-wide stats ────────────────────────────────────────
+  // Run-wide stats
   totalKills:      number;
   totalGoldEarned: number;
   runStartTime:    number;
@@ -114,9 +127,12 @@ export class GameState {
     this.goldDrops   = [];
     this.itemDrops   = [];
     this.particles   = [];
+    this.hitSparks   = [];
+    this.damageNumbers = [];
 
     this.gold        = 0;
     this.playerStats = new PlayerStats();
+    this.pendingLoot = [];
 
     this.kills         = 0;
     this.alive         = 0;
@@ -134,19 +150,22 @@ export class GameState {
   // [🧱 BLOCK: Full Reset]
   // ============================================================
   reset() {
-    this.enemies     = [];
-    this.boss        = null;
-    this.door        = null;
-    this.shopNpc     = null;
-    this.projectiles = [];
-    this.goldDrops   = [];
-    this.itemDrops   = [];
-    this.particles   = [];
-    this.gold        = 0;
+    this.enemies       = [];
+    this.boss          = null;
+    this.door          = null;
+    this.shopNpc       = null;
+    this.projectiles   = [];
+    this.goldDrops     = [];
+    this.itemDrops     = [];
+    this.particles     = [];
+    this.hitSparks     = [];
+    this.damageNumbers = [];
+    this.gold          = 0;
     this.kills         = 0;
     this.alive         = 0;
     this.lastSpawn     = 0;
     this.roomEntryTime = 0;
+    this.pendingLoot   = [];
 
     this.totalKills      = 0;
     this.totalGoldEarned = 0;
@@ -162,18 +181,20 @@ export class GameState {
   // [🧱 BLOCK: Room Reset]
   // ============================================================
   resetRoom() {
-    this.enemies     = [];
-    this.projectiles = [];
-    this.goldDrops   = [];
-    this.itemDrops   = [];
-    this.particles   = [];
+    this.enemies       = [];
+    this.projectiles   = [];
+    this.goldDrops     = [];
+    this.itemDrops     = [];
+    this.particles     = [];
+    this.hitSparks     = [];
+    this.damageNumbers = [];
     this.kills         = 0;
     this.alive         = 0;
     this.lastSpawn     = 0;
     this.roomEntryTime = 0;
-    this.door        = null;
-    this.shopNpc     = null;
-    this.boss        = null;
+    this.door          = null;
+    this.shopNpc       = null;
+    this.boss          = null;
   }
 
   resize(w: number, h: number) {

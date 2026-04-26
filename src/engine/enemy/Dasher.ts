@@ -1,28 +1,28 @@
 // src/engine/enemy/Dasher.ts
 import { Player }       from "../Player";
 import { Camera }       from "../Camera";
-import { BaseEnemy }    from "./BaseEnemy";
+import { BaseEnemy, rollVariants }    from "./BaseEnemy";
 import { getEnemySpeedScale, getEnemyHpScale } from "../RoomManager";
 import { circleCircle, rectCenter } from "../Collision";
 
 // ============================================================
 // [🧱 BLOCK: Constants]
+// HP buffed: 35 → 55 base
 // ============================================================
-const BASE_HP         = 35;
+const BASE_HP         = 55;    // ↑ was 35
 const BASE_SPEED      = 2.5;
 const SIZE            = 22;
 const COLOR           = "#06b6d4";
 const XP_VALUE        = 3;
 
 const DASH_SPEED      = 16;
-const DASH_DURATION   = 180;   // ms
+const DASH_DURATION   = 180;
 const DASH_DAMAGE     = 18;
-const DASH_COOLDOWN   = 1800;  // ms between dash sequences
-const WINDUP_MS       = 500;   // telegraph before dashing
-const ENGAGE_RANGE    = 250;   // how close before winding up
-const HIT_RADIUS      = 20;    // collision radius during dash
+const DASH_COOLDOWN   = 1800;
+const WINDUP_MS       = 500;
+const ENGAGE_RANGE    = 250;
+const HIT_RADIUS      = 20;
 
-// Floor 3+: two consecutive dashes before cooldown
 const DOUBLE_DASH_FLOOR = 3;
 
 // ============================================================
@@ -43,20 +43,16 @@ type DasherState =
 
 // ============================================================
 // [🧱 BLOCK: Dasher Class]
-// Fast melee enemy that winds up then dash-through-attacks.
-// Floor 3+: performs two consecutive dashes before cooldown.
 // ============================================================
 export class Dasher extends BaseEnemy {
   private dasherState: DasherState = 'chase';
   private stateTimer:  number      = 0;
   private dashDir:     { x: number; y: number } = { x: 0, y: 1 };
   private trail:       TrailPoint[] = [];
-  private dashCount:   number = 0;   // tracks double-dash on Floor 3+
+  private dashCount:   number = 0;
   private floor:       number;
 
   pendingProjectile: null = null;
-
-  // Damage cooldown so player can't be hit multiple times per dash
   damageCooldown: number = 0;
 
   constructor(x: number, y: number, floor: number = 1) {
@@ -69,6 +65,14 @@ export class Dasher extends BaseEnemy {
       COLOR,
     );
     this.floor = floor;
+    this.applyVariants(rollVariants(floor));
+  }
+
+  // ============================================================
+  // [🧱 BLOCK: Effective Dash Damage]
+  // ============================================================
+  get dashDamage(): number {
+    return Math.round(DASH_DAMAGE * this.damageMult);
   }
 
   // ============================================================
@@ -78,12 +82,13 @@ export class Dasher extends BaseEnemy {
     if (this.isDead) return;
 
     this.tickHitFlash();
+    this.tickVariantPulse();
+    this.tickRegen();
     if (this.tickStun()) return;
 
     this.stateTimer     -= 16;
     if (this.damageCooldown > 0) this.damageCooldown -= 16;
 
-    // Fade trail
     this.trail = this.trail
       .map((p) => ({ ...p, alpha: p.alpha - 0.06 }))
       .filter((p) => p.alpha > 0);
@@ -96,7 +101,6 @@ export class Dasher extends BaseEnemy {
 
     switch (this.dasherState) {
 
-      // ── Chase ───────────────────────────────────────────────
       case 'chase':
         this.vx = (dx / dist) * this.speed;
         this.vy = (dy / dist) * this.speed;
@@ -107,15 +111,12 @@ export class Dasher extends BaseEnemy {
           this.dasherState = 'windup';
           this.stateTimer  = WINDUP_MS;
           this.vx = 0; this.vy = 0;
-          // Lock aim dir at start of windup
           this.dashDir = { x: dx / dist, y: dy / dist };
         }
         break;
 
-      // ── Windup ──────────────────────────────────────────────
       case 'windup':
         this.vx = 0; this.vy = 0;
-        // Keep updating aim until 120ms before dash fires
         if (this.stateTimer > 120) {
           const { x: nx, y: ny } = rectCenter(this);
           const ddx = pcx - nx;
@@ -130,13 +131,11 @@ export class Dasher extends BaseEnemy {
         }
         break;
 
-      // ── Dashing ─────────────────────────────────────────────
       case 'dashing':
         this.x += this.dashDir.x * DASH_SPEED;
         this.y += this.dashDir.y * DASH_SPEED;
         this.clampToWorld(worldW, worldH);
 
-        // Leave afterimage trail
         this.trail.push({
           x:     this.x + this.width  / 2,
           y:     this.y + this.height / 2,
@@ -145,11 +144,8 @@ export class Dasher extends BaseEnemy {
 
         if (this.stateTimer <= 0) {
           this.vx = 0; this.vy = 0;
-
-          // Floor 3+: double dash before cooldown
           const maxDashes = this.floor >= DOUBLE_DASH_FLOOR ? 2 : 1;
           if (this.dashCount < maxDashes) {
-            // Brief windup before second dash
             this.dasherState = 'windup';
             this.stateTimer  = Math.round(WINDUP_MS * 0.6);
           } else {
@@ -160,9 +156,7 @@ export class Dasher extends BaseEnemy {
         }
         break;
 
-      // ── Cooldown ────────────────────────────────────────────
       case 'cooldown':
-        // Slowly orbit / reposition during cooldown
         this.vx = (dx / dist) * this.speed * 0.4;
         this.vy = (dy / dist) * this.speed * 0.4;
         this.x += this.vx;
@@ -179,7 +173,6 @@ export class Dasher extends BaseEnemy {
 
   // ============================================================
   // [🧱 BLOCK: Dash Hit Check]
-  // Only active while state === 'dashing'. Circle vs player center.
   // ============================================================
   isDashHittingPlayer(player: Player): boolean {
     if (this.dasherState !== 'dashing') return false;
@@ -188,8 +181,6 @@ export class Dasher extends BaseEnemy {
     const { x: pcx, y: pcy } = rectCenter(player);
     return circleCircle(ecx, ecy, HIT_RADIUS, pcx, pcy, player.width / 2);
   }
-
-  get dashDamage(): number { return DASH_DAMAGE; }
 
   // ============================================================
   // [🧱 BLOCK: Draw]
@@ -203,7 +194,7 @@ export class Dasher extends BaseEnemy {
     const cx = sx + this.width  / 2;
     const cy = sy + this.height / 2;
 
-    // ── Afterimage trail ──────────────────────────────────────
+    // Afterimage trail
     this.trail.forEach((p) => {
       const tx = camera.toScreenX(p.x - this.width  / 2);
       const ty = camera.toScreenY(p.y - this.height / 2);
@@ -213,12 +204,11 @@ export class Dasher extends BaseEnemy {
     });
     ctx.globalAlpha = 1;
 
-    // ── Windup telegraph ──────────────────────────────────────
+    // Windup telegraph
     if (this.dasherState === 'windup') {
       const progress = 1 - Math.max(0, this.stateTimer) / WINDUP_MS;
       const pulse    = Math.sin(Date.now() / 80) * 0.35 + 0.65;
 
-      // Direction arrow line
       ctx.strokeStyle = `rgba(6,182,212,${pulse})`;
       ctx.lineWidth   = 1.5;
       ctx.setLineDash([5, 4]);
@@ -231,7 +221,6 @@ export class Dasher extends BaseEnemy {
       ctx.stroke();
       ctx.setLineDash([]);
 
-      // Charge ring
       ctx.beginPath();
       ctx.arc(cx, cy, 14 + progress * 10, 0, Math.PI * 2);
       ctx.strokeStyle = `rgba(6,182,212,${pulse * 0.8})`;
@@ -239,7 +228,7 @@ export class Dasher extends BaseEnemy {
       ctx.stroke();
     }
 
-    // ── Dashing speed lines ───────────────────────────────────
+    // Dashing speed lines
     if (this.dasherState === 'dashing') {
       ctx.strokeStyle = "rgba(6,182,212,0.6)";
       ctx.lineWidth   = 1;
@@ -251,7 +240,8 @@ export class Dasher extends BaseEnemy {
       }
     }
 
-    // ── Body ──────────────────────────────────────────────────
+    this.drawVariantAura(ctx, sx, sy);
+
     const bodyColor =
       this.isHit                         ? '#ffffff' :
       this.dasherState === 'dashing'     ? '#67e8f9' :
@@ -260,5 +250,6 @@ export class Dasher extends BaseEnemy {
 
     this.drawBody(ctx, sx, sy, bodyColor);
     this.drawHpBar(ctx, sx, sy);
+    this.drawVariantIndicators(ctx, sx, sy);
   }
 }

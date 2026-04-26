@@ -8,19 +8,19 @@ import { Colossus }                    from "../enemy/boss/Colossus";
 import { Mage }                        from "../enemy/boss/Mage";
 import { Shade }                       from "../enemy/boss/Shade";
 import { RoomState }                   from "../RoomManager";
-import { GameState }                   from "../GameState";
+import { GameState, PENDING_LOOT_CAP } from "../GameState";
 import { BOSS_WORLD_W, BOSS_WORLD_H }  from "../Camera";
 import { GoldDrop }                    from "../GoldDrop";
 import { ItemDrop }                    from "../ItemDrop";
 import { Door }                        from "../Door";
 import { ShopNPC }                     from "../ShopNPC";
-import { spawnBurst }                  from "../Particle";
+import { RenderSystem }                from "./RenderSystem";
+import { spawnBurst, spawnHitSpark, spawnDamageNumber } from "../Particle";
 import { WeaponSystem }                from "./WeaponSystem";
 import { getRandomShopItems }          from "../items/ItemPool";
 import {
   isRiposteActive, tickRiposte, RIPOSTE_MULT, GLAIVE_EXTRA_COST,
 } from "../WeaponPassiveRegistry";
-import { tryIronWardenReflect }        from "../items/ArmorRegistry";
 
 // ============================================================
 // [🧱 BLOCK: Parry / Stagger Constants]
@@ -43,30 +43,17 @@ function spawnBossGold(state: GameState, x: number, y: number) {
   }
 }
 
-// ============================================================
-// [🧱 BLOCK: Spawn Boss Item Drop]
-// No pendingLoot cap. Excludes items already on the ground
-// so duplicates don't accumulate. floor scales armor stats.
-// ============================================================
-function spawnBossItemDrop(state: GameState, x: number, y: number, floor: number) {
-  const ownedCharmIds  = state.playerStats.charms.map((c) => c.id);
-  const ownedWeaponId  = state.playerStats.equippedWeaponItem?.id ?? null;
-  const ownedArmorIds  = Object.values(state.playerStats.armorSlots)
-    .filter(Boolean).map((a) => a!.id);
-
-  const groundCharmIds = state.itemDrops
-    .filter((d) => !d.collected && d.item.kind === "charm").map((d) => d.item.id);
-  const groundWeaponId = state.itemDrops
-    .find((d) => !d.collected && d.item.kind === "weapon")?.item.id ?? null;
-  const groundArmorIds = state.itemDrops
-    .filter((d) => !d.collected && d.item.kind === "armor").map((d) => d.item.id);
-
+function spawnBossItemDrop(state: GameState, x: number, y: number) {
+  if (state.pendingLoot.length >= PENDING_LOOT_CAP) return;
+  const ownedCharmIds   = state.playerStats.charms.map((c) => c.id);
+  const ownedWeaponId   = state.playerStats.equippedWeaponItem?.id ?? null;
+  const pendingCharmIds = state.pendingLoot.filter((i) => i.kind === "charm").map((i) => i.id);
+  const pendingWeaponId = state.pendingLoot.find((i) => i.kind === "weapon")?.id ?? null;
   const pool = getRandomShopItems(
-    [...ownedCharmIds, ...groundCharmIds],
-    ownedWeaponId ?? groundWeaponId,
-    [...ownedArmorIds, ...groundArmorIds],
-    1,
-    floor
+    [...ownedCharmIds, ...pendingCharmIds],
+    ownedWeaponId ?? pendingWeaponId,
+    [],
+    1
   );
   if (pool[0]) state.itemDrops.push(new ItemDrop(x, y, pool[0]));
 }
@@ -94,11 +81,8 @@ interface BossStagger {
 // [🧱 BLOCK: BossSystem]
 // ============================================================
 export class BossSystem {
-  private weaponSystem    = new WeaponSystem();
+  private weaponSystem = new WeaponSystem();
   private stagger: BossStagger = { timer: 0 };
-  // Stored in setup() so spawnBossItemDrop can use it at boss death
-  // without needing to thread RoomState through update().
-  private _currentFloor: number = 1;
 
   get isBossStaggered(): boolean { return this.stagger.timer > 0; }
 
@@ -111,17 +95,18 @@ export class BossSystem {
     state.player.vx = 0;
     state.player.vy = 0;
 
-    state.enemies     = [];
-    state.projectiles = [];
-    state.goldDrops   = [];
-    state.itemDrops   = [];
-    state.particles   = [];
-    state.kills       = 0;
-    state.door        = null;
-    state.shopNpc     = null;
+    state.enemies       = [];
+    state.projectiles   = [];
+    state.goldDrops     = [];
+    state.itemDrops     = [];
+    state.particles     = [];
+    state.hitSparks     = [];
+    state.damageNumbers = [];
+    state.kills         = 0;
+    state.door          = null;
+    state.shopNpc       = null;
 
     state.boss = selectBoss(BOSS_WORLD_W / 2 - 50, 80, rs.floor);
-    this._currentFloor = rs.floor;
     this.stagger = { timer: 0 };
     state.camera.update(state.player, BOSS_WORLD_W, BOSS_WORLD_H);
     state.playerStats.applyToPlayer(state.player);
@@ -131,20 +116,20 @@ export class BossSystem {
   // [🧱 BLOCK: Reset]
   // ============================================================
   reset(state: GameState) {
-    state.boss        = null;
-    state.door        = null;
-    state.shopNpc     = null;
-    state.goldDrops   = [];
-    state.itemDrops   = [];
-    state.particles   = [];
-    state.projectiles = [];
-    this.stagger      = { timer: 0 };
+    state.boss          = null;
+    state.door          = null;
+    state.shopNpc       = null;
+    state.goldDrops     = [];
+    state.itemDrops     = [];
+    state.particles     = [];
+    state.hitSparks     = [];
+    state.damageNumbers = [];
+    state.projectiles   = [];
+    this.stagger        = { timer: 0 };
   }
 
   // ============================================================
   // [🧱 BLOCK: Spawn Victory Door and Shop]
-  // Called once on boss death. Door is immediately active.
-  // ShopNPC positioned beside the door as in horde rooms.
   // ============================================================
   private spawnVictoryDoorAndShop(state: GameState) {
     state.door          = new Door(BOSS_WORLD_W);
@@ -155,10 +140,6 @@ export class BossSystem {
 
   // ============================================================
   // [🧱 BLOCK: Tick Door and Shop Post-Victory]
-  // Runs every frame after boss is dead so the door/shop keep
-  // animating and responding to player proximity.
-  // Returns goldCollected so the caller can credit state.gold
-  // and floorGoldRef — previously this was silently discarded.
   // ============================================================
   private tickDoorAndShop(state: GameState, player: Player): number {
     if (state.door) {
@@ -170,13 +151,11 @@ export class BossSystem {
       state.shopNpc.checkPlayerProximity(player);
     }
 
-    // Stamina regen while roaming post-victory
     const ps = state.playerStats;
     if (player.stamina < player.maxStamina) {
       player.stamina = Math.min(player.maxStamina, player.stamina + ps.staminaRegenRate);
     }
 
-    // Remaining gold drops — accumulate before filtering
     let goldCollected = 0;
     state.goldDrops.forEach((drop) => {
       const was = drop.collected;
@@ -185,11 +164,42 @@ export class BossSystem {
     });
     state.goldDrops = state.goldDrops.filter((d) => !d.collected);
 
-    // Item drops — tick proximity only, filter collected
-    state.itemDrops.forEach((drop) => drop.update(player));
-    state.itemDrops = state.itemDrops.filter((drop) => !drop.collected);
+    state.itemDrops = state.itemDrops.filter((drop) => {
+      if (drop.collected) return false;
+      drop.update(player);
+      if (state.pendingLoot.length >= PENDING_LOOT_CAP) {
+        return !drop.collected;
+      }
+      if (drop.playerIsNear) { state.pendingLoot.push(drop.item); return false; }
+      return !drop.collected;
+    });
 
     return goldCollected;
+  }
+
+  // ============================================================
+  // [🧱 BLOCK: Emit Hit Feedback]
+  // Sparks + damage number + micro screen shake on boss hit.
+  // ============================================================
+  private emitHitFeedback(
+    state:      GameState,
+    boss:       AnyBoss,
+    damage:     number,
+    attackType: string | null,
+    render:     RenderSystem
+  ): void {
+    const cx = boss.x + boss.width  / 2;
+    const cy = boss.y + boss.height / 2;
+
+    const sparkColor =
+      attackType === 'charged_heavy' ? '#ef4444' :
+      attackType === 'heavy'         ? '#fb923c' :
+      attackType === 'charged_light' ? '#facc15' :
+                                       '#f1f5f9';
+
+    state.hitSparks.push(...spawnHitSpark(cx, cy, sparkColor, 5));
+    state.damageNumbers.push(spawnDamageNumber(cx, cy - boss.height / 2, damage, attackType));
+    render.shake('micro');
   }
 
   // ============================================================
@@ -199,21 +209,19 @@ export class BossSystem {
     state:  GameState,
     player: Player,
     worldW: number,
-    worldH: number
+    worldH: number,
+    render: RenderSystem
   ): { event: "victory" | "enraged" | null; goldCollected: number } {
     const boss = state.boss as AnyBoss | null;
 
-    // ── Post-victory roam phase — boss already gone ───────────
-    // tickDoorAndShop now returns gold collected so it reaches
-    // GameCanvas and gets credited to state.gold / floorGoldRef.
+    // ── Post-victory roam phase ───────────────────────────────
     if (!boss) {
       const goldCollected = this.tickDoorAndShop(state, player);
       if (goldCollected > 0) state.totalGoldEarned += goldCollected;
       return { event: null, goldCollected };
     }
 
-    const ps       = state.playerStats;
-    const iw5Count = ps.getEquippedSetCounts()['iron_warden'] ?? 0;
+    const ps = state.playerStats;
 
     // ── Tick stagger ──────────────────────────────────────────
     if (this.stagger.timer > 0) {
@@ -223,7 +231,7 @@ export class BossSystem {
       boss.update(player, worldW, worldH);
     }
 
-    // ── Drain boss projectiles ─────────────────────────────────
+    // ── Drain boss projectiles ────────────────────────────────
     if (boss.pendingProjectiles.length > 0) {
       state.projectiles.push(...boss.pendingProjectiles);
       boss.pendingProjectiles = [];
@@ -234,7 +242,9 @@ export class BossSystem {
       this.resolveWeaponHitMageFakes(
         player, boss,
         ps.atkBonus + ps.lastStandBonus(player),
-        ps.weaponPassive?.id ?? null
+        ps.weaponPassive?.id ?? null,
+        state,
+        render
       );
     }
 
@@ -257,10 +267,7 @@ export class BossSystem {
 
       let rawDmg = Math.round(proj.damage * (1 - ps.damageReduction));
       if (player.isBlocking) rawDmg = player.applyBlockedHit(rawDmg);
-      if (rawDmg > 0) {
-        player.takeHit(rawDmg);
-        tryIronWardenReflect(iw5Count, boss);
-      }
+      if (rawDmg > 0) player.takeHit(rawDmg);
       proj.isDone = true;
     });
     state.projectiles = state.projectiles.filter((p) => !p.isDone);
@@ -281,10 +288,7 @@ export class BossSystem {
       } else {
         let rawDmg = Math.round(boss.contactDamage * (1 - ps.damageReduction));
         if (player.isBlocking) rawDmg = player.applyBlockedHit(rawDmg);
-        if (rawDmg > 0) {
-          player.takeHit(rawDmg);
-          tryIronWardenReflect(iw5Count, boss);
-        }
+        if (rawDmg > 0) player.takeHit(rawDmg);
         if (boss instanceof Brute || boss instanceof Colossus || boss instanceof Shade) {
           boss.damageCooldown = 800;
         }
@@ -308,10 +312,7 @@ export class BossSystem {
         } else {
           let rawDmg = Math.round(boss.lungeDamage * (1 - ps.damageReduction));
           if (player.isBlocking) rawDmg = player.applyBlockedHit(rawDmg);
-          if (rawDmg > 0) {
-            player.takeHit(rawDmg);
-            tryIronWardenReflect(iw5Count, boss);
-          }
+          if (rawDmg > 0) player.takeHit(rawDmg);
         }
       }
     }
@@ -320,10 +321,7 @@ export class BossSystem {
     if (boss.isSlamHittingPlayer(player) && player.iFrames <= 0 && !this.isBossStaggered) {
       let rawDmg = Math.round(boss.slamDamage * (1 - ps.damageReduction));
       if (player.isBlocking) rawDmg = player.applyBlockedHit(rawDmg);
-      if (rawDmg > 0) {
-        player.takeHit(rawDmg);
-        tryIronWardenReflect(iw5Count, boss);
-      }
+      if (rawDmg > 0) player.takeHit(rawDmg);
     }
 
     // ── Weapon input + hit vs boss ─────────────────────────────
@@ -338,7 +336,9 @@ export class BossSystem {
     this.resolveWeaponHit(
       player, boss,
       ps.atkBonus + ps.lastStandBonus(player),
-      ps.weaponPassive?.id ?? null
+      ps.weaponPassive?.id ?? null,
+      state,
+      render
     );
 
     // ── Stamina regen ─────────────────────────────────────────
@@ -356,9 +356,15 @@ export class BossSystem {
     state.goldDrops = state.goldDrops.filter((d) => !d.collected);
     state.totalGoldEarned += goldCollected;
 
-    // ── Item drops — tick proximity only, filter collected ────
-    state.itemDrops.forEach((drop) => drop.update(player));
-    state.itemDrops = state.itemDrops.filter((drop) => !drop.collected);
+    state.itemDrops = state.itemDrops.filter((drop) => {
+      if (drop.collected) return false;
+      drop.update(player);
+      if (state.pendingLoot.length >= PENDING_LOOT_CAP) {
+        return !drop.collected;
+      }
+      if (drop.playerIsNear) { state.pendingLoot.push(drop.item); return false; }
+      return !drop.collected;
+    });
 
     // ── Enrage event ──────────────────────────────────────────
     if (boss.justEnragedThisFrame) {
@@ -370,19 +376,31 @@ export class BossSystem {
       state.totalKills += 1;
       const bx = boss.x + boss.width  / 2;
       const by = boss.y + boss.height / 2;
-      spawnBossGold(state, bx, by);
-      spawnBossItemDrop(state, bx, by, this._currentFloor);
+
+      // Variant gold multiplier on boss death
+      const variantMult = boss.goldMultiplier;
+      const baseAmount  = randInt(BOSS_GOLD.min, BOSS_GOLD.max);
+      const finalAmount = Math.round(baseAmount * variantMult);
+      for (let i = 0; i < 5; i++) {
+        const ox = (Math.random() - 0.5) * 60;
+        const oy = (Math.random() - 0.5) * 60;
+        state.goldDrops.push(new GoldDrop(bx + ox, by + oy, Math.floor(finalAmount / 5)));
+      }
+
+      spawnBossItemDrop(state, bx, by);
       state.particles.push(...spawnBurst(bx, by, boss.color, 12, 1.8));
 
       if (ps.hasCharm('executioner')) {
         state.particles.push(...spawnBurst(bx, by, '#facc15', 20, 2.2));
       }
 
-      // Spawn door + shop immediately so player can act freely
-      this.spawnVictoryDoorAndShop(state);
+      // Volatile boss — chain explosion on death
+      if (boss.isVolatile) {
+        state.particles.push(...spawnBurst(bx, by, '#f97316', 16, 2.0));
+        render.shake('heavy');
+      }
 
-      // Null out boss so the death block never fires again next frame.
-      // The !boss early-return path will handle all post-victory ticking.
+      this.spawnVictoryDoorAndShop(state);
       state.boss = null;
 
       return { event: "victory", goldCollected };
@@ -398,7 +416,9 @@ export class BossSystem {
     player:    Player,
     boss:      AnyBoss,
     atkBonus:  number,
-    passiveId: string | null
+    passiveId: string | null,
+    state:     GameState,
+    render:    RenderSystem
   ): void {
     if (!player.isAttacking || !player.equippedWeapon || !player.attackType) return;
 
@@ -410,9 +430,8 @@ export class BossSystem {
     if (player.attackType === 'charged_light') damage = Math.round(damage * 2.5);
     if (player.attackType === 'charged_heavy') damage = Math.round(damage * 2.0);
 
-    if (this.isBossStaggered) damage = Math.round(damage * BOSS_PARRY_VULN_MULT);
-
-    if (isRiposteActive()) damage = Math.round(damage * RIPOSTE_MULT);
+    if (this.isBossStaggered)                 damage = Math.round(damage * BOSS_PARRY_VULN_MULT);
+    if (isRiposteActive())                    damage = Math.round(damage * RIPOSTE_MULT);
     if (passiveId === 'momentum' && player.dashTimer > 0) damage = Math.round(damage * 2.0);
     if (passiveId === 'iaijutsu' && player.attackType === 'charged_light') damage = Math.round(damage * 1.4);
 
@@ -430,6 +449,8 @@ export class BossSystem {
       } else {
         boss.takeDamage(damage);
       }
+      // ── Hit feedback on boss ───────────────────────────────
+      this.emitHitFeedback(state, boss, damage, player.attackType, render);
     }
   }
 
@@ -440,7 +461,9 @@ export class BossSystem {
     player:    Player,
     mage:      Mage,
     atkBonus:  number,
-    passiveId: string | null
+    passiveId: string | null,
+    state:     GameState,
+    render:    RenderSystem
   ): void {
     if (!player.isAttacking || !player.equippedWeapon || !player.attackType) return;
     if (mage.fakes.length === 0) return;
@@ -452,9 +475,9 @@ export class BossSystem {
     if (player.attackType === 'charged_light') damage = Math.round(damage * 2.5);
     if (player.attackType === 'charged_heavy') damage = Math.round(damage * 2.0);
 
-    if (isRiposteActive())                                                 damage = Math.round(damage * RIPOSTE_MULT);
-    if (passiveId === 'momentum' && player.dashTimer > 0)                  damage = Math.round(damage * 2.0);
-    if (passiveId === 'iaijutsu' && player.attackType === 'charged_light') damage = Math.round(damage * 1.4);
+    if (isRiposteActive())                                                   damage = Math.round(damage * RIPOSTE_MULT);
+    if (passiveId === 'momentum' && player.dashTimer > 0)                    damage = Math.round(damage * 2.0);
+    if (passiveId === 'iaijutsu' && player.attackType === 'charged_light')   damage = Math.round(damage * 1.4);
 
     const isHeavy = mode === 'heavy';
     const facing  = (isHeavy && player.lockedFacing) ? player.lockedFacing : player.facing;
@@ -467,6 +490,9 @@ export class BossSystem {
       const fy = fake.y + fake.height / 2;
       if (weapon.hitTest(px, py, facing, mode, fx, fy, fake.width, fake.height)) {
         fake.takeDamage(damage);
+        // Spark on fake hit
+        state.hitSparks.push(...spawnHitSpark(fx, fy, '#99f6e4', 3));
+        render.shake('micro');
       }
     });
   }
@@ -488,16 +514,22 @@ export class BossSystem {
 
     state.boss?.draw(ctx, camera);
 
-    // Door + ShopNPC appear after boss dies
     state.door?.draw(ctx, camera);
     state.shopNpc?.draw(ctx, camera, BOSS_WORLD_W);
 
     state.projectiles.forEach((p)  => p.draw(ctx, camera));
     state.itemDrops.forEach((d)    => d.draw(ctx, camera));
     state.goldDrops.forEach((drop) => drop.draw(ctx, camera));
+
     state.particles.forEach((p)    => p.update());
     state.particles = state.particles.filter((p) => !p.isDone);
     state.particles.forEach((p)    => p.draw(ctx, camera));
+
+    // ── Hit sparks ─────────────────────────────────────────
+    state.hitSparks.forEach((s)    => s.update());
+    state.hitSparks = state.hitSparks.filter((s) => !s.isDone);
+    state.hitSparks.forEach((s)    => s.draw(ctx, camera));
+
     this.weaponSystem.draw(ctx, player, camera);
   }
 }

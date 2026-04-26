@@ -1,51 +1,48 @@
 // src/engine/enemy/Bomber.ts
 import { Player }       from "../Player";
 import { Camera }       from "../Camera";
-import { BaseEnemy }    from "./BaseEnemy";
+import { BaseEnemy, rollVariants }    from "./BaseEnemy";
 import { getEnemySpeedScale, getEnemyHpScale } from "../RoomManager";
 import { circleCircle, rectCenter } from "../Collision";
 
 // ============================================================
 // [🧱 BLOCK: Constants]
+// HP buffed: 50 → 75 base
 // ============================================================
-const BASE_HP         = 50;
+const BASE_HP         = 75;    // ↑ was 50
 const BASE_SPEED      = 1.0;
 const SIZE            = 30;
 const COLOR           = "#f97316";
 const XP_VALUE        = 4;
 
-const ARM_RANGE       = 100;   // px — starts arming when this close
-const FUSE_MS         = 1200;  // ms until explosion after arming
-const EXPLODE_RADIUS  = 80;    // px
-const EXPLODE_RADIUS_FLOOR3 = 110; // px (floor 3+)
+const ARM_RANGE       = 100;
+const FUSE_MS         = 1200;
+const EXPLODE_RADIUS  = 80;
+const EXPLODE_RADIUS_FLOOR3 = 110;
 const EXPLODE_DAMAGE  = 35;
-const CONTACT_DAMAGE  = 8;     // light touch damage (not explosion)
+const CONTACT_DAMAGE  = 8;
 
 // ============================================================
 // [🧱 BLOCK: Bomber States]
 // ============================================================
 type BomberState =
   | 'chase'
-  | 'arming'      // fuse lit — counting down
-  | 'exploding'   // one-frame explosion trigger
+  | 'arming'
+  | 'exploding'
   | 'dead';
 
 // ============================================================
 // [🧱 BLOCK: Bomber Class]
-// Slow enemy that arms itself near the player and explodes.
-// Also explodes on death from weapon hits.
 // ============================================================
 export class Bomber extends BaseEnemy {
   private bomberState: BomberState = 'chase';
   private fuseTimer:   number      = 0;
   private floor:       number;
 
-  // Explosion state — read by HordeSystem to deal AoE damage
   isExploding:     boolean = false;
   explosionRadius: number  = 0;
   hasExploded:     boolean = false;
 
-  // Visual pulse
   private pulse: number = 0;
 
   pendingProjectile: null = null;
@@ -60,22 +57,28 @@ export class Bomber extends BaseEnemy {
       COLOR,
     );
     this.floor = floor;
+    this.applyVariants(rollVariants(floor));
   }
 
   // ============================================================
   // [🧱 BLOCK: Explosion Radius by Floor]
   // ============================================================
   get explodeRadius(): number {
+    // Volatile variant: explosion radius is NOT doubled since
+    // Bomber already has a large base — keep it readable.
     return this.floor >= 3 ? EXPLODE_RADIUS_FLOOR3 : EXPLODE_RADIUS;
   }
 
-  get explodeDamage(): number { return EXPLODE_DAMAGE; }
-  get contactDmg():   number  { return CONTACT_DAMAGE; }
+  get explodeDamage(): number {
+    return Math.round(EXPLODE_DAMAGE * this.damageMult);
+  }
+
+  get contactDmg(): number {
+    return Math.round(CONTACT_DAMAGE * this.damageMult);
+  }
 
   // ============================================================
   // [🧱 BLOCK: Trigger Explosion]
-  // Called by HordeSystem when enemy dies from weapon hit,
-  // OR called internally when fuse expires.
   // ============================================================
   triggerExplosion(): void {
     if (this.hasExploded) return;
@@ -92,13 +95,14 @@ export class Bomber extends BaseEnemy {
   update(player: Player, worldW: number, worldH: number): void {
     if (this.isDead && this.bomberState !== 'exploding') return;
     if (this.bomberState === 'exploding') {
-      // Explosion is one-frame — immediately clear
       this.isExploding = false;
       this.bomberState = 'dead';
       return;
     }
 
     this.tickHitFlash();
+    this.tickVariantPulse();
+    this.tickRegen();
     if (this.tickStun()) return;
 
     this.pulse += 16;
@@ -111,7 +115,6 @@ export class Bomber extends BaseEnemy {
 
     switch (this.bomberState) {
 
-      // ── Chase ─────────────────────────────────────────────
       case 'chase':
         this.vx = (dx / dist) * this.speed;
         this.vy = (dy / dist) * this.speed;
@@ -125,9 +128,7 @@ export class Bomber extends BaseEnemy {
         }
         break;
 
-      // ── Arming ────────────────────────────────────────────
       case 'arming':
-        // Keep slowly shuffling toward player while armed
         this.vx = (dx / dist) * this.speed * 0.5;
         this.vy = (dy / dist) * this.speed * 0.5;
         this.x += this.vx;
@@ -135,13 +136,11 @@ export class Bomber extends BaseEnemy {
 
         this.fuseTimer -= 16;
 
-        // Re-disarm if player runs away far enough
         if (dist > ARM_RANGE * 1.8) {
           this.bomberState = 'chase';
           this.fuseTimer   = 0;
         }
 
-        // Fuse expired → BOOM
         if (this.fuseTimer <= 0) {
           this.triggerExplosion();
         }
@@ -153,7 +152,6 @@ export class Bomber extends BaseEnemy {
 
   // ============================================================
   // [🧱 BLOCK: Explosion Hit Check]
-  // Called by HordeSystem after triggerExplosion() is detected.
   // ============================================================
   isExplosionHittingPlayer(player: Player): boolean {
     const { x: ecx, y: ecy } = rectCenter(this);
@@ -163,7 +161,6 @@ export class Bomber extends BaseEnemy {
 
   // ============================================================
   // [🧱 BLOCK: Contact Damage Check]
-  // Light body-collision damage while chasing.
   // ============================================================
   isTouchingPlayer(player: Player): boolean {
     if (this.bomberState !== 'chase' && this.bomberState !== 'arming') return false;
@@ -187,7 +184,7 @@ export class Bomber extends BaseEnemy {
     const cx = sx + this.width  / 2;
     const cy = sy + this.height / 2;
 
-    // ── Explosion flash ───────────────────────────────────────
+    // Explosion flash
     if (this.bomberState === 'exploding') {
       const r = this.explodeRadius;
       const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
@@ -204,19 +201,16 @@ export class Bomber extends BaseEnemy {
 
     const isArmed = this.bomberState === 'arming';
 
-    // ── Arm indicator — danger ring ───────────────────────────
     if (isArmed) {
       const fuseProgress = 1 - Math.max(0, this.fuseTimer) / FUSE_MS;
       const urgency      = Math.sin(this.pulse / (80 - fuseProgress * 60)) * 0.4 + 0.6;
 
-      // Explosion preview ring
       ctx.beginPath();
       ctx.arc(cx, cy, this.explodeRadius, 0, Math.PI * 2);
       ctx.strokeStyle = `rgba(249,115,22,${0.15 + fuseProgress * 0.25})`;
       ctx.lineWidth   = 1.5;
       ctx.stroke();
 
-      // Fuse countdown arc (fills clockwise)
       ctx.beginPath();
       ctx.arc(cx, cy, SIZE / 2 + 10, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * fuseProgress);
       ctx.strokeStyle = `rgba(239,68,68,${urgency})`;
@@ -224,17 +218,16 @@ export class Bomber extends BaseEnemy {
       ctx.stroke();
     }
 
-    // ── Body ──────────────────────────────────────────────────
-    const pulse = Math.sin(this.pulse / 120) * 0.3 + 0.7;
+    this.drawVariantAura(ctx, sx, sy);
 
+    const pulse = Math.sin(this.pulse / 120) * 0.3 + 0.7;
     const bodyColor =
-      this.isHit      ? '#ffffff' :
-      isArmed         ? `rgba(239,68,68,${0.7 + pulse * 0.3})` :
+      this.isHit  ? '#ffffff' :
+      isArmed     ? `rgba(239,68,68,${0.7 + pulse * 0.3})` :
       COLOR;
 
     this.drawBody(ctx, sx, sy, bodyColor);
 
-    // ── Fuse spark on top ─────────────────────────────────────
     if (isArmed) {
       const sparkPulse = Math.sin(this.pulse / 60) * 0.5 + 0.5;
       ctx.beginPath();
@@ -244,5 +237,6 @@ export class Bomber extends BaseEnemy {
     }
 
     this.drawHpBar(ctx, sx, sy);
+    this.drawVariantIndicators(ctx, sx, sy);
   }
 }
