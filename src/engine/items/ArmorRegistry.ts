@@ -10,8 +10,6 @@ import { spawnBurst } from "../Particle";
 
 // ============================================================
 // [🧱 BLOCK: Stat Value Computation]
-// Computed once at drop/purchase time, stored on the item.
-// value = clamp(base + floor(floor * rate), 0, max)
 // ============================================================
 export function computeArmorStat(slot: ArmorSlot, floor: number): number {
   const scale: ArmorStatScale = ARMOR_STAT_SCALE[slot];
@@ -21,8 +19,8 @@ export function computeArmorStat(slot: ArmorSlot, floor: number): number {
 
 // ============================================================
 // [🧱 BLOCK: Armor Piece Templates]
-// One template per set per slot.
-// statValue is filled in at runtime via computeArmorStat().
+// Slot order per set: helmet, armor, leggings, gloves, boots
+// 'weapon' slot renamed to 'leggings' throughout
 // ============================================================
 interface ArmorTemplate {
   id:      string;
@@ -37,30 +35,29 @@ interface ArmorTemplate {
 const ARMOR_TEMPLATES: ArmorTemplate[] = [
 
   // ── Iron Warden ─────────────────────────────────────────────
-  { id: 'iron_warden_helmet', name: 'Iron Warden Helmet', icon: '🪖', slot: 'helmet', setId: 'iron_warden', setName: 'Iron Warden', cost: 90  },
-  { id: 'iron_warden_armor',  name: 'Iron Warden Armor',  icon: '🛡', slot: 'armor',  setId: 'iron_warden', setName: 'Iron Warden', cost: 110 },
-  { id: 'iron_warden_boots',  name: 'Iron Warden Boots',  icon: '👢', slot: 'boots',  setId: 'iron_warden', setName: 'Iron Warden', cost: 80  },
-  { id: 'iron_warden_gloves', name: 'Iron Warden Gloves', icon: '🧤', slot: 'gloves', setId: 'iron_warden', setName: 'Iron Warden', cost: 85  },
-  { id: 'iron_warden_sword',  name: 'Iron Warden Sword',  icon: '⚔️', slot: 'weapon', setId: 'iron_warden', setName: 'Iron Warden', cost: 120 },
+  { id: 'iron_warden_helmet',   name: 'Iron Warden Helmet',   icon: '🪖', slot: 'helmet',   setId: 'iron_warden', setName: 'Iron Warden', cost: 90  },
+  { id: 'iron_warden_armor',    name: 'Iron Warden Armor',    icon: '🛡', slot: 'armor',    setId: 'iron_warden', setName: 'Iron Warden', cost: 110 },
+  { id: 'iron_warden_leggings', name: 'Iron Warden Leggings', icon: '👖', slot: 'leggings', setId: 'iron_warden', setName: 'Iron Warden', cost: 80  },
+  { id: 'iron_warden_gloves',   name: 'Iron Warden Gloves',   icon: '🧤', slot: 'gloves',   setId: 'iron_warden', setName: 'Iron Warden', cost: 85  },
+  { id: 'iron_warden_boots',    name: 'Iron Warden Boots',    icon: '👢', slot: 'boots',    setId: 'iron_warden', setName: 'Iron Warden', cost: 80  },
 
   // ── Shadow Walker ────────────────────────────────────────────
-  { id: 'shadow_walker_helmet', name: 'Shadow Walker Helmet', icon: '🪖', slot: 'helmet', setId: 'shadow_walker', setName: 'Shadow Walker', cost: 90  },
-  { id: 'shadow_walker_armor',  name: 'Shadow Walker Armor',  icon: '🥷', slot: 'armor',  setId: 'shadow_walker', setName: 'Shadow Walker', cost: 110 },
-  { id: 'shadow_walker_boots',  name: 'Shadow Walker Boots',  icon: '👢', slot: 'boots',  setId: 'shadow_walker', setName: 'Shadow Walker', cost: 80  },
-  { id: 'shadow_walker_gloves', name: 'Shadow Walker Gloves', icon: '🧤', slot: 'gloves', setId: 'shadow_walker', setName: 'Shadow Walker', cost: 85  },
-  { id: 'shadow_walker_weapon', name: 'Shadow Walker Blade',  icon: '🗡️', slot: 'weapon', setId: 'shadow_walker', setName: 'Shadow Walker', cost: 120 },
+  { id: 'shadow_walker_helmet',   name: 'Shadow Walker Helmet',   icon: '🪖', slot: 'helmet',   setId: 'shadow_walker', setName: 'Shadow Walker', cost: 90  },
+  { id: 'shadow_walker_armor',    name: 'Shadow Walker Armor',    icon: '🥷', slot: 'armor',    setId: 'shadow_walker', setName: 'Shadow Walker', cost: 110 },
+  { id: 'shadow_walker_leggings', name: 'Shadow Walker Leggings', icon: '👖', slot: 'leggings', setId: 'shadow_walker', setName: 'Shadow Walker', cost: 80  },
+  { id: 'shadow_walker_gloves',   name: 'Shadow Walker Gloves',   icon: '🧤', slot: 'gloves',   setId: 'shadow_walker', setName: 'Shadow Walker', cost: 85  },
+  { id: 'shadow_walker_boots',    name: 'Shadow Walker Boots',    icon: '👢', slot: 'boots',    setId: 'shadow_walker', setName: 'Shadow Walker', cost: 80  },
 
   // ── Blood Reaper ─────────────────────────────────────────────
-  { id: 'blood_reaper_helmet', name: 'Blood Reaper Helmet', icon: '💀', slot: 'helmet', setId: 'blood_reaper', setName: 'Blood Reaper', cost: 90  },
-  { id: 'blood_reaper_armor',  name: 'Blood Reaper Armor',  icon: '🩸', slot: 'armor',  setId: 'blood_reaper', setName: 'Blood Reaper', cost: 110 },
-  { id: 'blood_reaper_boots',  name: 'Blood Reaper Boots',  icon: '👢', slot: 'boots',  setId: 'blood_reaper', setName: 'Blood Reaper', cost: 80  },
-  { id: 'blood_reaper_gloves', name: 'Blood Reaper Gloves', icon: '🧤', slot: 'gloves', setId: 'blood_reaper', setName: 'Blood Reaper', cost: 85  },
-  { id: 'blood_reaper_weapon', name: 'Blood Reaper Scythe', icon: '⚔️', slot: 'weapon', setId: 'blood_reaper', setName: 'Blood Reaper', cost: 120 },
+  { id: 'blood_reaper_helmet',   name: 'Blood Reaper Helmet',   icon: '💀', slot: 'helmet',   setId: 'blood_reaper', setName: 'Blood Reaper', cost: 90  },
+  { id: 'blood_reaper_armor',    name: 'Blood Reaper Armor',    icon: '🩸', slot: 'armor',    setId: 'blood_reaper', setName: 'Blood Reaper', cost: 110 },
+  { id: 'blood_reaper_leggings', name: 'Blood Reaper Leggings', icon: '👖', slot: 'leggings', setId: 'blood_reaper', setName: 'Blood Reaper', cost: 80  },
+  { id: 'blood_reaper_gloves',   name: 'Blood Reaper Gloves',   icon: '🧤', slot: 'gloves',   setId: 'blood_reaper', setName: 'Blood Reaper', cost: 85  },
+  { id: 'blood_reaper_boots',    name: 'Blood Reaper Boots',    icon: '👢', slot: 'boots',    setId: 'blood_reaper', setName: 'Blood Reaper', cost: 80  },
 ];
 
 // ============================================================
 // [🧱 BLOCK: Build Armor Item]
-// Instantiates a template into a full ArmorItem at a given floor.
 // ============================================================
 export function buildArmorItem(templateId: string, floor: number): ArmorItem | null {
   const t = ARMOR_TEMPLATES.find((a) => a.id === templateId);
@@ -69,7 +66,6 @@ export function buildArmorItem(templateId: string, floor: number): ArmorItem | n
   const statType  = ARMOR_SLOT_STAT[t.slot];
   const statValue = computeArmorStat(t.slot, floor);
 
-  // Human-readable description
   let description = '';
   switch (statType) {
     case 'maxHp':          description = `+${statValue} Max HP`;                              break;
@@ -95,8 +91,6 @@ export function buildArmorItem(templateId: string, floor: number): ArmorItem | n
 
 // ============================================================
 // [🧱 BLOCK: Random Armor Item]
-// Returns a random ArmorItem for a given floor.
-// Excludes any IDs already owned/pending.
 // ============================================================
 export function getRandomArmorItem(
   floor:      number,
@@ -110,16 +104,11 @@ export function getRandomArmorItem(
 
 // ============================================================
 // [🧱 BLOCK: All Templates Export]
-// Used by ItemPool to build the shop pool.
 // ============================================================
 export { ARMOR_TEMPLATES };
 
 // ============================================================
 // [🧱 BLOCK: Set Bonus Definitions]
-// Each set has bonuses at 2, 4, and 5 pieces equipped.
-// Applied/removed by PlayerStats when armor changes.
-// Combat hooks (reflect, invisibility, shockwave) are called
-// by HordeSystem/BossSystem via ArmorSetBonus helpers below.
 // ============================================================
 export interface SetBonusTier {
   pieces:      2 | 4 | 5;
@@ -130,7 +119,7 @@ export interface ArmorSetDef {
   id:          ArmorSetId;
   name:        string;
   icon:        string;
-  color:       string;   // accent color for UI
+  color:       string;
   tiers:       SetBonusTier[];
 }
 
@@ -172,21 +161,14 @@ export const ARMOR_SET_DEFS: ArmorSetDef[] = [
 
 // ============================================================
 // [🧱 BLOCK: Set Bonus Stat Modifiers]
-// Called by PlayerStats via the cached _getSetBonuses() path.
-// Returns additive/multiplicative values layered on base stats.
-//
-// bonusStaminaRegenMult — multiplicative (1.0 = no change).
-// No set currently grants a stamina regen bonus, but the field
-// is here so future sets or tiers can add one without touching
-// PlayerStats.staminaRegenRate.
 // ============================================================
 export interface SetBonusModifiers {
   bonusMaxHp:            number;
-  bonusDamageReduction:  number;  // fraction e.g. 0.20
+  bonusDamageReduction:  number;
   bonusMoveSpeed:        number;
   bonusAtk:              number;
   dashCostReduction:     number;
-  bonusStaminaRegenMult: number;  // multiplier — 1.0 = unchanged
+  bonusStaminaRegenMult: number;
 }
 
 export function computeSetBonusModifiers(
@@ -205,15 +187,10 @@ export function computeSetBonusModifiers(
   const sw = equippedCounts['shadow_walker'] ?? 0;
   const br = equippedCounts['blood_reaper']  ?? 0;
 
-  // ── Iron Warden ──────────────────────────────────────────────
   if (iw >= 2) out.bonusMaxHp           += 15;
   if (iw >= 4) out.bonusDamageReduction += 0.20;
-
-  // ── Shadow Walker ────────────────────────────────────────────
   if (sw >= 2) out.dashCostReduction    += 10;
   if (sw >= 4) out.bonusMoveSpeed       += 1.5;
-
-  // ── Blood Reaper ─────────────────────────────────────────────
   if (br >= 2) out.bonusAtk             += 8;
 
   return out;
@@ -221,12 +198,8 @@ export function computeSetBonusModifiers(
 
 // ============================================================
 // [🧱 BLOCK: Combat Hook Helpers]
-// Called from HordeSystem / BossSystem each frame / event.
-// These handle the 5pc legendary bonuses that require
-// runtime combat logic, not just stat tweaks.
 // ============================================================
 
-// Iron Warden 5pc — 30% chance reflect 10 dmg on any hit taken
 export function tryIronWardenReflect(
   equippedCount: number,
   attacker: BaseEnemy
@@ -237,7 +210,6 @@ export function tryIronWardenReflect(
   }
 }
 
-// Shadow Walker 5pc — freeze all enemies for 1000ms on dash
 export function applyShadowWalkerFreeze(
   equippedCount: number,
   enemies: BaseEnemy[]
@@ -248,12 +220,10 @@ export function applyShadowWalkerFreeze(
   });
 }
 
-// Blood Reaper 5pc — shockwave every 5th kill, 120px radius, 25 dmg
 const BLOOD_REAPER_INTERVAL  = 5;
 const BLOOD_REAPER_RADIUS    = 120;
 const BLOOD_REAPER_DAMAGE    = 25;
 
-// Module-level kill counter — reset on equip/unequip via resetBloodReaperCounter()
 let bloodReaperKillCount = 0;
 
 export function resetBloodReaperCounter(): void {
@@ -270,7 +240,6 @@ export function onBloodReaperKill(
   bloodReaperKillCount++;
   if (bloodReaperKillCount % BLOOD_REAPER_INTERVAL !== 0) return;
 
-  // Shockwave — damages all enemies within 120px of the killed enemy
   const cx = killedEnemy.x + killedEnemy.width  / 2;
   const cy = killedEnemy.y + killedEnemy.height / 2;
 
@@ -283,6 +252,5 @@ export function onBloodReaperKill(
     }
   });
 
-  // Visual burst at kill point
   state.particles.push(...spawnBurst(cx, cy, '#f87171', 14, 1.6));
 }

@@ -42,6 +42,9 @@ const DEATH_VIGNETTE_MS = 800;
 const DEATH_HOLD_MS     = 400;
 const DEATH_TOTAL_MS    = DEATH_FLASH_MS + DEATH_VIGNETTE_MS + DEATH_HOLD_MS;
 
+// Offset for spawning displaced items on swap
+const SWAP_DROP_OFFSET  = 40;
+
 const REMAINING_MILESTONES = [
   { at: 5, color: "#f59e0b" },
   { at: 3, color: "#f97316" },
@@ -187,7 +190,16 @@ export default function GameCanvas() {
 
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.code === "F1") { e.preventDefault(); if (IS_DEV) setDevPanelOpen((p) => !p); return; }
-      if (e.code === "Escape") { setShowInventory(false); setIsPaused((p) => !p); return; }
+
+      // ESC: close inventory if open, otherwise toggle pause
+      if (e.code === "Escape") {
+        if (uiActiveRef.current.inventory) {
+          setShowInventory(false);
+        } else {
+          setIsPaused((p) => !p);
+        }
+        return;
+      }
 
       if (e.code === "KeyF" && !e.repeat) {
         const ui = uiActiveRef.current;
@@ -211,15 +223,25 @@ export default function GameCanvas() {
       if (e.code === "KeyI" && !e.repeat) {
         const ui = uiActiveRef.current;
         if (ui.menu || ui.shop || ui.gameOver) return;
+
+        // ── If inventory is already open: tap I to close (no hold needed) ──
+        if (ui.inventory) {
+          setShowInventory(false);
+          return;
+        }
+
+        // ── If inventory is closed: hold I for INVENTORY_HOLD_MS to open ──
         if (iHoldTimer.current) clearTimeout(iHoldTimer.current);
         iHoldTimer.current = setTimeout(() => {
-          setShowInventory((prev) => { const next = !prev; setIsPaused(next); return next; });
+          // No pause — game keeps running while inventory is open
+          setShowInventory(true);
           iHoldTimer.current = null;
         }, INVENTORY_HOLD_MS);
       }
     };
 
     const onKeyUp = (e: KeyboardEvent) => {
+      // Cancel the hold timer if I is released before the threshold
       if (e.code === "KeyI" && iHoldTimer.current) {
         clearTimeout(iHoldTimer.current);
         iHoldTimer.current = null;
@@ -402,19 +424,47 @@ export default function GameCanvas() {
     setIsMidRoom(false);
   }, []);
 
+  // ============================================================
+  // [🧱 BLOCK: Equip Drop — Swap Spawns Displaced Item]
+  // When equipping an item into an occupied slot, the displaced
+  // item is spawned as a new ItemDrop at a slight offset from
+  // the player so it doesn't overlap the newly equipped one.
+  // ============================================================
   const handleEquipDrop = useCallback((drop: ItemDrop) => {
     const state = stateRef.current;
     if (!state) return;
 
-    const item = drop.item;
+    const item   = drop.item;
+    const player = state.player;
+
+    // ── Calculate offset drop position ───────────────────────
+    // Spawn slightly to the right and below the player
+    const dropX = player.x + player.width  + SWAP_DROP_OFFSET;
+    const dropY = player.y + player.height + SWAP_DROP_OFFSET;
+
     if (item.kind === 'weapon') {
-      state.playerStats.equipWeapon(item as WeaponItem, state.gold, state.player);
+      // Displace existing weapon if any
+      const existing = state.playerStats.equippedWeaponItem;
+      if (existing) {
+        state.itemDrops.push(new ItemDrop(dropX, dropY, { ...existing, kind: 'weapon' }));
+      }
+      state.playerStats.equipWeapon(item as WeaponItem, state.gold, player);
+
     } else if (item.kind === 'armor') {
-      state.playerStats.equipArmor(item as ArmorItem, state.gold, state.player);
+      // Displace existing armor in that slot if any
+      const armorItem = item as ArmorItem;
+      const existing  = state.playerStats.armorSlots[armorItem.slot];
+      if (existing) {
+        state.itemDrops.push(new ItemDrop(dropX, dropY, { ...existing, kind: 'armor' }));
+      }
+      state.playerStats.equipArmor(armorItem, state.gold, player);
+
     } else if (item.kind === 'charm') {
-      state.playerStats.buyCharm(item as any, state.gold, state.player);
+      // Charms don't displace — player must sell first
+      state.playerStats.buyCharm(item as any, state.gold, player);
     }
 
+    // Mark original drop as collected and remove from state
     drop.collected = true;
     const idx = state.itemDrops.findIndex((d) => d === drop);
     if (idx !== -1) state.itemDrops.splice(idx, 1);
@@ -437,9 +487,9 @@ export default function GameCanvas() {
     setGold(newGold);
   }, []);
 
+  // ── Inventory close: just hide overlay, no pause to clear ──
   const handleInventoryClose = useCallback(() => {
     setShowInventory(false);
-    setIsPaused(false);
   }, []);
 
   // ============================================================
@@ -499,6 +549,10 @@ export default function GameCanvas() {
 
   // ============================================================
   // [🧱 BLOCK: Game Loop]
+  // NOTE: showInventory is intentionally NOT in the halt condition.
+  // The game runs while inventory is open — enemies keep moving.
+  // Only showMenu, showShop, isGameOver, isPaused, showTransition
+  // halt the loop.
   // ============================================================
   useGameLoop((_dt: number) => {
     const canvas = canvasRef.current;
@@ -508,7 +562,7 @@ export default function GameCanvas() {
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
 
-    if (showMenu || showShop || isGameOver || isPaused || showInventory || showTransition) return;
+    if (showMenu || showShop || isGameOver || isPaused || showTransition) return;
 
     const rs      = roomRef.current;
     const isBoss  = rs.phase === 'boss' || rs.phase === 'victory';
@@ -585,7 +639,6 @@ export default function GameCanvas() {
     if (isHorde) {
       const prevKills = state.totalKills;
       const prevHp    = player.hp;
-      // ── Pass render into horde update for hit feedback ──────
       const { goldCollected } = hordeRef.current.update(state, player, rs, worldW, worldH, render);
 
       if (player.hp < prevHp) render.shake("light");
@@ -624,7 +677,6 @@ export default function GameCanvas() {
     if (isBoss) {
       const prevKills = state.totalKills;
       const prevHp    = player.hp;
-      // ── Pass render into boss update for hit feedback ────────
       const { event, goldCollected } = bossRef.current.update(state, player, worldW, worldH, render);
 
       if (player.hp < prevHp) render.shake((prevHp - player.hp) >= 25 ? "heavy" : "medium");
@@ -669,7 +721,7 @@ export default function GameCanvas() {
   const gameActive   = !showMenu && !isGameOver;
   const isBossPhase  = roomRef.current.phase === 'boss';
   const isElitePhase = roomRef.current.phase === 'elite';
-  const state          = stateRef.current;
+  const state        = stateRef.current;
   const isElite      = roomRef.current.phase === 'elite';
   const threshold    = hordeRef.current.getThreshold(hud.floor, isElite);
 
@@ -754,7 +806,7 @@ export default function GameCanvas() {
         />
       )}
 
-      {isPaused && !showMenu && !isGameOver && !showInventory && state && (
+      {isPaused && !showMenu && !isGameOver && state && (
         <PauseOverlay
           floor={hud.floor} room={hud.room}
           hp={hud.hp} maxHp={MAX_HP} gold={gold}
