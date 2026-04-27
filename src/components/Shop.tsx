@@ -29,21 +29,10 @@ interface ShopProps {
 // [🧱 BLOCK: Heal Tiers]
 // ============================================================
 const HEAL_TIERS = [
-  { label: "Tincture",  hp: 25,  baseCost: 40,  icon: "🩹" },
-  { label: "Draught",   hp: 50,  baseCost: 75,  icon: "💊" },
-  { label: "Elixir",    hp: 999, baseCost: 120, icon: "❤️" },
+  { label: "Tincture", hp: 25,  baseCost: 40,  icon: "🩹" },
+  { label: "Draught",  hp: 50,  baseCost: 75,  icon: "💊" },
+  { label: "Elixir",   hp: 999, baseCost: 120, icon: "❤️" },
 ];
-
-// ============================================================
-// [🧱 BLOCK: Gem Rule Divider]
-// ============================================================
-function GemRule() {
-  return (
-    <div className="shop-gem-rule">
-      <div className="shop-gem-rule-gem" />
-    </div>
-  );
-}
 
 // ============================================================
 // [🧱 BLOCK: Pill Button]
@@ -112,7 +101,7 @@ function StatRow({ statKey, playerStats, player, gold, floor, onSpend }: {
 
 // ============================================================
 // [🧱 BLOCK: Shop Item Card]
-// Handles weapon, charm, and armor purchaseable items.
+// Shorter card — no flex-grow, fixed compact height.
 // ============================================================
 function ShopItemCard({ item, gold, playerStats, player, onBuy }: {
   item: ShopItem; gold: number;
@@ -133,9 +122,9 @@ function ShopItemCard({ item, gold, playerStats, player, onBuy }: {
     ? playerStats.armorSlots[armorItem!.slot]?.id === armorItem!.id
     : playerStats.hasCharm(charmItem!.id);
 
-  const charmsFull  = isCharm && playerStats.charms.length >= playerStats.maxCharms;
-  const canAfford   = gold >= item.cost;
-  const canBuy      = !alreadyOwned && canAfford && !charmsFull;
+  const charmsFull = isCharm && playerStats.charms.length >= playerStats.maxCharms;
+  const canAfford  = gold >= item.cost;
+  const canBuy     = !alreadyOwned && canAfford && !charmsFull;
 
   const accentColor = isWeapon ? "#60a5fa" : isArmor ? "#4ade80" : "#f0c040";
   const typeLabel   = isWeapon
@@ -180,15 +169,17 @@ function ShopItemCard({ item, gold, playerStats, player, onBuy }: {
       {existingArmor && !alreadyOwned && (
         <div className="shop-item-card__replace-warn">Replaces {existingArmor.name}</div>
       )}
-      <div className="shop-item-card__cost">{item.cost}g</div>
-      {charmsFull && <div className="shop-item-card__full-warning">Sell a charm first</div>}
-      <PillBtn
-        label={alreadyOwned ? "Owned" : "Acquire"}
-        onClick={handleBuy}
-        disabled={!canBuy || alreadyOwned}
-        color={accentColor}
-        small
-      />
+      <div className="shop-item-card__footer">
+        <span className="shop-item-card__cost">{item.cost}g</span>
+        {charmsFull && <span className="shop-item-card__full-warning">Sell a charm first</span>}
+        <PillBtn
+          label={alreadyOwned ? "Owned" : "Acquire"}
+          onClick={handleBuy}
+          disabled={!canBuy || alreadyOwned}
+          color={accentColor}
+          small
+        />
+      </div>
     </div>
   );
 }
@@ -241,7 +232,7 @@ function EquippedWeaponPill({ item, onSell }: { item: WeaponItem; onSell: () => 
 }
 
 // ============================================================
-// [🧱 BLOCK: Healing Section]
+// [🧱 BLOCK: Healing Section — Column 3]
 // ============================================================
 function HealingSection({ player, gold, floor, onHeal }: {
   player: Player; gold: number; floor: number; onHeal: (newGold: number) => void;
@@ -250,9 +241,9 @@ function HealingSection({ player, gold, floor, onHeal }: {
   const hpPct    = Math.round((player.hp / player.maxHp) * 100);
 
   return (
-    <div className="shop-section shop-healing">
+    <div className="shop-healing">
       <div className="shop-healing__header">
-        <p className="shop-section__label">⚕ Healing Arts</p>
+        <span className="shop-section__label">⚕ Healing Arts</span>
         <span className="shop-healing__hp-badge">
           ❤ {Math.round(player.hp)} / {player.maxHp}
         </span>
@@ -278,11 +269,11 @@ function HealingSection({ player, gold, floor, onHeal }: {
                   <span className="shop-healing__tier-icon">{tier.icon}</span>
                   <div>
                     <p className="shop-healing__tier-label">{tier.label}</p>
-                    <p className="shop-healing__tier-sub">+{healAmt} vitality · {cost}g</p>
+                    <p className="shop-healing__tier-sub">+{healAmt} · {cost}g</p>
                   </div>
                 </div>
                 <PillBtn
-                  label={canAfford ? `Heal +${healAmt}` : "Insufficient gold"}
+                  label={canAfford ? `+${healAmt}` : "Need gold"}
                   onClick={() => { player.hp = Math.min(player.maxHp, player.hp + tier.hp); onHeal(gold - cost); }}
                   disabled={disabled}
                   color="#4ade80"
@@ -299,6 +290,10 @@ function HealingSection({ player, gold, floor, onHeal }: {
 
 // ============================================================
 // [🧱 BLOCK: Shop Main]
+// Fixed 1020×640 panel. Three columns, no scroll.
+//   Col 1 — Attributes (stat allocation)
+//   Col 2 — Wares (3 item cards + reroll)
+//   Col 3 — Healing / Equipped Weapon / Charms
 // ============================================================
 export default function Shop({
   floor, room, gold, playerStats, player,
@@ -344,38 +339,36 @@ export default function Shop({
             </div>
           </div>
 
-          <GemRule />
+          {/* ── 3-Column Body ── */}
+          <div className="shop-body">
 
-          {/* ── Main panels ── */}
-          <div className="shop-main">
-
-            {/* Stat allocation */}
-            <div className="shop-section shop-section--stats">
+            {/* ── Column 1: Attributes ── */}
+            <div className="shop-col">
               <p className="shop-section__label">Attributes · Cap {cap}/10</p>
-              {STAT_DEFS.map((def) => (
-                <StatRow
-                  key={def.key} statKey={def.key}
-                  playerStats={playerStats} player={player}
-                  gold={gold} floor={floor} onSpend={handleStatSpend}
-                />
-              ))}
+              <div className="shop-col__box shop-col__box--grow">
+                {STAT_DEFS.map((def) => (
+                  <StatRow
+                    key={def.key} statKey={def.key}
+                    playerStats={playerStats} player={player}
+                    gold={gold} floor={floor} onSpend={handleStatSpend}
+                  />
+                ))}
+              </div>
             </div>
 
-            {/* Right column */}
-            <div className="shop-right-col">
-
-              {/* Item slots */}
-              <div className="shop-section">
-                <div className="shop-section__items-header">
-                  <p className="shop-section__label">Wares</p>
-                  <PillBtn
-                    label={atRerollCap ? `Reroll ${nextRerollCost}g (max)` : `Reroll ${nextRerollCost}g`}
-                    onClick={handleReroll}
-                    disabled={gold < nextRerollCost}
-                    color="#5a4010"
-                    small
-                  />
-                </div>
+            {/* ── Column 2: Wares ── */}
+            <div className="shop-col">
+              <div className="shop-wares__header">
+                <p className="shop-section__label">Wares</p>
+                <PillBtn
+                  label={atRerollCap ? `Reroll ${nextRerollCost}g ·max` : `Reroll ${nextRerollCost}g`}
+                  onClick={handleReroll}
+                  disabled={gold < nextRerollCost}
+                  color="#5a4010"
+                  small
+                />
+              </div>
+              <div className="shop-col__box shop-col__box--grow">
                 <div className="shop-items-row">
                   {playerStats.shopOptions.map((item, i) => (
                     <ShopItemCard
@@ -390,9 +383,18 @@ export default function Shop({
                   )}
                 </div>
               </div>
+            </div>
 
-              {/* Equipped weapon */}
-              <div className="shop-section">
+            {/* ── Column 3: Healing / Weapon / Charms ── */}
+            <div className="shop-col">
+
+              {/* Healing */}
+              <div className="shop-col__box">
+                <HealingSection player={player} gold={gold} floor={floor} onHeal={handleHeal} />
+              </div>
+
+              {/* Equipped Weapon */}
+              <div className="shop-col__box">
                 <p className="shop-section__label">Equipped Weapon</p>
                 {playerStats.equippedWeaponItem ? (
                   <EquippedWeaponPill item={playerStats.equippedWeaponItem} onSell={handleSellWeapon} />
@@ -401,8 +403,8 @@ export default function Shop({
                 )}
               </div>
 
-              {/* Owned charms */}
-              <div className="shop-section">
+              {/* Charms */}
+              <div className="shop-col__box shop-col__box--grow">
                 <p className="shop-section__label">
                   Charms ({playerStats.charms.length}/{playerStats.maxCharms})
                 </p>
@@ -419,13 +421,6 @@ export default function Shop({
 
             </div>
           </div>
-
-          <GemRule />
-
-          {/* ── Healing ── */}
-          <HealingSection player={player} gold={gold} floor={floor} onHeal={handleHeal} />
-
-          <GemRule />
 
           {/* ── Footer ── */}
           <div className="shop-footer">

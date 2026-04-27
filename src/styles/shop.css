@@ -1,17 +1,20 @@
 /* ============================================================
    Shop — src/styles/shop.css
-   Fantasy RPG redesign — The Merchant's Tome
+   Fixed 1020×640 panel. Three columns. No scroll.
    ============================================================ */
 
 @import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700&family=Cinzel+Decorative:wght@400;700&family=IM+Fell+English:ital@0;1&display=swap');
 
+/* ============================================================
+   [🧱 BLOCK: Font Reset]
+   ============================================================ */
 .shop-backdrop,
 .shop-backdrop * {
   font-family: 'Cinzel', serif;
 }
 
 /* ============================================================
-   [🧱 BLOCK: Backdrop + Panel]
+   [🧱 BLOCK: Backdrop]
    ============================================================ */
 .shop-backdrop {
   position: fixed;
@@ -20,15 +23,19 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(0,0,0,0.88);
+  background: rgba(0, 0, 0, 0.88);
   padding: 20px;
 }
 
+/* ============================================================
+   [🧱 BLOCK: Panel — Fixed Size, No Scroll]
+   Matches Inventory at 1020×640.
+   ============================================================ */
 .shop-panel {
   position: relative;
-  width: min(960px, 100%);
-  max-height: 90vh;
-  overflow-y: auto;
+  width:      1020px;
+  height:     640px;
+  overflow:   hidden;
 
   background:
     repeating-linear-gradient(
@@ -46,10 +53,8 @@
   border: 1px solid #3a2808;
   box-shadow:
     0 0 0 1px #1e1608,
-    0 28px 70px rgba(0,0,0,0.85),
-    inset 0 1px 0 rgba(140,90,10,0.12);
-
-  padding: 0;
+    0 28px 70px rgba(0, 0, 0, 0.85),
+    inset 0 1px 0 rgba(140, 90, 10, 0.12);
 }
 
 /* Corner ornaments */
@@ -72,550 +77,452 @@
   pointer-events: none; z-index: 2;
 }
 
+/* ============================================================
+   [🧱 BLOCK: Panel Inner]
+   ============================================================ */
 .shop-panel-inner {
-  margin: 8px;
-  border: 1px solid #1e1608;
-  padding: 24px 28px 28px;
-  display: flex;
+  margin:   6px;
+  border:   1px solid #1e1608;
+  padding:  14px 16px 12px;
+  display:  flex;
   flex-direction: column;
-  gap: 20px;
+  height:   calc(100% - 12px);
+  gap:      10px;
 }
 
 /* ============================================================
    [🧱 BLOCK: Header]
    ============================================================ */
 .shop-header {
-  display: flex;
+  display:         flex;
   justify-content: space-between;
-  align-items: center;
+  align-items:     flex-end;
+  border-bottom:   2px solid #8b6914;
+  padding-bottom:  8px;
+  flex-shrink:     0;
 }
 
 .shop-header__eyebrow {
-  font-family: 'Cinzel', serif;
-  font-size: 8px;
-  color: #5a4010;
-  letter-spacing: 0.3em;
+  font-size:      8px;
+  color:          #3a2a0a;
+  letter-spacing: 2px;
   text-transform: uppercase;
-  margin-bottom: 4px;
+  margin-bottom:  3px;
 }
 
 .shop-header__title {
-  font-family: 'Cinzel Decorative', serif;
-  font-size: 26px;
-  font-weight: 700;
-  color: #f0c040;
-  text-shadow: 0 0 24px rgba(240,192,64,0.25);
-  letter-spacing: 2px;
+  font-family:    'Cinzel Decorative', serif;
+  font-size:      20px;
+  color:          #d4af37;
+  letter-spacing: 4px;
+  font-weight:    700;
 }
 
-.shop-header__gold {
-  text-align: right;
-}
+.shop-header__gold { text-align: right; }
 
 .shop-header__gold-label {
-  font-family: 'Cinzel', serif;
-  font-size: 8px;
-  color: #5a4010;
-  letter-spacing: 0.2em;
-  margin-bottom: 3px;
+  font-size:      8px;
+  color:          #3a2a0a;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  margin-bottom:  2px;
 }
 
 .shop-header__gold-value {
-  font-family: 'Cinzel Decorative', serif;
-  font-size: 22px;
-  font-weight: 700;
-  color: #f0c040;
-  text-shadow: 0 0 12px rgba(240,192,64,0.3);
+  font-family:    'Cinzel Decorative', serif;
+  font-size:      20px;
+  font-weight:    700;
+  color:          #d4af37;
 }
 
 /* ============================================================
-   [🧱 BLOCK: Gem Divider — shared]
+   [🧱 BLOCK: Section Label — shared]
    ============================================================ */
-.shop-gem-rule {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin: 4px 0;
-}
-.shop-gem-rule::before,
-.shop-gem-rule::after {
-  content: ''; flex: 1; height: 1px; background: #2e2008;
-}
-.shop-gem-rule-gem {
-  width: 7px; height: 7px;
-  background: #6a4c10; border: 1px solid #8B6914;
-  transform: rotate(45deg); flex-shrink: 0;
-}
-
-/* ============================================================
-   [🧱 BLOCK: Main Layout]
-   ============================================================ */
-.shop-main {
-  display: flex;
-  gap: 20px;
-  flex-wrap: wrap;
-}
-
-.shop-right-col {
-  flex: 1;
-  min-width: 320px;
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-}
-
-/* ============================================================
-   [🧱 BLOCK: Sections]
-   ============================================================ */
-.shop-section {
-  background: rgba(255,255,255,0.018);
-  border: 1px solid #2e2008;
-  border-top: 1px solid #3a2808;
-  padding: 14px 16px;
-  position: relative;
-}
-
-.shop-section--stats { flex: 1; min-width: 260px; }
-
 .shop-section__label {
-  font-family: 'Cinzel', serif;
-  font-size: 8px;
-  font-weight: 700;
-  color: #8B6914;
-  letter-spacing: 0.25em;
+  font-size:      8px;
+  font-weight:    700;
+  color:          #7a6020;
+  letter-spacing: 2px;
   text-transform: uppercase;
-  margin-bottom: 12px;
+  border-left:    3px solid #8b6914;
+  padding-left:   7px;
+  display:        block;
+  margin-bottom:  6px;
+  flex-shrink:    0;
 }
-
-.shop-section__items-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 12px;
-}
-.shop-section__items-header .shop-section__label { margin-bottom: 0; }
 
 /* ============================================================
-   [🧱 BLOCK: Stat Row — Diamond Pips]
+   [🧱 BLOCK: 3-Column Body]
    ============================================================ */
-.shop-stat-row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 7px 0;
-  border-bottom: 1px solid #1e1608;
-}
-
-.shop-stat-row__icon { font-size: 15px; width: 22px; }
-
-.shop-stat-row__info { flex: 1; }
-
-.shop-stat-row__header {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 4px;
-}
-
-.shop-stat-row__label {
-  font-family: 'Cinzel', serif;
-  font-size: 10px;
-  font-weight: 700;
-  color: #c0860c;
-  letter-spacing: 0.1em;
-}
-
-.shop-stat-row__desc {
-  font-family: 'IM Fell English', serif;
-  font-style: italic;
-  font-size: 9px;
-  color: #5a4010;
-}
-
-.shop-stat-row__pips {
-  display: flex;
-  gap: 4px;
-  align-items: center;
-}
-
-/* Diamond pip */
-.shop-stat-pip {
-  width: 8px; height: 8px;
-  background: #1e1608;
-  border: 1px solid #3a2808;
-  transform: rotate(45deg);
-}
-
-.shop-stat-pip--filled {
-  background: #8B6914;
-  border-color: #f0c040;
-  box-shadow: 0 0 4px rgba(240,192,64,0.4);
-}
-
-.shop-stat-row__actions {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 3px;
-}
-
-.shop-stat-row__cost {
-  font-family: 'Cinzel', serif;
-  font-size: 8px;
-  color: #5a4010;
+.shop-body {
+  display:               grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap:                   12px;
+  flex:                  1;
+  min-height:            0;
 }
 
 /* ============================================================
-   [🧱 BLOCK: Shop Item Card]
+   [🧱 BLOCK: Column]
+   ============================================================ */
+.shop-col {
+  display:        flex;
+  flex-direction: column;
+  gap:            8px;
+  min-height:     0;
+  overflow:       hidden;
+}
+
+/* Generic box used inside columns */
+.shop-col__box {
+  background:  rgba(0, 0, 0, 0.38);
+  border:      1px solid #2a2418;
+  box-shadow:  inset 0 0 0 1px #1a1610;
+  padding:     10px;
+  overflow:    hidden;
+}
+
+/* Grows to fill remaining column space */
+.shop-col__box--grow {
+  flex: 1;
+  min-height: 0;
+}
+
+/* ============================================================
+   [🧱 BLOCK: Wares Header — label + reroll side by side]
+   ============================================================ */
+.shop-wares__header {
+  display:         flex;
+  justify-content: space-between;
+  align-items:     center;
+  flex-shrink:     0;
+}
+
+.shop-wares__header .shop-section__label {
+  margin-bottom: 0;
+}
+
+/* ============================================================
+   [🧱 BLOCK: Item Cards Row]
+   Three short cards side by side inside the wares box.
    ============================================================ */
 .shop-items-row {
-  display: flex;
-  gap: 10px;
-  flex-wrap: wrap;
+  display:    flex;
+  gap:        8px;
+  height:     100%;
 }
 
 .shop-item-card {
-  background: rgba(255,255,255,0.02);
-  border: 1px solid #2e2008;
-  border-top: 1px solid #3a2808;
-  padding: 14px 12px;
-  display: flex;
+  background:  rgba(255,255,255,0.02);
+  border:      1px solid #2e2008;
+  border-top:  1px solid #3a2808;
+  padding:     10px 8px 8px;
+  display:     flex;
   flex-direction: column;
-  gap: 5px;
-  min-width: 150px;
-  flex: 1;
-  position: relative;
-  transition: border-color 0.15s, box-shadow 0.15s;
+  gap:         4px;
+  flex:        1;
+  min-width:   0;
+  transition:  border-color 0.15s, box-shadow 0.15s;
 }
 
 .shop-item-card:hover {
   border-color: #8B6914;
-  box-shadow: 0 0 12px rgba(139,105,20,0.15), inset 0 0 20px rgba(140,90,10,0.04);
+  box-shadow: inset 0 0 16px rgba(140, 90, 10, 0.04);
 }
 
 .shop-item-card--owned {
-  border-color: #3a2808;
-  opacity: 0.65;
+  border-color: #2a2010;
+  opacity: 0.6;
 }
 
 .shop-item-card__icon {
-  font-size: 26px;
+  font-size:  20px;
   text-align: center;
-  filter: drop-shadow(0 0 6px rgba(140,90,10,0.4));
+  flex-shrink: 0;
 }
 
 .shop-item-card__type {
-  font-family: 'Cinzel', serif;
-  font-size: 7px;
-  font-weight: 700;
-  text-align: center;
-  letter-spacing: 0.2em;
+  font-size:      7px;
+  font-weight:    700;
+  text-align:     center;
+  letter-spacing: 1px;
   text-transform: uppercase;
+  flex-shrink:    0;
 }
 
 .shop-item-card__name {
-  font-family: 'Cinzel', serif;
-  font-size: 10px;
+  font-size:   9px;
   font-weight: 700;
-  color: #f0c040;
-  text-align: center;
+  color:       #d4af37;
+  text-align:  center;
+  flex-shrink: 0;
 }
 
 .shop-item-card__desc {
   font-family: 'IM Fell English', serif;
-  font-style: italic;
-  font-size: 9px;
-  color: #8B6914;
-  text-align: center;
-  line-height: 1.5;
+  font-style:  italic;
+  font-size:   8px;
+  color:       #7a6020;
+  text-align:  center;
+  line-height: 1.4;
+  flex:        1;
 }
 
 .shop-item-card__tradeoff {
-  font-family: 'Cinzel', serif;
-  font-size: 8px;
-  color: #c0392b;
-  text-align: center;
+  font-size:   7px;
+  color:       #c0392b;
+  text-align:  center;
+  flex-shrink: 0;
 }
 
-/* ============================================================
-   [🧱 BLOCK: Armor-specific card labels]
-   ============================================================ */
-.shop-item-card__armor-slot {
-  font-family: 'Cinzel', serif;
-  font-size: 7px;
-  color: #3a5a3a;
-  text-align: center;
-  letter-spacing: 0.15em;
+.shop-item-card__passive {
+  display:       flex;
+  flex-direction: column;
+  gap:           2px;
+  background:    rgba(96,165,250,0.06);
+  border:        1px solid rgba(96,165,250,0.2);
+  border-left:   2px solid #4a7fa8;
+  padding:       4px 6px;
+  flex-shrink:   0;
+}
+
+.shop-item-card__passive-label {
+  font-size:      7px;
+  font-weight:    700;
+  color:          #4a7fa8;
+  letter-spacing: 1px;
   text-transform: uppercase;
-  background: rgba(74,222,128,0.05);
-  border: 1px solid rgba(74,222,128,0.15);
-  padding: 3px 6px;
+}
+
+.shop-item-card__passive-desc {
+  font-family: 'IM Fell English', serif;
+  font-style:  italic;
+  font-size:   8px;
+  color:       #6a9fc8;
+  line-height: 1.3;
+}
+
+.shop-item-card__armor-slot {
+  font-size:      7px;
+  color:          #3a5a3a;
+  text-align:     center;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  background:     rgba(74, 222, 128, 0.05);
+  border:         1px solid rgba(74, 222, 128, 0.15);
+  padding:        2px 4px;
+  flex-shrink:    0;
 }
 
 .shop-item-card__replace-warn {
   font-family: 'IM Fell English', serif;
-  font-style: italic;
-  font-size: 9px;
-  color: #f97316;
-  text-align: center;
+  font-style:  italic;
+  font-size:   8px;
+  color:       #f97316;
+  text-align:  center;
+  flex-shrink: 0;
+}
+
+/* Cost + acquire button row pinned to bottom of card */
+.shop-item-card__footer {
+  display:         flex;
+  align-items:     center;
+  justify-content: space-between;
+  gap:             4px;
+  flex-shrink:     0;
+  margin-top:      2px;
 }
 
 .shop-item-card__cost {
-  font-family: 'Cinzel', serif;
-  font-size: 10px;
+  font-size:   9px;
   font-weight: 700;
-  color: #f0c040;
-  text-align: center;
+  color:       #d4af37;
 }
 
 .shop-item-card__full-warning {
-  font-family: 'Cinzel', serif;
-  font-size: 7px;
-  color: #c0392b;
+  font-size:  7px;
+  color:      #c0392b;
+  flex:       1;
   text-align: center;
-  letter-spacing: 0.1em;
 }
 
 .shop-empty-msg {
   font-family: 'IM Fell English', serif;
-  font-style: italic;
-  font-size: 11px;
-  color: #3a2808;
-  padding: 16px;
+  font-style:  italic;
+  font-size:   11px;
+  color:       #2a2010;
+  padding:     12px 4px;
 }
 
 .shop-none-msg {
   font-family: 'IM Fell English', serif;
-  font-style: italic;
-  font-size: 11px;
-  color: #3a2808;
+  font-style:  italic;
+  font-size:   10px;
+  color:       #2a2010;
 }
 
 /* ============================================================
-   [🧱 BLOCK: Owned Pills]
+   [🧱 BLOCK: Healing — Column 3]
    ============================================================ */
-.shop-owned-pill {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  border: 1px solid #2e2008;
-  padding: 6px 10px;
-}
-
-.shop-owned-pill--charm  { border-left: 2px solid #8B6914; }
-.shop-owned-pill--weapon { border-left: 2px solid #c0860c; }
-
-.shop-owned-pill__icon { font-size: 16px; }
-
-.shop-owned-pill__name {
-  font-family: 'Cinzel', serif;
-  font-size: 10px;
-  color: #c0860c;
-  flex: 1;
-}
-
-.shop-owned-pill__weapon-info { flex: 1; }
-
-.shop-owned-pill__weapon-sub {
-  font-family: 'IM Fell English', serif;
-  font-style: italic;
-  font-size: 9px;
-  color: #5a4010;
-}
-
-.shop-owned-pill__confirm { display: flex; gap: 4px; }
-
-.shop-charms-list {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-/* ============================================================
-   [🧱 BLOCK: Healing Section]
-   ============================================================ */
-.shop-healing {
-  border-top: 1px solid #2a4010;
-}
-
 .shop-healing__header {
-  display: flex;
+  display:         flex;
   justify-content: space-between;
-  align-items: center;
-  margin-bottom: 10px;
+  align-items:     center;
+  margin-bottom:   6px;
 }
 
 .shop-healing__header .shop-section__label {
   margin-bottom: 0;
-  color: #4ade80;
+  color:         #4ade80;
 }
 
 .shop-healing__hp-badge {
-  font-family: 'Cinzel', serif;
-  font-size: 11px;
+  font-size:   10px;
   font-weight: 700;
-  color: #4ade80;
+  color:       #4ade80;
 }
 
 .shop-healing__bar-track {
-  width: 100%;
-  height: 5px;
-  background: #0a0804;
-  border: 1px solid #2e2008;
-  margin-bottom: 12px;
-  overflow: hidden;
+  width:         100%;
+  height:        4px;
+  background:    #0a0804;
+  border:        1px solid #1a2818;
+  margin-bottom: 8px;
+  overflow:      hidden;
 }
 
 .shop-healing__bar-fill {
-  height: 100%;
+  height:     100%;
   transition: width 0.2s ease;
 }
 
 .shop-healing__full-msg {
   font-family: 'IM Fell English', serif;
-  font-style: italic;
-  font-size: 11px;
-  color: #4ade80;
-  text-align: center;
-  padding: 4px 0;
+  font-style:  italic;
+  font-size:   10px;
+  color:       #4ade80;
+  text-align:  center;
+  padding:     4px 0;
 }
 
-.shop-healing__tiers { display: flex; flex-direction: column; gap: 8px; }
+.shop-healing__tiers {
+  display:        flex;
+  flex-direction: column;
+  gap:            5px;
+}
 
 .shop-healing__tier {
-  display: flex;
-  align-items: center;
+  display:         flex;
+  align-items:     center;
   justify-content: space-between;
-  background: rgba(255,255,255,0.015);
-  border: 1px solid #1e1608;
-  padding: 8px 12px;
+  background:      rgba(255, 255, 255, 0.01);
+  border:          1px solid #1a1610;
+  padding:         5px 8px;
 }
 
-.shop-healing__tier-info { display: flex; align-items: center; gap: 10px; }
-.shop-healing__tier-icon { font-size: 18px; }
+.shop-healing__tier-info {
+  display:     flex;
+  align-items: center;
+  gap:         6px;
+}
+
+.shop-healing__tier-icon { font-size: 14px; }
 
 .shop-healing__tier-label {
-  font-family: 'Cinzel', serif;
-  font-size: 10px;
-  font-weight: 700;
-  color: #c0860c;
-  margin-bottom: 2px;
+  font-size:     9px;
+  font-weight:   700;
+  color:         #7a6020;
+  margin-bottom: 1px;
 }
 
 .shop-healing__tier-sub {
   font-family: 'IM Fell English', serif;
-  font-style: italic;
-  font-size: 9px;
-  color: #5a4010;
+  font-style:  italic;
+  font-size:   8px;
+  color:       #3a2808;
+}
+
+/* ============================================================
+   [🧱 BLOCK: Owned Pills — Weapon & Charms]
+   ============================================================ */
+.shop-owned-pill {
+  display:     flex;
+  align-items: center;
+  gap:         8px;
+  border:      1px solid #2e2008;
+  padding:     5px 8px;
+}
+
+.shop-owned-pill--charm  { border-left: 2px solid #7a6020; }
+.shop-owned-pill--weapon { border-left: 2px solid #c0860c; }
+
+.shop-owned-pill__icon { font-size: 14px; flex-shrink: 0; }
+
+.shop-owned-pill__name {
+  font-size:   9px;
+  color:       #c0860c;
+  flex:        1;
+  font-weight: 700;
+}
+
+.shop-owned-pill__weapon-info { flex: 1; min-width: 0; }
+
+.shop-owned-pill__weapon-sub {
+  font-family: 'IM Fell English', serif;
+  font-style:  italic;
+  font-size:   8px;
+  color:       #3a2808;
+  white-space: nowrap;
+  overflow:    hidden;
+  text-overflow: ellipsis;
+}
+
+.shop-owned-pill__confirm { display: flex; gap: 4px; }
+
+.shop-charms-list {
+  display:        flex;
+  flex-direction: column;
+  gap:            4px;
 }
 
 /* ============================================================
    [🧱 BLOCK: Footer]
    ============================================================ */
 .shop-footer {
-  display: flex;
+  display:         flex;
   justify-content: center;
-  padding-top: 8px;
+  padding-top:     8px;
+  border-top:      1px solid #1e1608;
+  flex-shrink:     0;
 }
 
 /* ============================================================
-   [🧱 BLOCK: Pill Button]
+   [🧱 BLOCK: Pill Button — shared]
    ============================================================ */
 .shop-pill-btn {
-  font-family: 'Cinzel', serif;
-  font-weight: 700;
+  font-family:    'Cinzel', serif;
+  font-weight:    700;
   letter-spacing: 0.15em;
   text-transform: uppercase;
-  background: transparent;
-  cursor: pointer;
-  transition: all 0.12s ease;
-  white-space: nowrap;
-  color: var(--btn-color, #f0c040);
-  border: 1px solid var(--btn-color, #8B6914);
+  background:     transparent;
+  cursor:         pointer;
+  transition:     all 0.12s ease;
+  white-space:    nowrap;
+  color:          var(--btn-color, #f0c040);
+  border:         1px solid var(--btn-color, #8B6914);
 }
 
 .shop-pill-btn:not(.shop-pill-btn--disabled):hover {
-  color: #0e0b06;
+  color:            #0e0b06;
   background-color: var(--btn-color, #f0c040);
 }
 
 .shop-pill-btn--normal { font-size: 11px; padding: 9px 20px; }
-.shop-pill-btn--small  { font-size: 9px;  padding: 4px 12px; }
+.shop-pill-btn--small  { font-size: 8px;  padding: 3px 10px; }
 
 .shop-pill-btn--disabled {
-  color: #3a2808;
+  color:            #3a2808;
   background-color: #1a1208;
-  border-color: #2e2008;
-  cursor: not-allowed;
-}
-
-/* ============================================================
-   [🧱 BLOCK: Pending Loot Section]
-   ============================================================ */
-.shop-section--loot {
-  border-top: 1px solid #4a3040;
-}
-
-.shop-section--loot .shop-section__label { color: #a78bfa; }
-
-.shop-loot-card {
-  background: rgba(167,139,250,0.03);
-  border: 1px solid #3a2848;
-  padding: 14px 12px;
-  display: flex;
-  flex-direction: column;
-  gap: 5px;
-  min-width: 150px;
-  flex: 1;
-  position: relative;
-}
-
-.shop-loot-card__badge {
-  position: absolute;
-  top: -9px; right: 8px;
-  font-family: 'Cinzel', serif;
-  font-size: 7px;
-  font-weight: 700;
-  letter-spacing: 0.2em;
-  color: #0e0b06;
-  padding: 2px 8px;
-}
-
-.shop-loot-card__replace-warn {
-  font-family: 'IM Fell English', serif;
-  font-style: italic;
-  font-size: 9px;
-  color: #f97316;
-  text-align: center;
-}
-
-/* ============================================================
-   [🧱 BLOCK: Weapon Passive Display]
-   ============================================================ */
-.shop-item-card__passive {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  background: rgba(96,165,250,0.06);
-  border: 1px solid rgba(96,165,250,0.2);
-  border-left: 2px solid #60a5fa;
-  padding: 6px 8px;
-  margin-top: 2px;
-}
-
-.shop-item-card__passive-label {
-  font-family: 'Cinzel', serif;
-  font-size: 7px;
-  font-weight: 700;
-  color: #60a5fa;
-  letter-spacing: 0.15em;
-  text-transform: uppercase;
-}
-
-.shop-item-card__passive-desc {
-  font-family: 'IM Fell English', serif;
-  font-style: italic;
-  font-size: 9px;
-  color: #93c5fd;
-  line-height: 1.4;
+  border-color:     #2e2008;
+  cursor:           not-allowed;
 }
