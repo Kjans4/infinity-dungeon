@@ -1,15 +1,17 @@
 // src/engine/GameState.ts
-import { Player }      from "./Player";
+import { Player }             from "./Player";
 import { Camera, WORLD_W, WORLD_H } from "./Camera";
-import { Door }        from "./Door";
-import { GoldDrop }    from "./GoldDrop";
-import { ItemDrop }    from "./ItemDrop";
-import { ShopNPC }     from "./ShopNPC";
+import { Door }               from "./Door";
+import { GoldDrop }           from "./GoldDrop";
+import { ItemDrop }           from "./ItemDrop";
+import { ShopNPC }            from "./ShopNPC";
 import { Particle, HitSpark, DamageNumber } from "./Particle";
-import { PlayerStats } from "./PlayerStats";
-import { ShopItem }    from "./items/ItemPool";
+import { PlayerStats }        from "./PlayerStats";
+import { PlayerConsumables }  from "./PlayerConsumables";
+
+import { ShopItem }           from "./items/ItemPool";
 import { Grunt, Shooter, Tank, Projectile, Dasher, Bomber } from "./enemy";
-import { AnyBoss }     from "./enemy/boss/index";
+import { AnyBoss }            from "./enemy/boss/index";
 
 // ============================================================
 // [🧱 BLOCK: Pending Loot Cap]
@@ -56,22 +58,20 @@ export function loadBestRun(): RunRecord | null {
   try {
     const raw = localStorage.getItem(LS_KEY_BEST);
     return raw ? (JSON.parse(raw) as RunRecord) : null;
-  } catch {
-    return null;
-  }
+  } catch { return null; }
 }
 
 export function loadRunHistory(): RunRecord[] {
   try {
     const raw = localStorage.getItem(LS_KEY_HISTORY);
     return raw ? (JSON.parse(raw) as RunRecord[]) : [];
-  } catch {
-    return [];
-  }
+  } catch { return []; }
 }
 
 export class GameState {
-  // Entities
+  // ============================================================
+  // [🧱 BLOCK: Entities]
+  // ============================================================
   player:      Player;
   camera:      Camera;
   enemies:     (Grunt | Shooter | Tank | Dasher | Bomber)[];
@@ -82,34 +82,40 @@ export class GameState {
   goldDrops:   GoldDrop[];
   itemDrops:   ItemDrop[];
   particles:   Particle[];
-
-  // ============================================================
-  // [🧱 BLOCK: Hit Feedback Arrays]
-  // hitSparks    — small sparks on weapon hit, drawn in systems
-  // damageNumbers — floating damage text, drawn by RenderSystem
-  // ============================================================
-  hitSparks:     HitSpark[];
+  hitSparks:   HitSpark[];
   damageNumbers: DamageNumber[];
 
-  // Economy
-  gold:        number;
-  playerStats: PlayerStats;
+  // ============================================================
+  // [🧱 BLOCK: Economy + Stats + Consumables]
+  // ============================================================
+  gold:              number;
+  playerStats:       PlayerStats;
+  playerConsumables: PlayerConsumables;
+  consumableSystem:  ConsumableSystem;
 
-  // Pending loot
+  // ============================================================
+  // [🧱 BLOCK: Pending Loot]
+  // ============================================================
   pendingLoot: ShopItem[];
 
-  // Horde tracking
+  // ============================================================
+  // [🧱 BLOCK: Horde Tracking]
+  // ============================================================
   kills:         number;
   alive:         number;
   lastSpawn:     number;
   roomEntryTime: number;
 
-  // Run-wide stats
+  // ============================================================
+  // [🧱 BLOCK: Run-wide Stats]
+  // ============================================================
   totalKills:      number;
   totalGoldEarned: number;
   runStartTime:    number;
 
-  // Screen
+  // ============================================================
+  // [🧱 BLOCK: Screen]
+  // ============================================================
   screenW: number;
   screenH: number;
 
@@ -130,9 +136,11 @@ export class GameState {
     this.hitSparks   = [];
     this.damageNumbers = [];
 
-    this.gold        = 0;
-    this.playerStats = new PlayerStats();
-    this.pendingLoot = [];
+    this.gold              = 0;
+    this.playerStats       = new PlayerStats();
+    this.playerConsumables = new PlayerConsumables();
+    this.consumableSystem  = new ConsumableSystem();
+    this.pendingLoot       = [];
 
     this.kills         = 0;
     this.alive         = 0;
@@ -171,14 +179,17 @@ export class GameState {
     this.totalGoldEarned = 0;
     this.runStartTime    = Date.now();
 
-    this.player      = new Player(WORLD_W / 2, WORLD_H / 2);
-    this.camera      = new Camera(this.screenW, this.screenH);
-    this.playerStats = new PlayerStats();
+    this.player            = new Player(WORLD_W / 2, WORLD_H / 2);
+    this.camera            = new Camera(this.screenW, this.screenH);
+    this.playerStats       = new PlayerStats();
+    this.playerConsumables = new PlayerConsumables();
+    this.consumableSystem  = new ConsumableSystem();
     this.playerStats.applyToPlayer(this.player);
   }
 
   // ============================================================
   // [🧱 BLOCK: Room Reset]
+  // Bag + hotbar persist. In-flight projectiles cleared.
   // ============================================================
   resetRoom() {
     this.enemies       = [];
@@ -195,6 +206,8 @@ export class GameState {
     this.door          = null;
     this.shopNpc       = null;
     this.boss          = null;
+    this.consumableSystem.reset();
+    // playerConsumables intentionally NOT reset — bag/hotbar persist
   }
 
   resize(w: number, h: number) {

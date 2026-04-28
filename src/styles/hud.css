@@ -7,8 +7,6 @@
 
 /* ============================================================
    [🧱 BLOCK: Root — Scroll Banner]
-   Horizontal banner fixed at bottom-center.
-   Stone texture, gold border, tapered ends.
    ============================================================ */
 .hud-root {
   position: fixed;
@@ -23,7 +21,6 @@
   align-items: center;
   gap: 0;
 
-  /* Stone base */
   background:
     repeating-linear-gradient(
       90deg,
@@ -86,7 +83,6 @@
 
 /* ============================================================
    [🧱 BLOCK: HUD Inner Wrapper]
-   Wraps all segments with consistent padding.
    ============================================================ */
 .hud-inner {
   display: flex;
@@ -170,12 +166,10 @@
   height: 6px;
   background: #0a0804;
   border: 1px solid #2e2008;
-  border-radius: 0;
   overflow: visible;
   position: relative;
 }
 
-/* Etched notch marks on bar track */
 .hud-bar-track::before {
   content: '';
   position: absolute;
@@ -197,7 +191,6 @@
   position: relative;
 }
 
-/* Shine on fill */
 .hud-bar-fill::after {
   content: '';
   position: absolute;
@@ -207,7 +200,7 @@
 }
 
 /* ============================================================
-   [🧱 BLOCK: Room / Floor — Carved Badge]
+   [🧱 BLOCK: Room / Floor]
    ============================================================ */
 .hud-room-group {
   display: flex;
@@ -239,7 +232,6 @@
   transition: color 0.3s ease;
 }
 
-/* ── Room subtitle — shown for elite and boss phases ── */
 .hud-room-subtitle {
   font-family: 'Cinzel', serif;
   font-size: 7px;
@@ -249,13 +241,8 @@
   line-height: 1;
 }
 
-.hud-room-subtitle--elite {
-  color: rgba(249, 115, 22, 0.8);
-}
-
-.hud-room-subtitle--boss {
-  color: rgba(239, 68, 68, 0.85);
-}
+.hud-room-subtitle--elite { color: rgba(249, 115, 22, 0.8); }
+.hud-room-subtitle--boss  { color: rgba(239, 68,  68, 0.85); }
 
 /* ============================================================
    [🧱 BLOCK: Gold]
@@ -287,7 +274,7 @@
 }
 
 /* ============================================================
-   [🧱 BLOCK: Kill Ring — Rune Circle]
+   [🧱 BLOCK: Kill Ring]
    ============================================================ */
 .hud-kill-ring-wrapper {
   display: flex;
@@ -303,7 +290,6 @@
   height: 44px;
 }
 
-/* Outer rune ring decoration */
 .hud-kill-ring-dial::before {
   content: '';
   position: absolute;
@@ -354,6 +340,139 @@
 }
 
 /* ============================================================
+   [🧱 BLOCK: Hotbar — 4 Quickslots]
+   Sits at the right end of the HUD banner after the kill ring.
+   Each slot is a square tile showing icon, count, cooldown,
+   and an optional duration bar along the bottom edge.
+   ============================================================ */
+.hud-hotbar {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+}
+
+/* ── Single Slot ── */
+.hud-hotbar-slot {
+  position:        relative;
+  width:           44px;
+  height:          44px;
+  background:      #0a0804;
+  border:          1px solid #3a2808;
+  display:         flex;
+  align-items:     center;
+  justify-content: center;
+  overflow:        hidden;
+  flex-shrink:     0;
+  transition:      border-color 0.15s;
+}
+
+.hud-hotbar-slot:not(.hud-hotbar-slot--empty):not(.hud-hotbar-slot--depleted) {
+  border-color: #5a4010;
+}
+
+/* Empty slot — dashed, dim */
+.hud-hotbar-slot--empty {
+  border:       1px dashed #2a1e08;
+  opacity:      0.45;
+}
+
+/* Depleted — item slotted but 0 charges left */
+.hud-hotbar-slot--depleted {
+  border-color: #2a1e08;
+  opacity:      0.5;
+}
+
+/* On cooldown — slot dims slightly */
+.hud-hotbar-slot--cooldown {
+  border-color: #2e2008;
+}
+
+/* ── Key label — top-left corner ── */
+.hud-hotbar-slot__key {
+  position:       absolute;
+  top:            2px;
+  left:           4px;
+  font-family:    'Cinzel', serif;
+  font-size:      7px;
+  font-weight:    700;
+  color:          #5a4010;
+  letter-spacing: 0;
+  line-height:    1;
+  z-index:        3;
+}
+
+/* ── Icon — centred ── */
+.hud-hotbar-slot__icon {
+  font-size:   18px;
+  line-height: 1;
+  z-index:     1;
+  /* slightly lower when on cooldown so cd text is readable */
+  transition:  opacity 0.1s;
+}
+
+.hud-hotbar-slot--cooldown .hud-hotbar-slot__icon {
+  opacity: 0.4;
+}
+
+/* ── Stack count badge — bottom-right ── */
+.hud-hotbar-slot__count {
+  position:    absolute;
+  bottom:      10px;  /* above duration bar */
+  right:       3px;
+  font-family: 'Cinzel', serif;
+  font-size:   7px;
+  font-weight: 700;
+  color:       #c0860c;
+  z-index:     3;
+  line-height: 1;
+}
+
+/* ── Cooldown SVG sweep — full-slot overlay ── */
+.hud-hotbar-slot__cd-svg {
+  position: absolute;
+  inset:    0;
+  width:    100%;
+  height:   100%;
+  z-index:  2;
+  pointer-events: none;
+}
+
+/* ── Cooldown seconds text — centred over sweep ── */
+.hud-hotbar-slot__cd-text {
+  position:    absolute;
+  inset:       0;
+  display:     flex;
+  align-items: center;
+  justify-content: center;
+  font-family: 'Cinzel', serif;
+  font-size:   10px;
+  font-weight: 700;
+  color:       #f0c040;
+  z-index:     4;
+  text-shadow: 0 0 6px rgba(0,0,0,0.9);
+}
+
+/* ── Duration bar — thin strip at very bottom ── */
+.hud-hotbar-slot__dur-bar {
+  position:   absolute;
+  bottom:     0;
+  left:       0;
+  right:      0;
+  height:     4px;
+  background: #0a0804;
+  z-index:    3;
+}
+
+.hud-hotbar-slot__dur-fill {
+  height:     100%;
+  background: #38bdf8;
+  transition: width 0.1s linear;
+  box-shadow: 0 0 4px #38bdf8;
+}
+
+/* ============================================================
    [🧱 BLOCK: Elite Room Badge]
    ============================================================ */
 .hud-elite-badge {
@@ -373,8 +492,7 @@
   text-shadow: 0 0 20px rgba(249,115,22,0.6);
 
   padding: 8px 24px;
-  background:
-    linear-gradient(180deg, #1a1208 0%, #0e0b06 100%);
+  background: linear-gradient(180deg, #1a1208 0%, #0e0b06 100%);
   border: 1px solid #7a3010;
   border-top: 1px solid #f97316;
   box-shadow:

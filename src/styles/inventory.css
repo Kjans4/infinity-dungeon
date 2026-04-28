@@ -1,7 +1,6 @@
 /* ============================================================
    Inventory — src/styles/inventory.css
-   RPGUI-adjacent aesthetic: warm dark, parchment panels,
-   gold accents, teal highlights. Fixed size, no scroll.
+   4-column layout at 1280×640. Column 4 = Provisions.
    ============================================================ */
 
 /* ============================================================
@@ -15,7 +14,6 @@
 
 /* ============================================================
    [🧱 BLOCK: Backdrop]
-   Full-screen dim overlay. No pause — game runs underneath.
    ============================================================ */
 .inv-backdrop {
   position:        fixed;
@@ -28,11 +26,10 @@
 }
 
 /* ============================================================
-   [🧱 BLOCK: Panel — Fixed Size, No Scroll]
-   Wide enough to show 3 columns without overflow.
+   [🧱 BLOCK: Panel — 1280×640]
    ============================================================ */
 .inv-panel {
-  width:      1020px;
+  width:      1280px;
   height:     640px;
   background: #13110d;
   border:     1px solid #2a2418;
@@ -45,7 +42,6 @@
   flex-direction: column;
 }
 
-/* Inner inset border for depth */
 .inv-panel-inner {
   margin:  6px;
   border:  1px solid #1e1a10;
@@ -84,11 +80,11 @@
 }
 
 .inv-header__gold-label {
-  font-size:   9px;
-  color:       #3a2a0a;
+  font-size:      9px;
+  color:          #3a2a0a;
   letter-spacing: 1px;
-  text-align:  right;
-  margin-bottom: 3px;
+  text-align:     right;
+  margin-bottom:  3px;
 }
 
 .inv-header__gold-value {
@@ -99,13 +95,12 @@
 }
 
 /* ============================================================
-   [🧱 BLOCK: 3-Column Grid]
-   Fixed height fills remaining space.
+   [🧱 BLOCK: 4-Column Grid]
    ============================================================ */
 .inv-cols {
   display:               grid;
-  grid-template-columns: 1fr 1fr 1fr;
-  gap:                   16px;
+  grid-template-columns: 1fr 1fr 1fr 1fr;
+  gap:                   14px;
   flex:                  1;
   min-height:            0;
 }
@@ -120,7 +115,6 @@
 
 /* ============================================================
    [🧱 BLOCK: Section Label]
-   Gold left-border accent label.
    ============================================================ */
 .inv-sec-label {
   font-size:      9px;
@@ -136,13 +130,19 @@
 
 /* ============================================================
    [🧱 BLOCK: Generic Panel Box]
-   Dark background with warm border.
    ============================================================ */
 .inv-box {
   background:  rgba(0, 0, 0, 0.38);
   border:      1px solid #2a2418;
   box-shadow:  inset 0 0 0 1px #1a1610;
   padding:     10px;
+  overflow:    hidden;
+}
+
+.inv-box--grow {
+  flex:       1;
+  min-height: 0;
+  overflow-y: auto;
 }
 
 /* ============================================================
@@ -159,34 +159,12 @@
   transition:    border-color 0.1s, background 0.1s;
 }
 
-.inv-drop-row:last-child {
-  margin-bottom: 0;
-}
+.inv-drop-row:last-child { margin-bottom: 0; }
+.inv-drop-row:hover      { border-color: #5a7050; background: #0e0c08; }
 
-.inv-drop-row:hover {
-  border-color: #5a7050;
-  background:   #0e0c08;
-}
-
-.inv-drop-row__info {
-  flex: 1;
-  min-width: 0;
-}
-
-.inv-drop-row__kind {
-  font-size:      9px;
-  color:          #5a7050;
-  letter-spacing: 1px;
-  text-transform: uppercase;
-}
-
-.inv-drop-row__name {
-  font-size:   11px;
-  color:       #c8b89a;
-  white-space: nowrap;
-  overflow:    hidden;
-  text-overflow: ellipsis;
-}
+.inv-drop-row__info  { flex: 1; min-width: 0; }
+.inv-drop-row__kind  { font-size: 9px; color: #5a7050; letter-spacing: 1px; text-transform: uppercase; }
+.inv-drop-row__name  { font-size: 11px; color: #c8b89a; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
 .inv-drop-empty {
   font-size:  10px;
@@ -195,7 +173,6 @@
   padding:    6px 2px;
 }
 
-/* ── Equip / Swap buttons ── */
 .inv-drop-btn {
   font-family:    'Courier New', monospace;
   font-size:      9px;
@@ -208,359 +185,247 @@
   color:          #5a8060;
   transition:     border-color 0.1s, color 0.1s;
 }
-
-.inv-drop-btn:hover {
-  border-color: #8abf9a;
-  color:        #8abf9a;
-}
-
-.inv-drop-btn--swap {
-  border-color: #4a3010;
-  color:        #c08840;
-}
-
-.inv-drop-btn--swap:hover {
-  border-color: #d4af37;
-  color:        #d4af37;
-}
-
-.inv-drop-btn--disabled {
-  opacity:        0.3;
-  cursor:         not-allowed;
-  pointer-events: none;
-}
+.inv-drop-btn:hover          { border-color: #8abf9a; color: #8abf9a; }
+.inv-drop-btn--swap          { border-color: #4a3010; color: #c08840; }
+.inv-drop-btn--swap:hover    { border-color: #d4af37; color: #d4af37; }
+.inv-drop-btn--disabled      { opacity: 0.3; cursor: not-allowed; pointer-events: none; }
 
 /* ============================================================
    [🧱 BLOCK: Attributes / Stats Table]
    ============================================================ */
-.inv-stat-table {
-  width:           100%;
-  border-collapse: collapse;
-  font-size:       11px;
-}
-
-.inv-stat-table tr {
-  border-bottom: 1px solid #1a1610;
-}
-
-.inv-stat-table td {
-  padding:        4px 3px;
-  vertical-align: middle;
-}
-
-.inv-stat-table__icon {
-  width:      16px;
-  font-size:  12px;
-  text-align: center;
-}
-
-.inv-stat-table__key {
-  color:          #7a6020;
-  text-transform: uppercase;
-  letter-spacing: 1px;
-  width:          36px;
-  font-size:      10px;
-}
-
-.inv-stat-table__lvl {
-  color:       #d4af37;
-  font-weight: 600;
-  text-align:  center;
-  width:       20px;
-  font-size:   12px;
-}
-
-.inv-stat-table__bar {
-  width:   58px;
-  padding: 0 5px;
-}
-
-.inv-stat-bar-bg {
-  background: #1a1610;
-  height:     4px;
-  border:     1px solid #2a2418;
-}
-
-.inv-stat-bar-fill {
-  height:     100%;
-  background: #8b6914;
-}
-
-.inv-stat-table__total {
-  color:      #c8b89a;
-  text-align: right;
-  font-size:  11px;
-  white-space: nowrap;
-}
-
-.inv-stat-table__bonus {
-  color:       #4a6840;
-  font-size:   9px;
-  text-align:  right;
-  white-space: nowrap;
-  padding-left: 3px;
-}
+.inv-stat-table          { width: 100%; border-collapse: collapse; font-size: 11px; }
+.inv-stat-table tr       { border-bottom: 1px solid #1a1610; }
+.inv-stat-table td       { padding: 4px 3px; vertical-align: middle; }
+.inv-stat-table__icon    { width: 16px; font-size: 12px; text-align: center; }
+.inv-stat-table__key     { color: #7a6020; text-transform: uppercase; letter-spacing: 1px; width: 36px; font-size: 10px; }
+.inv-stat-table__lvl     { color: #d4af37; font-weight: 600; text-align: center; width: 20px; font-size: 12px; }
+.inv-stat-table__bar     { width: 58px; padding: 0 5px; }
+.inv-stat-bar-bg         { background: #1a1610; height: 4px; border: 1px solid #2a2418; }
+.inv-stat-bar-fill       { height: 100%; background: #8b6914; }
+.inv-stat-table__total   { color: #c8b89a; text-align: right; font-size: 11px; white-space: nowrap; }
+.inv-stat-table__bonus   { color: #4a6840; font-size: 9px; text-align: right; white-space: nowrap; padding-left: 3px; }
 
 /* ============================================================
    [🧱 BLOCK: Set Bonuses]
    ============================================================ */
-.inv-set-section {
-  flex:       1;
-  min-height: 0;
-  overflow:   hidden;
-  display:    flex;
-  flex-direction: column;
-}
-
-.inv-set-box {
-  flex:        1;
-  min-height:  0;
-  overflow:    hidden;
-  background:  rgba(0, 0, 0, 0.38);
-  border:      1px solid #2a2418;
-  box-shadow:  inset 0 0 0 1px #1a1610;
-  padding:     10px;
-}
-
-.inv-set-entry {
-  margin-bottom: 8px;
-}
-
-.inv-set-entry:last-child {
-  margin-bottom: 0;
-}
-
-.inv-set-header {
-  display:       flex;
-  justify-content: space-between;
-  margin-bottom: 3px;
-  font-size:     11px;
-  color:         #c8b89a;
-}
-
-.inv-set-count {
-  color:     #d4af37;
-  font-size: 10px;
-}
-
-.inv-set-bar-bg {
-  background:    #1a1610;
-  height:        3px;
-  border:        1px solid #2a2418;
-  margin-bottom: 4px;
-}
-
-.inv-set-bar-fill {
-  height:     100%;
-  background: #4a3a0a;
-  transition: width 0.3s ease;
-}
-
-.inv-tier-row {
-  display:     flex;
-  align-items: center;
-  gap:         5px;
-  margin-bottom: 2px;
-}
-
-.inv-tier-badge {
-  font-size:      8px;
-  padding:        1px 4px;
-  border:         1px solid #2a2418;
-  color:          #3a3020;
-  letter-spacing: 1px;
-  flex-shrink:    0;
-}
-
-.inv-tier-badge--active {
-  border-color: #d4af37;
-  color:        #d4af37;
-}
-
-.inv-tier-desc {
-  font-size: 9px;
-  color:     #2e2818;
-}
-
-.inv-tier-desc--active {
-  color: #8a7840;
-}
-
-.inv-set-divider {
-  height:     1px;
-  background: linear-gradient(90deg, transparent, #3a2a10 40%, #3a2a10 60%, transparent);
-  margin:     6px 0;
-}
+.inv-set-section         { flex: 1; min-height: 0; overflow: hidden; display: flex; flex-direction: column; }
+.inv-set-box             { flex: 1; min-height: 0; overflow: hidden; background: rgba(0,0,0,0.38); border: 1px solid #2a2418; box-shadow: inset 0 0 0 1px #1a1610; padding: 10px; }
+.inv-set-entry           { margin-bottom: 8px; }
+.inv-set-entry:last-child{ margin-bottom: 0; }
+.inv-set-header          { display: flex; justify-content: space-between; margin-bottom: 3px; font-size: 11px; color: #c8b89a; }
+.inv-set-count           { color: #d4af37; font-size: 10px; }
+.inv-set-bar-bg          { background: #1a1610; height: 3px; border: 1px solid #2a2418; margin-bottom: 4px; }
+.inv-set-bar-fill        { height: 100%; background: #4a3a0a; transition: width 0.3s ease; }
+.inv-tier-row            { display: flex; align-items: center; gap: 5px; margin-bottom: 2px; }
+.inv-tier-badge          { font-size: 8px; padding: 1px 4px; border: 1px solid #2a2418; color: #3a3020; letter-spacing: 1px; flex-shrink: 0; }
+.inv-tier-badge--active  { border-color: #d4af37; color: #d4af37; }
+.inv-tier-desc           { font-size: 9px; color: #2e2818; }
+.inv-tier-desc--active   { color: #8a7840; }
+.inv-set-divider         { height: 1px; background: linear-gradient(90deg, transparent, #3a2a10 40%, #3a2a10 60%, transparent); margin: 6px 0; }
 
 /* ============================================================
-   [🧱 BLOCK: Equipment Cards — Weapon + Armor]
+   [🧱 BLOCK: Equipment Cards]
    ============================================================ */
-.inv-equip-card {
-  display:       flex;
-  align-items:   center;
-  gap:           8px;
-  padding:       6px 8px;
-  border:        1px solid #1e1a10;
-  margin-bottom: 4px;
-}
+.inv-equip-card            { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border: 1px solid #1e1a10; margin-bottom: 4px; }
+.inv-equip-card:last-child { margin-bottom: 0; }
+.inv-equip-card--filled    { border-color: #2e2410; background: rgba(0,0,0,0.2); }
+.inv-slot-box              { width: 30px; height: 30px; background: #0e0c08; border: 1px dashed #2a2418; display: flex; align-items: center; justify-content: center; font-size: 8px; color: #3a3020; flex-shrink: 0; letter-spacing: 0.5px; }
+.inv-slot-box--active      { border: 1px solid #8b6914; color: #d4af37; }
+.inv-equip-info            { flex: 1; min-width: 0; }
+.inv-equip-name            { font-size: 11px; color: #c8b89a; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.inv-equip-sub             { font-size: 9px; color: #4a3a18; margin-top: 1px; white-space: nowrap; }
+.inv-equip-pass            { font-size: 9px; color: #4a6838; margin-top: 1px; }
+.inv-equip-empty           { font-size: 10px; color: #2a2010; font-style: italic; }
 
-.inv-equip-card:last-child {
-  margin-bottom: 0;
-}
+.inv-sell-btn              { font-family: 'Courier New', monospace; font-size: 9px; color: #7a3020; border: 1px solid #3a1810; padding: 2px 6px; background: transparent; cursor: pointer; flex-shrink: 0; letter-spacing: 1px; transition: border-color 0.1s, color 0.1s; }
+.inv-sell-btn:hover        { border-color: #cc3020; color: #ff5040; }
+.inv-confirm-row           { display: flex; gap: 4px; }
+.inv-confirm-btn--yes      { font-family: 'Courier New', monospace; font-size: 9px; color: #ff5040; border: 1px solid #cc3020; padding: 2px 6px; background: transparent; cursor: pointer; letter-spacing: 1px; }
+.inv-confirm-btn--cancel   { font-family: 'Courier New', monospace; font-size: 9px; color: #5a4a20; border: 1px solid #3a2a10; padding: 2px 6px; background: transparent; cursor: pointer; }
 
-.inv-equip-card--filled {
-  border-color: #2e2410;
-  background:   rgba(0, 0, 0, 0.2);
-}
+/* ============================================================
+   [🧱 BLOCK: Charm Rows]
+   ============================================================ */
+.inv-charm-row             { display: flex; align-items: center; gap: 8px; padding: 6px 0; border-bottom: 1px solid #1a1610; }
+.inv-charm-row:last-child  { border-bottom: none; }
+.inv-charm-icon            { font-size: 14px; width: 18px; text-align: center; flex-shrink: 0; }
+.inv-charm-info            { flex: 1; min-width: 0; }
+.inv-charm-name            { font-size: 11px; color: #8abf9a; }
+.inv-charm-desc            { font-size: 9px; color: #3a3020; margin-top: 1px; }
+.inv-charm-tradeoff        { font-size: 9px; color: #7a2a18; margin-top: 1px; }
+.inv-charm-empty           { font-size: 9px; color: #221e10; padding: 4px 0; border-bottom: 1px dashed #1a1610; font-style: italic; }
 
-.inv-slot-box {
-  width:       30px;
-  height:      30px;
-  background:  #0e0c08;
-  border:      1px dashed #2a2418;
+/* ============================================================
+   [🧱 BLOCK: Consumable Bag Rows — Column 4]
+   Draggable rows. Kind badge colors: potion=amber, scroll=cyan.
+   ============================================================ */
+.inv-consumable-row {
   display:     flex;
   align-items: center;
-  justify-content: center;
-  font-size:   8px;
-  color:       #3a3020;
+  gap:         8px;
+  padding:     6px 8px;
+  border:      1px solid #1e1a10;
+  margin-bottom: 4px;
+  cursor:      grab;
+  transition:  border-color 0.1s, background 0.1s;
+  user-select: none;
+}
+.inv-consumable-row:last-child  { margin-bottom: 0; }
+.inv-consumable-row:hover       { border-color: #5a4010; background: #0e0c08; }
+.inv-consumable-row:active      { cursor: grabbing; }
+
+.inv-consumable-row__icon {
+  font-size:   16px;
   flex-shrink: 0;
-  letter-spacing: 0.5px;
+  width:       22px;
+  text-align:  center;
 }
 
-.inv-slot-box--active {
-  border:      1px solid #8b6914;
-  border-style: solid;
-  color:       #d4af37;
-}
-
-.inv-equip-info {
+.inv-consumable-row__info {
   flex:      1;
   min-width: 0;
 }
 
-.inv-equip-name {
-  font-size:   11px;
+.inv-consumable-row__name {
+  font-size:   10px;
   color:       #c8b89a;
   white-space: nowrap;
   overflow:    hidden;
   text-overflow: ellipsis;
 }
 
-.inv-equip-sub {
-  font-size:  9px;
-  color:      #4a3a18;
+.inv-consumable-row__desc {
+  font-size:  8px;
+  color:      #3a3020;
   margin-top: 1px;
   white-space: nowrap;
+  overflow:   hidden;
+  text-overflow: ellipsis;
 }
 
-.inv-equip-pass {
-  font-size:  9px;
-  color:      #4a6838;
-  margin-top: 1px;
-}
-
-.inv-equip-empty {
-  font-size:  10px;
-  color:      #2a2010;
-  font-style: italic;
-}
-
-/* ── Sell button ── */
-.inv-sell-btn {
-  font-family:    'Courier New', monospace;
-  font-size:      9px;
-  color:          #7a3020;
-  border:         1px solid #3a1810;
-  padding:        2px 6px;
-  background:     transparent;
-  cursor:         pointer;
+.inv-consumable-row__kind {
+  font-size:      8px;
+  font-weight:    700;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  padding:        1px 5px;
+  border:         1px solid;
   flex-shrink:    0;
-  letter-spacing: 1px;
-  transition:     border-color 0.1s, color 0.1s;
 }
+.inv-consumable-row__kind--potion { color: #c0860c; border-color: #4a3010; }
+.inv-consumable-row__kind--scroll { color: #38bdf8; border-color: #0a3a4a; }
 
-.inv-sell-btn:hover {
-  border-color: #cc3020;
-  color:        #ff5040;
-}
-
-/* Confirm row for sell */
-.inv-confirm-row {
-  display: flex;
-  gap:     4px;
-}
-
-.inv-confirm-btn--yes {
-  font-family:    'Courier New', monospace;
-  font-size:      9px;
-  color:          #ff5040;
-  border:         1px solid #cc3020;
-  padding:        2px 6px;
-  background:     transparent;
-  cursor:         pointer;
-  letter-spacing: 1px;
-}
-
-.inv-confirm-btn--cancel {
-  font-family: 'Courier New', monospace;
-  font-size:   9px;
-  color:       #5a4a20;
-  border:      1px solid #3a2a10;
-  padding:     2px 6px;
-  background:  transparent;
-  cursor:      pointer;
+.inv-consumable-row__count {
+  font-size:   10px;
+  font-weight: 700;
+  color:       #d4af37;
+  flex-shrink: 0;
+  min-width:   22px;
+  text-align:  right;
 }
 
 /* ============================================================
-   [🧱 BLOCK: Charm Rows]
+   [🧱 BLOCK: Provisions bag grow wrapper]
    ============================================================ */
-.inv-charm-row {
+.inv-prov-bag {
+  flex:           1;
+  min-height:     0;
+  display:        flex;
+  flex-direction: column;
+}
+
+/* ============================================================
+   [🧱 BLOCK: Hotbar Assign Panel — 4 drop targets]
+   ============================================================ */
+.inv-hotbar-assign {
+  display:        flex;
+  flex-direction: column;
+  gap:            4px;
+}
+
+.inv-hotbar-slot {
+  background:  rgba(0,0,0,0.38);
+  border:      1px solid #2a2418;
+  padding:     6px 8px;
+  transition:  border-color 0.1s, background 0.1s;
+}
+
+.inv-hotbar-slot--empty {
+  border-style: dashed;
+  border-color: #1e1a10;
+}
+
+.inv-hotbar-slot--dragover {
+  border-color: #8b6914;
+  background:   rgba(139,105,20,0.08);
+}
+
+.inv-hotbar-slot__header {
+  display:         flex;
+  justify-content: space-between;
+  align-items:     center;
+  margin-bottom:   4px;
+}
+
+.inv-hotbar-slot__key {
+  font-size:      9px;
+  font-weight:    700;
+  color:          #d4af37;
+  letter-spacing: 1px;
+  background:     #0a0804;
+  border:         1px solid #5a4010;
+  padding:        1px 5px;
+}
+
+.inv-hotbar-slot__cd {
+  font-size:   8px;
+  color:       #3a2808;
+  letter-spacing: 1px;
+}
+
+.inv-hotbar-slot__assigned {
   display:     flex;
   align-items: center;
-  gap:         8px;
-  padding:     6px 0;
-  border-bottom: 1px solid #1a1610;
+  gap:         7px;
 }
 
-.inv-charm-row:last-child {
-  border-bottom: none;
+.inv-hotbar-slot__assigned-icon { font-size: 16px; flex-shrink: 0; }
+
+.inv-hotbar-slot__assigned-info { flex: 1; min-width: 0; }
+
+.inv-hotbar-slot__assigned-name {
+  font-size:   10px;
+  color:       #c8b89a;
+  white-space: nowrap;
+  overflow:    hidden;
+  text-overflow: ellipsis;
 }
 
-.inv-charm-icon {
-  font-size:   14px;
-  width:       18px;
-  text-align:  center;
-  flex-shrink: 0;
-}
-
-.inv-charm-info {
-  flex:      1;
-  min-width: 0;
-}
-
-.inv-charm-name {
-  font-size: 11px;
-  color:     #8abf9a;
-}
-
-.inv-charm-desc {
-  font-size:  9px;
-  color:      #3a3020;
+.inv-hotbar-slot__assigned-count {
+  font-size:  8px;
+  color:      #4a3a18;
   margin-top: 1px;
 }
 
-.inv-charm-tradeoff {
-  font-size:  9px;
-  color:      #7a2a18;
-  margin-top: 1px;
-}
-
-.inv-charm-empty {
+.inv-hotbar-slot__clear {
+  font-family: 'Courier New', monospace;
   font-size:   9px;
-  color:       #221e10;
-  padding:     4px 0;
-  border-bottom: 1px dashed #1a1610;
-  font-style:  italic;
+  color:       #5a2010;
+  border:      1px solid #2a1008;
+  padding:     1px 5px;
+  background:  transparent;
+  cursor:      pointer;
+  flex-shrink: 0;
+  transition:  color 0.1s, border-color 0.1s;
+}
+.inv-hotbar-slot__clear:hover { color: #ef4444; border-color: #7a1a1a; }
+
+.inv-hotbar-slot__placeholder {
+  font-size:  9px;
+  color:      #2a2010;
+  font-style: italic;
+  text-align: center;
+  padding:    2px 0;
 }
 
 /* ============================================================
@@ -586,8 +451,4 @@
   cursor:         pointer;
   transition:     border-color 0.12s, color 0.12s;
 }
-
-.inv-close-btn:hover {
-  border-color: #8b6914;
-  color:        #d4af37;
-}
+.inv-close-btn:hover { border-color: #8b6914; color: #d4af37; }
