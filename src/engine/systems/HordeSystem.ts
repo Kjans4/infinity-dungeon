@@ -14,6 +14,7 @@ import { GameState, PENDING_LOOT_CAP }          from "../GameState";
 import { GoldSystem }                           from "./GoldSystem";
 import { WeaponSystem }                         from "./WeaponSystem";
 import { RenderSystem }                         from "./RenderSystem";
+import { ConsumableSystem }                     from "../ConsumableSystem";
 import { spawnBurst, spawnHitSpark, spawnDamageNumber } from "../Particle";
 import { getRandomShopItems }                   from "../items/ItemPool";
 import { circleCircle, rectCenter }             from "../Collision";
@@ -66,7 +67,6 @@ const ELITE_DROP_MULT = 1.5;
 
 // ============================================================
 // [🧱 BLOCK: Volatile Explosion Constants]
-// Smaller radius than Bomber's natural explosion.
 // ============================================================
 const VOLATILE_EXPLODE_RADIUS = 55;
 const VOLATILE_EXPLODE_DAMAGE = 20;
@@ -257,6 +257,47 @@ export class HordeSystem {
   }
 
   // ============================================================
+  // [🧱 BLOCK: Apply Incoming Damage]
+  // Single helper that applies Iron Potion reduction, Ward
+  // absorb, block, and takeHit in the correct order.
+  // Returns true if damage was fully absorbed (Ward or iFrames).
+  // ============================================================
+  private applyIncomingDamage(
+    state:    GameState,
+    player:   Player,
+    rawDamage:number,
+    source:   BaseEnemy | null = null
+  ): boolean {
+    if (player.iFrames > 0) return true;
+
+    // Ward Scroll — absorb the hit entirely
+    if (ConsumableSystem.wardCanAbsorb(state)) {
+      ConsumableSystem.consumeWardHit(state);
+      state.particles.push(...spawnBurst(
+        player.x + player.width  / 2,
+        player.y + player.height / 2,
+        '#a78bfa', 6, 1.0
+      ));
+      return true;
+    }
+
+    // Iron Potion damage reduction (multiplicative on top of base DR)
+    const ironMult = ConsumableSystem.ironDamageReductionMult(state);
+    let   dmg      = Math.round(rawDamage * ironMult);
+
+    dmg = this.resolveBlock(player, dmg);
+    if (dmg > 0) player.takeHit(dmg);
+
+    // Iron Warden reflect — source is null for projectiles
+    if (source !== null) {
+      const iw5Count = state.playerStats.getEquippedSetCounts()['iron_warden'] ?? 0;
+      tryIronWardenReflect(iw5Count, source);
+    }
+
+    return false;
+  }
+
+  // ============================================================
   // [🧱 BLOCK: Handle Bomber Explosion]
   // ============================================================
   private handleBomberExplosion(
@@ -269,16 +310,13 @@ export class HordeSystem {
     state.particles.push(...spawnBurst(bx, by, "#f97316", 14, 2.0));
     state.particles.push(...spawnBurst(bx, by, "#ffffff",  6, 1.2));
     if (bomber.isExplosionHittingPlayer(player) && player.iFrames <= 0) {
-      let rawDmg = Math.round(bomber.explodeDamage * (1 - ps.damageReduction));
-      rawDmg = this.resolveBlock(player, rawDmg);
-      if (rawDmg > 0) player.takeHit(rawDmg);
+      const rawDmg = Math.round(bomber.explodeDamage * (1 - ps.damageReduction));
+      this.applyIncomingDamage(state, player, rawDmg, null);
     }
   }
 
   // ============================================================
   // [🧱 BLOCK: Handle Volatile Death Explosion]
-  // Triggered when a volatile-variant enemy dies (not a Bomber).
-  // Smaller radius than Bomber, but still area damage.
   // ============================================================
   private handleVolatileExplosion(
     state:  GameState,
@@ -290,23 +328,19 @@ export class HordeSystem {
     const cx = enemy.x + enemy.width  / 2;
     const cy = enemy.y + enemy.height / 2;
 
-    // Visual flash
     state.particles.push(...spawnBurst(cx, cy, "#f97316", 12, 1.8));
     state.particles.push(...spawnBurst(cx, cy, "#ffffff",  5, 1.0));
     render.shake('medium');
 
-    // Damage player if in range
     const { x: px, y: py } = rectCenter(player);
     const dx   = px - cx;
     const dy   = py - cy;
     const dist = Math.sqrt(dx * dx + dy * dy);
     if (dist < VOLATILE_EXPLODE_RADIUS + player.width / 2 && player.iFrames <= 0) {
-      let rawDmg = Math.round(VOLATILE_EXPLODE_DAMAGE * (1 - ps.damageReduction));
-      rawDmg = this.resolveBlock(player, rawDmg);
-      if (rawDmg > 0) player.takeHit(rawDmg);
+      const rawDmg = Math.round(VOLATILE_EXPLODE_DAMAGE * (1 - ps.damageReduction));
+      this.applyIncomingDamage(state, player, rawDmg, null);
     }
 
-    // Chain damage nearby enemies
     state.enemies.forEach((e) => {
       if (e.isDead || e === enemy) return;
       const ex = e.x + e.width  / 2;
@@ -319,8 +353,6 @@ export class HordeSystem {
 
   // ============================================================
   // [🧱 BLOCK: Emit Hit Feedback]
-  // Called for every successful weapon hit. Spawns sparks,
-  // damage number, and triggers micro screen shake.
   // ============================================================
   private emitHitFeedback(
     state:      GameState,
@@ -332,7 +364,6 @@ export class HordeSystem {
     const cx = enemy.x + enemy.width  / 2;
     const cy = enemy.y + enemy.height / 2;
 
-    // Spark color matches attack type
     const sparkColor =
       attackType === 'charged_heavy' ? '#ef4444' :
       attackType === 'heavy'         ? '#fb923c' :
@@ -359,6 +390,9 @@ export class HordeSystem {
     const isElite   = rs.phase === 'elite';
     const threshold = this.getThreshold(rs.floor, isElite);
     const thresholdMet = state.kills >= threshold;
+
+    // ── Phantom Potion — is player invisible? ─────────────────
+    const playerIsInvisible = ConsumableSystem.isPhantomActive(state);
 
     // ── Door ─────────────────────────────────────────────────
     if (state.door) {
@@ -391,16 +425,29 @@ export class HordeSystem {
     }
 
     // ── Enemy update + combat resolution ─────────────────────
-    const iw5Count = ps.getEquippedSetCounts()['iron_warden'] ?? 0;
-
     state.enemies.forEach((enemy) => {
-      if (!enemy.isStunned) {
-        enemy.update(player, worldW, worldH);
+      // ── Phantom Potion — enemies lose aggro ───────────────
+      // When invisible the enemy skips its normal update (no
+      // chase / attack). It does NOT freeze — it simply idles
+      // so it continues to wander if it has wander logic, or
+      // just stands still. We still run stun logic below so
+      // stuns applied before invisibility keep ticking.
+      if (!playerIsInvisible) {
+        if (!enemy.isStunned) {
+          enemy.update(player, worldW, worldH);
+        } else {
+          (enemy as any).stunTimer -= 16;
+          if ((enemy as any).stunTimer < 0) (enemy as any).stunTimer = 0;
+          enemy.vx = 0;
+          enemy.vy = 0;
+        }
       } else {
-        (enemy as any).stunTimer -= 16;
-        if ((enemy as any).stunTimer < 0) (enemy as any).stunTimer = 0;
-        enemy.vx = 0;
-        enemy.vy = 0;
+        // Still tick stun timer while invisible so it doesn't
+        // get frozen at full stun duration
+        if (enemy.isStunned) {
+          (enemy as any).stunTimer -= 16;
+          if ((enemy as any).stunTimer < 0) (enemy as any).stunTimer = 0;
+        }
       }
 
       // ── Drain projectiles from Shooters ───────────────────
@@ -419,6 +466,9 @@ export class HordeSystem {
       if (enemy.isDead) return;
 
       // ── Windup-phase parry window ─────────────────────────
+      // Skip melee contact checks while invisible
+      if (playerIsInvisible) return;
+
       if (!enemy.isStunned) {
         const isWindingUp =
           (enemy instanceof Grunt    && (enemy as any).attackState === 'windup') ||
@@ -438,12 +488,8 @@ export class HordeSystem {
             const parried = this.resolveParry(player, enemy, state);
             if (parried) { enemy.damageCooldown = 600; return; }
           }
-          let rawDmg = Math.round(enemy.dashDamage * (1 - ps.damageReduction));
-          rawDmg = this.resolveBlock(player, rawDmg);
-          if (rawDmg > 0) {
-            player.takeHit(rawDmg);
-            tryIronWardenReflect(iw5Count, enemy);
-          }
+          const rawDmg = Math.round(enemy.dashDamage * (1 - ps.damageReduction));
+          this.applyIncomingDamage(state, player, rawDmg, enemy);
           enemy.damageCooldown = 800;
         }
         return;
@@ -452,12 +498,8 @@ export class HordeSystem {
       // ── Bomber body contact ───────────────────────────────
       if (enemy instanceof Bomber) {
         if (enemy.isTouchingPlayer(player) && player.iFrames <= 0) {
-          let rawDmg = Math.round(enemy.contactDmg * (1 - ps.damageReduction));
-          rawDmg = this.resolveBlock(player, rawDmg);
-          if (rawDmg > 0) {
-            player.takeHit(rawDmg);
-            tryIronWardenReflect(iw5Count, enemy);
-          }
+          const rawDmg = Math.round(enemy.contactDmg * (1 - ps.damageReduction));
+          this.applyIncomingDamage(state, player, rawDmg, enemy);
         }
         return;
       }
@@ -473,40 +515,21 @@ export class HordeSystem {
 
       if (player.iFrames > 0) return;
 
-      let rawDmg: number;
       if (enemy instanceof Tank) {
-        rawDmg = Math.round(enemy.meleeDamage * (1 - ps.damageReduction));
-        rawDmg = this.resolveBlock(player, rawDmg);
-        if (rawDmg > 0) {
-          player.takeHit(rawDmg);
-          enemy.applyKnockback(player);
-          tryIronWardenReflect(iw5Count, enemy);
-        }
+        const rawDmg = Math.round(enemy.meleeDamage * (1 - ps.damageReduction));
+        const absorbed = this.applyIncomingDamage(state, player, rawDmg, enemy);
+        if (!absorbed) enemy.applyKnockback(player);
       } else if (enemy instanceof Shooter) {
-        rawDmg = Math.round(enemy.meleeDamage * (1 - ps.damageReduction));
-        rawDmg = this.resolveBlock(player, rawDmg);
-        if (rawDmg > 0) {
-          player.takeHit(rawDmg);
-          // Knockback on Shooter hit
-          enemy.applyHitKnockbackToPlayer(player);
-          tryIronWardenReflect(iw5Count, enemy);
-        }
+        const rawDmg = Math.round(enemy.meleeDamage * (1 - ps.damageReduction));
+        const absorbed = this.applyIncomingDamage(state, player, rawDmg, enemy);
+        if (!absorbed) enemy.applyHitKnockbackToPlayer(player);
       } else if (enemy instanceof Grunt) {
-        rawDmg = Math.round(enemy.meleeDamage * (1 - ps.damageReduction));
-        rawDmg = this.resolveBlock(player, rawDmg);
-        if (rawDmg > 0) {
-          player.takeHit(rawDmg);
-          // Knockback on Grunt hit
-          enemy.applyHitKnockbackToPlayer(player);
-          tryIronWardenReflect(iw5Count, enemy);
-        }
+        const rawDmg = Math.round(enemy.meleeDamage * (1 - ps.damageReduction));
+        const absorbed = this.applyIncomingDamage(state, player, rawDmg, enemy);
+        if (!absorbed) enemy.applyHitKnockbackToPlayer(player);
       } else {
-        rawDmg = Math.round(15 * (1 - ps.damageReduction));
-        rawDmg = this.resolveBlock(player, rawDmg);
-        if (rawDmg > 0) {
-          player.takeHit(rawDmg);
-          tryIronWardenReflect(iw5Count, enemy);
-        }
+        const rawDmg = Math.round(15 * (1 - ps.damageReduction));
+        this.applyIncomingDamage(state, player, rawDmg, enemy);
       }
     });
 
@@ -525,7 +548,9 @@ export class HordeSystem {
     const playerCY = player.y + player.height / 2;
     const isHeavy  = player.attackType === "heavy" || player.attackType === "charged_heavy";
     const isLight  = player.attackType === "light" || player.attackType === "charged_light";
-    const atkBonus = ps.atkBonus + ps.lastStandBonus(player);
+
+    // ── Wrath Potion ATK bonus stacks additively ───────────────
+    const atkBonus = ps.atkBonus + ps.lastStandBonus(player) + ConsumableSystem.wrathAtkBonus(state);
     const passive  = ps.weaponPassive;
 
     if (passive?.id === 'glaive' && player.isAttacking) {
@@ -543,7 +568,6 @@ export class HordeSystem {
         let finalAmt = enemy.isStunned ? Math.round(amount * PARRY_VULN_MULT) : amount;
         finalAmt = Math.round(finalAmt * riposteMult * momentumMult * iaijutsuMult);
 
-        // ── Bomber: weapon hit triggers explosion ──────────────
         if (enemy instanceof Bomber && !enemy.hasExploded) {
           enemy.triggerExplosion();
           this.handleBomberExplosion(state, enemy, player, ps);
@@ -563,8 +587,6 @@ export class HordeSystem {
           clearRendMark(enemy);
         }
         passive?.onHit?.(player, enemy, finalAmt, state);
-
-        // ── Hit feedback: sparks + damage number + micro shake ─
         this.emitHitFeedback(state, enemy, finalAmt, player.attackType, render);
       }
     );
@@ -603,8 +625,7 @@ export class HordeSystem {
           enemy instanceof Shooter ? "shooter" :
                                      "grunt";
 
-        const killMult   = goldMultiplierForKills(state.kills, threshold);
-        // Variant gold multiplier stacks with kill multiplier
+        const killMult    = goldMultiplierForKills(state.kills, threshold);
         const variantMult = enemy.goldMultiplier;
         this.goldSystem.spawnFromEnemy(
           state,
@@ -620,7 +641,6 @@ export class HordeSystem {
           enemy.color, 6
         ));
 
-        // ── Volatile variant explosion on death ────────────────
         if (enemy.isVolatile && !(enemy instanceof Bomber)) {
           this.handleVolatileExplosion(state, enemy, player, ps, render);
         }
@@ -643,8 +663,6 @@ export class HordeSystem {
           player.hp = Math.min(player.maxHp, player.hp + ps.healOnKill);
         }
         passive?.onKill?.(player, enemy, state);
-
-        // ── Blood Reaper 5pc ───────────────────────────────────
         onBloodReaperKill(br5Count, enemy, state.enemies, state);
       });
     }
@@ -653,9 +671,7 @@ export class HordeSystem {
     state.itemDrops = state.itemDrops.filter((drop) => {
       if (drop.collected) return false;
       drop.update(player);
-      if (state.pendingLoot.length >= PENDING_LOOT_CAP) {
-        return !drop.collected;
-      }
+      if (state.pendingLoot.length >= PENDING_LOOT_CAP) return !drop.collected;
       if (drop.playerIsNear) { state.pendingLoot.push(drop.item); return false; }
       return !drop.collected;
     });
@@ -709,9 +725,8 @@ export class HordeSystem {
 
       if (player.iFrames > 0) { proj.isDone = true; return; }
 
-      let rawDmg = Math.round(proj.damage * (1 - ps.damageReduction));
-      rawDmg = this.resolveBlock(player, rawDmg);
-      if (rawDmg > 0) player.takeHit(rawDmg);
+      const rawDmg = Math.round(proj.damage * (1 - ps.damageReduction));
+      this.applyIncomingDamage(state, player, rawDmg, null);
       proj.isDone = true;
     });
     state.projectiles = state.projectiles.filter((p) => !p.isDone);
@@ -743,8 +758,6 @@ export class HordeSystem {
 
   // ============================================================
   // [🧱 BLOCK: Draw]
-  // Draws enemies, projectiles, items, gold, particles,
-  // hit sparks, and weapon visuals.
   // ============================================================
   draw(state: GameState, ctx: CanvasRenderingContext2D, camera: Camera, player: Player, worldW: number) {
     state.door?.draw(ctx, camera);
@@ -758,7 +771,6 @@ export class HordeSystem {
     state.particles = state.particles.filter((p) => !p.isDone);
     state.particles.forEach((p)   => p.draw(ctx, camera));
 
-    // ── Hit sparks ─────────────────────────────────────────
     state.hitSparks.forEach((s)   => s.update());
     state.hitSparks = state.hitSparks.filter((s) => !s.isDone);
     state.hitSparks.forEach((s)   => s.draw(ctx, camera));

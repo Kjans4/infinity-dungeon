@@ -10,20 +10,20 @@ import { AttackDef }    from "./items/types";
 const DASH_DURATION = 200;
 const DASH_IFRAMES  = 180;
 
-const CHARGE_LIGHT_THRESHOLD = 400;
-const CHARGE_HEAVY_THRESHOLD = 600;
+const CHARGE_LIGHT_THRESHOLD  = 400;
+const CHARGE_HEAVY_THRESHOLD  = 600;
 const CHARGE_LIGHT_SPEED_MULT = 0.60;
 
 // Block / Parry timing
-const PARRY_TAP_MAX_MS  = 220;   // press under this → parry on release
-const PARRY_WINDOW_MS   = 500;   // active parry hitbox window
-const PARRY_COOLDOWN_MS = 600;   // lockout after any parry attempt
+const PARRY_TAP_MAX_MS  = 220;
+const PARRY_WINDOW_MS   = 500;
+const PARRY_COOLDOWN_MS = 600;
 
 // Block stamina costs
-const BLOCK_ENTRY_COST  = 20;    // upfront cost when entering blocking stance
-const BLOCK_HOLD_DRAIN  = 0.3;   // stamina drained per frame while held (~18/s)
-const BLOCK_HIT_COST    = 12;    // stamina drained per hit absorbed
-const BLOCK_HIT_IFRAMES = 300;   // iFrames after absorbing a hit (prevents double-hits)
+const BLOCK_ENTRY_COST  = 20;
+const BLOCK_HOLD_DRAIN  = 0.3;
+const BLOCK_HIT_COST    = 12;
+const BLOCK_HIT_IFRAMES = 300;
 
 // ============================================================
 // [🧱 BLOCK: Combat State Types]
@@ -60,17 +60,17 @@ export class Player {
   maxStamina: number = 100;
   stamina:    number = 100;
 
-  isDashing:        boolean                  = false;
-  dashTimer:        number                   = 0;
-  dashCost:         number                   = 30;
-  isAttacking:      boolean                  = false;
-  isHeavyAttacking: boolean                  = false;
-  isHit:            boolean                  = false;
-  hitFlashTimer:    number                   = 0;
+  isDashing:        boolean = false;
+  dashTimer:        number  = 0;
+  dashCost:         number  = 30;
+  isAttacking:      boolean = false;
+  isHeavyAttacking: boolean = false;
+  isHit:            boolean = false;
+  hitFlashTimer:    number  = 0;
   attackType:       'light' | 'heavy' | 'charged_light' | 'charged_heavy' | null = null;
-  attackTimer:      number                   = 0;
-  heavyCooldown:    number                   = 0;
-  iFrames:          number                   = 0;
+  attackTimer:      number  = 0;
+  heavyCooldown:    number  = 0;
+  iFrames:          number  = 0;
   facing:           { x: number; y: number } = { x: 0, y: 1 };
   lockedFacing:     { x: number; y: number } | null = null;
 
@@ -78,9 +78,17 @@ export class Player {
   chargeTimer:  number      = 0;
   chargeVisual: number      = 0;
 
-  blockState:   BlockState  = 'none';
-  blockTimer:   number      = 0;
-  parrySuccess: boolean     = false;
+  blockState:   BlockState = 'none';
+  blockTimer:   number     = 0;
+  parrySuccess: boolean    = false;
+
+  // ============================================================
+  // [🧱 BLOCK: Consumable State Flags]
+  // Set externally by ConsumableSystem each frame.
+  // isInvisible — Phantom Potion active; draw skips body rect,
+  //   ConsumableSystem renders the shimmer overlay instead.
+  // ============================================================
+  isInvisible: boolean = false;
 
   equippedWeapon: Weapon;
   lastInput:      InputHandler | null = null;
@@ -136,8 +144,6 @@ export class Player {
     );
 
     // ── Continuous block stamina drain ────────────────────────
-    // Holding block drains stamina every frame. If it hits 0,
-    // the block breaks — the player cannot hold indefinitely.
     if (this.blockState === 'blocking') {
       this.stamina -= BLOCK_HOLD_DRAIN;
       if (this.stamina <= 0) {
@@ -216,9 +222,8 @@ export class Player {
     this.y += this.vy;
 
     // ── Resources ─────────────────────────────────────────────
-    // Stamina regen is handled by HordeSystem / BossSystem using
-    // ps.staminaRegenRate so charm multipliers (Overclock, Berserker)
-    // are respected. Player.update() must NOT add a second regen tick.
+    // Stamina regen handled by HordeSystem/BossSystem via
+    // ps.staminaRegenRate so charm multipliers are respected.
     if (this.heavyCooldown > 0) this.heavyCooldown  -= 16;
     if (this.iFrames       > 0) this.iFrames        -= 16;
     if (this.hitFlashTimer > 0) {
@@ -236,12 +241,6 @@ export class Player {
 
   // ============================================================
   // [🧱 BLOCK: Block / Parry State Machine]
-  // Tap L  (< PARRY_TAP_MAX_MS)  → active parry window
-  // Hold L (≥ PARRY_TAP_MAX_MS)  → blocking stance
-  //
-  // Entering blocking costs BLOCK_ENTRY_COST stamina upfront.
-  // If the player can't afford it, the attempt is rejected with
-  // a short cooldown — empty-stamina spam grants no protection.
   // ============================================================
   private updateBlockParry(
     blockDown:        boolean,
@@ -249,7 +248,6 @@ export class Player {
     blockJustReleased:boolean
   ): void {
     switch (this.blockState) {
-
       case 'none':
         if (blockJustPressed && !this.isAttacking && !this.isDashing) {
           this.blockState = 'parry_startup';
@@ -261,21 +259,17 @@ export class Player {
         this.blockTimer += 16;
         if (blockJustReleased) {
           if (this.blockTimer <= PARRY_TAP_MAX_MS) {
-            // Quick tap → enter active parry window
             this.blockState = 'parrying';
             this.blockTimer = 0;
           } else {
-            // Slow release → no reward
             this.blockState = 'parry_cooldown';
             this.blockTimer = PARRY_COOLDOWN_MS;
           }
         } else if (this.blockTimer > PARRY_TAP_MAX_MS) {
-          // Still held → try to enter block stance
           if (this.stamina >= BLOCK_ENTRY_COST) {
             this.stamina   -= BLOCK_ENTRY_COST;
             this.blockState = 'blocking';
           } else {
-            // Not enough stamina to block — short penalty
             this.blockState = 'parry_cooldown';
             this.blockTimer = 300;
           }
@@ -433,7 +427,6 @@ export class Player {
 
   // ============================================================
   // [🧱 BLOCK: Parry Hit]
-  // Consumes the parry window and returns true on success.
   // ============================================================
   tryParry(): boolean {
     if (this.blockState !== 'parrying') return false;
@@ -445,31 +438,21 @@ export class Player {
 
   // ============================================================
   // [🧱 BLOCK: Block Hit]
-  // Returns 0 (full absorption) while blocking with stamina.
-  // The stamina drain IS the cost — no HP damage on a clean block.
-  // Grants brief iFrames so the same swing can't register twice.
-  // Returns full rawDamage if block is broken (stamina = 0).
   // ============================================================
   applyBlockedHit(rawDamage: number): number {
     if (this.blockState !== 'blocking') return rawDamage;
-
-    // Block shatters if stamina is already gone
     if (this.stamina <= 0) {
       this.blockState = 'none';
       this.blockTimer = 0;
       return rawDamage;
     }
-
     this.stamina = Math.max(0, this.stamina - BLOCK_HIT_COST);
     this.iFrames = Math.max(this.iFrames, BLOCK_HIT_IFRAMES);
-
-    // If the last hit drained stamina to 0, break the block
     if (this.stamina <= 0) {
       this.blockState = 'none';
       this.blockTimer = 0;
     }
-
-    return 0;   // full absorption — no HP damage
+    return 0;
   }
 
   // ============================================================
@@ -485,11 +468,25 @@ export class Player {
 
   // ============================================================
   // [🧱 BLOCK: Draw]
+  // When isInvisible is true the body rect is skipped entirely —
+  // ConsumableSystem.draw() renders the shimmer overlay instead
+  // so the player is still locatable but clearly invisible.
+  // All overlays (charge ring, block ring, HP/stamina bars)
+  // are suppressed during invisibility to avoid giving away
+  // the player's exact position.
   // ============================================================
   draw(ctx: CanvasRenderingContext2D, camera: Camera): void {
-    if (!this.isHit && this.iFrames > 0 && !this.isDashing && Math.floor(Date.now() / 50) % 2 === 0) {
+    // Standard iFrame flicker (not during invisibility)
+    if (!this.isInvisible &&
+        !this.isHit &&
+        this.iFrames > 0 &&
+        !this.isDashing &&
+        Math.floor(Date.now() / 50) % 2 === 0) {
       return;
     }
+
+    // Skip full draw when invisible — shimmer handled externally
+    if (this.isInvisible) return;
 
     const sx = camera.toScreenX(this.x);
     const sy = camera.toScreenY(this.y);
@@ -513,13 +510,17 @@ export class Player {
       const progress = isLight
         ? Math.min(this.chargeTimer / CHARGE_LIGHT_THRESHOLD, 1)
         : Math.min(this.chargeTimer / CHARGE_HEAVY_THRESHOLD, 1);
-      const radius   = 24 + progress * 18;
-      const color    = isLight ? `rgba(255,255,255,${pulse * 0.85})` : `rgba(251,191,36,${pulse * 0.9})`;
+      const radius = 24 + progress * 18;
+      const color  = isLight
+        ? `rgba(255,255,255,${pulse * 0.85})`
+        : `rgba(251,191,36,${pulse * 0.9})`;
 
       ctx.beginPath();
       ctx.arc(cx, cy, radius + 6, 0, Math.PI * 2);
-      ctx.strokeStyle = isLight ? `rgba(255,255,255,${pulse * 0.25})` : `rgba(251,191,36,${pulse * 0.25})`;
-      ctx.lineWidth   = 6;
+      ctx.strokeStyle = isLight
+        ? `rgba(255,255,255,${pulse * 0.25})`
+        : `rgba(251,191,36,${pulse * 0.25})`;
+      ctx.lineWidth = 6;
       ctx.stroke();
 
       ctx.beginPath();
@@ -531,7 +532,9 @@ export class Player {
       if (isReady) {
         ctx.beginPath();
         ctx.arc(cx, cy, radius - 4, 0, Math.PI * 2);
-        ctx.fillStyle = isLight ? `rgba(255,255,255,${pulse * 0.08})` : `rgba(251,191,36,${pulse * 0.10})`;
+        ctx.fillStyle = isLight
+          ? `rgba(255,255,255,${pulse * 0.08})`
+          : `rgba(251,191,36,${pulse * 0.10})`;
         ctx.fill();
       }
     }
@@ -553,7 +556,6 @@ export class Player {
     }
 
     if (this.blockState === 'blocking') {
-      // Shield ring dims as stamina depletes — visual warning before break
       const staminaPct = Math.max(0, this.stamina / this.maxStamina);
       const pulse      = Math.sin(Date.now() / 200) * 0.2 + 0.6;
       ctx.beginPath();

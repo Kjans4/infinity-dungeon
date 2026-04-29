@@ -15,6 +15,7 @@ import { ItemDrop }                    from "../ItemDrop";
 import { Door }                        from "../Door";
 import { ShopNPC }                     from "../ShopNPC";
 import { RenderSystem }                from "./RenderSystem";
+import { ConsumableSystem }            from "../ConsumableSystem";
 import { spawnBurst, spawnHitSpark, spawnDamageNumber } from "../Particle";
 import { WeaponSystem }                from "./WeaponSystem";
 import { getRandomShopItems }          from "../items/ItemPool";
@@ -167,9 +168,7 @@ export class BossSystem {
     state.itemDrops = state.itemDrops.filter((drop) => {
       if (drop.collected) return false;
       drop.update(player);
-      if (state.pendingLoot.length >= PENDING_LOOT_CAP) {
-        return !drop.collected;
-      }
+      if (state.pendingLoot.length >= PENDING_LOOT_CAP) return !drop.collected;
       if (drop.playerIsNear) { state.pendingLoot.push(drop.item); return false; }
       return !drop.collected;
     });
@@ -179,7 +178,6 @@ export class BossSystem {
 
   // ============================================================
   // [🧱 BLOCK: Emit Hit Feedback]
-  // Sparks + damage number + micro screen shake on boss hit.
   // ============================================================
   private emitHitFeedback(
     state:      GameState,
@@ -200,6 +198,38 @@ export class BossSystem {
     state.hitSparks.push(...spawnHitSpark(cx, cy, sparkColor, 5));
     state.damageNumbers.push(spawnDamageNumber(cx, cy - boss.height / 2, damage, attackType));
     render.shake('micro');
+  }
+
+  // ============================================================
+  // [🧱 BLOCK: Apply Incoming Damage]
+  // Centralises Ward absorb + Iron Potion reduction for all
+  // boss damage sources (projectiles, contact, slam, lunge).
+  // Returns true if the hit was fully absorbed.
+  // ============================================================
+  private applyIncomingDamage(
+    state:     GameState,
+    player:    Player,
+    rawDamage: number
+  ): boolean {
+    if (player.iFrames > 0) return true;
+
+    // Ward Scroll — absorb hit entirely
+    if (ConsumableSystem.wardCanAbsorb(state)) {
+      ConsumableSystem.consumeWardHit(state);
+      state.particles.push(...spawnBurst(
+        player.x + player.width  / 2,
+        player.y + player.height / 2,
+        '#a78bfa', 6, 1.0
+      ));
+      return true;
+    }
+
+    // Iron Potion damage reduction (multiplicative)
+    const ironMult = ConsumableSystem.ironDamageReductionMult(state);
+    const dmg      = Math.round(rawDamage * ironMult);
+
+    if (dmg > 0) player.takeHit(dmg);
+    return false;
   }
 
   // ============================================================
@@ -241,7 +271,7 @@ export class BossSystem {
     if (boss instanceof Mage) {
       this.resolveWeaponHitMageFakes(
         player, boss,
-        ps.atkBonus + ps.lastStandBonus(player),
+        ps.atkBonus + ps.lastStandBonus(player) + ConsumableSystem.wrathAtkBonus(state),
         ps.weaponPassive?.id ?? null,
         state,
         render
@@ -265,9 +295,8 @@ export class BossSystem {
 
       if (player.iFrames > 0) { proj.isDone = true; return; }
 
-      let rawDmg = Math.round(proj.damage * (1 - ps.damageReduction));
-      if (player.isBlocking) rawDmg = player.applyBlockedHit(rawDmg);
-      if (rawDmg > 0) player.takeHit(rawDmg);
+      const rawDmg = Math.round(proj.damage * (1 - ps.damageReduction));
+      this.applyIncomingDamage(state, player, rawDmg);
       proj.isDone = true;
     });
     state.projectiles = state.projectiles.filter((p) => !p.isDone);
@@ -286,9 +315,8 @@ export class BossSystem {
           ps.weaponPassive?.onParry?.(player, state);
         }
       } else {
-        let rawDmg = Math.round(boss.contactDamage * (1 - ps.damageReduction));
-        if (player.isBlocking) rawDmg = player.applyBlockedHit(rawDmg);
-        if (rawDmg > 0) player.takeHit(rawDmg);
+        const rawDmg = Math.round(boss.contactDamage * (1 - ps.damageReduction));
+        this.applyIncomingDamage(state, player, rawDmg);
         if (boss instanceof Brute || boss instanceof Colossus || boss instanceof Shade) {
           boss.damageCooldown = 800;
         }
@@ -310,18 +338,16 @@ export class BossSystem {
             ps.weaponPassive?.onParry?.(player, state);
           }
         } else {
-          let rawDmg = Math.round(boss.lungeDamage * (1 - ps.damageReduction));
-          if (player.isBlocking) rawDmg = player.applyBlockedHit(rawDmg);
-          if (rawDmg > 0) player.takeHit(rawDmg);
+          const rawDmg = Math.round(boss.lungeDamage * (1 - ps.damageReduction));
+          this.applyIncomingDamage(state, player, rawDmg);
         }
       }
     }
 
     // ── Slam / stomp AoE ──────────────────────────────────────
     if (boss.isSlamHittingPlayer(player) && player.iFrames <= 0 && !this.isBossStaggered) {
-      let rawDmg = Math.round(boss.slamDamage * (1 - ps.damageReduction));
-      if (player.isBlocking) rawDmg = player.applyBlockedHit(rawDmg);
-      if (rawDmg > 0) player.takeHit(rawDmg);
+      const rawDmg = Math.round(boss.slamDamage * (1 - ps.damageReduction));
+      this.applyIncomingDamage(state, player, rawDmg);
     }
 
     // ── Weapon input + hit vs boss ─────────────────────────────
@@ -333,9 +359,12 @@ export class BossSystem {
 
     tickRiposte(16);
 
+    // ── Wrath Potion ATK bonus stacks additively ───────────────
+    const atkBonus = ps.atkBonus + ps.lastStandBonus(player) + ConsumableSystem.wrathAtkBonus(state);
+
     this.resolveWeaponHit(
       player, boss,
-      ps.atkBonus + ps.lastStandBonus(player),
+      atkBonus,
       ps.weaponPassive?.id ?? null,
       state,
       render
@@ -359,9 +388,7 @@ export class BossSystem {
     state.itemDrops = state.itemDrops.filter((drop) => {
       if (drop.collected) return false;
       drop.update(player);
-      if (state.pendingLoot.length >= PENDING_LOOT_CAP) {
-        return !drop.collected;
-      }
+      if (state.pendingLoot.length >= PENDING_LOOT_CAP) return !drop.collected;
       if (drop.playerIsNear) { state.pendingLoot.push(drop.item); return false; }
       return !drop.collected;
     });
@@ -377,7 +404,6 @@ export class BossSystem {
       const bx = boss.x + boss.width  / 2;
       const by = boss.y + boss.height / 2;
 
-      // Variant gold multiplier on boss death
       const variantMult = boss.goldMultiplier;
       const baseAmount  = randInt(BOSS_GOLD.min, BOSS_GOLD.max);
       const finalAmount = Math.round(baseAmount * variantMult);
@@ -394,7 +420,6 @@ export class BossSystem {
         state.particles.push(...spawnBurst(bx, by, '#facc15', 20, 2.2));
       }
 
-      // Volatile boss — chain explosion on death
       if (boss.isVolatile) {
         state.particles.push(...spawnBurst(bx, by, '#f97316', 16, 2.0));
         render.shake('heavy');
@@ -449,7 +474,6 @@ export class BossSystem {
       } else {
         boss.takeDamage(damage);
       }
-      // ── Hit feedback on boss ───────────────────────────────
       this.emitHitFeedback(state, boss, damage, player.attackType, render);
     }
   }
@@ -490,7 +514,6 @@ export class BossSystem {
       const fy = fake.y + fake.height / 2;
       if (weapon.hitTest(px, py, facing, mode, fx, fy, fake.width, fake.height)) {
         fake.takeDamage(damage);
-        // Spark on fake hit
         state.hitSparks.push(...spawnHitSpark(fx, fy, '#99f6e4', 3));
         render.shake('micro');
       }
@@ -501,7 +524,6 @@ export class BossSystem {
   // [🧱 BLOCK: Draw]
   // ============================================================
   draw(state: GameState, ctx: CanvasRenderingContext2D, camera: Camera, player: Player) {
-    // Boss stagger visual
     if (state.boss && this.isBossStaggered) {
       const progress = this.stagger.timer / BOSS_STAGGER_MS;
       const sx = camera.toScreenX(state.boss.x);
@@ -513,10 +535,8 @@ export class BossSystem {
     }
 
     state.boss?.draw(ctx, camera);
-
     state.door?.draw(ctx, camera);
     state.shopNpc?.draw(ctx, camera, BOSS_WORLD_W);
-
     state.projectiles.forEach((p)  => p.draw(ctx, camera));
     state.itemDrops.forEach((d)    => d.draw(ctx, camera));
     state.goldDrops.forEach((drop) => drop.draw(ctx, camera));
@@ -525,7 +545,6 @@ export class BossSystem {
     state.particles = state.particles.filter((p) => !p.isDone);
     state.particles.forEach((p)    => p.draw(ctx, camera));
 
-    // ── Hit sparks ─────────────────────────────────────────
     state.hitSparks.forEach((s)    => s.update());
     state.hitSparks = state.hitSparks.filter((s) => !s.isDone);
     state.hitSparks.forEach((s)    => s.draw(ctx, camera));
