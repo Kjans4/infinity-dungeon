@@ -8,7 +8,7 @@ import { ShopNPC }            from "./ShopNPC";
 import { Particle, HitSpark, DamageNumber } from "./Particle";
 import { PlayerStats }        from "./PlayerStats";
 import { PlayerConsumables }  from "./PlayerConsumables";
-
+import { ConsumableSystem }   from "./ConsumableSystem";
 import { ShopItem }           from "./items/ItemPool";
 import { Grunt, Shooter, Tank, Projectile, Dasher, Bomber } from "./enemy";
 import { AnyBoss }            from "./enemy/boss/index";
