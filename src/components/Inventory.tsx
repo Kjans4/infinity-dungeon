@@ -1,7 +1,7 @@
 // src/components/Inventory.tsx
 "use client";
 
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect } from "react";
 import { PlayerStats }   from "@/engine/PlayerStats";
 import { Player }        from "@/engine/Player";
 import { Charm }         from "@/engine/CharmRegistry";
@@ -25,6 +25,30 @@ interface InventoryProps {
   onGoldChange:       (newGold: number) => void;
   onEquipDrop:        (drop: ItemDrop) => void;
   onClose:            () => void;
+}
+
+// ============================================================
+// [🧱 BLOCK: Drag Payload]
+// A drag can originate from the bag list OR from an existing
+// hotbar slot. We encode the source so the drop handler knows
+// whether to swap slots or just assign from bag.
+//
+// source: 'bag'   — dragged from the Provisions bag list
+// source: 'slot'  — dragged from an existing hotbar slot (slotIndex set)
+// ============================================================
+type DragPayload =
+  | { source: 'bag';  id: ConsumableId }
+  | { source: 'slot'; id: ConsumableId; slotIndex: number };
+
+const DRAG_KEY = 'consumableDrag';
+
+function encodeDrag(payload: DragPayload): string {
+  return JSON.stringify(payload);
+}
+
+function decodeDrag(raw: string): DragPayload | null {
+  try { return JSON.parse(raw) as DragPayload; }
+  catch { return null; }
 }
 
 // ============================================================
@@ -63,7 +87,7 @@ function NearbyDropRow({ drop, playerStats, onEquip }: {
     isArmor  ? playerStats.hasArmorInSlot((item as ArmorItem).slot) :
                false;
 
-  const isCharmsFull   = isCharm && playerStats.charms.length >= playerStats.maxCharms;
+  const isCharmsFull    = isCharm && playerStats.charms.length >= playerStats.maxCharms;
   const alreadyEquipped =
     isWeapon ? playerStats.equippedWeaponItem?.id === item.id :
     isArmor  ? playerStats.armorSlots[(item as ArmorItem).slot]?.id === item.id :
@@ -270,9 +294,8 @@ function CharmRow({ charm, onSell }: { charm: Charm; onSell: () => void }) {
 
 // ============================================================
 // [🧱 BLOCK: Consumable Bag Row]
-// Each row shows icon, name, description, stack count.
-// Dragging the row sends only the icon as the drag ghost.
-// Dropping onto a hotbar slot number assigns it.
+// Draggable row — only the item icon travels as the ghost.
+// Sets DragPayload { source: 'bag', id } on dataTransfer.
 // ============================================================
 function ConsumableBagRow({ entry, onDragStart }: {
   entry:       BagEntry;
@@ -281,7 +304,7 @@ function ConsumableBagRow({ entry, onDragStart }: {
   const isPotion = entry.def.kind === 'potion';
 
   const handleDragStart = (e: React.DragEvent) => {
-    // Create a small ghost showing only the icon
+    // Icon-only ghost
     const ghost = document.createElement('div');
     ghost.style.cssText = `
       position:fixed; top:-100px; left:-100px;
@@ -296,7 +319,8 @@ function ConsumableBagRow({ entry, onDragStart }: {
     e.dataTransfer.setDragImage(ghost, 18, 18);
     setTimeout(() => document.body.removeChild(ghost), 0);
 
-    e.dataTransfer.setData('consumableId', entry.def.id);
+    const payload: DragPayload = { source: 'bag', id: entry.def.id };
+    e.dataTransfer.setData(DRAG_KEY, encodeDrag(payload));
     onDragStart(entry.def.id);
   };
 
@@ -320,26 +344,61 @@ function ConsumableBagRow({ entry, onDragStart }: {
 }
 
 // ============================================================
-// [🧱 BLOCK: Hotbar Assign Slots]
-// Four drop targets rendered as numbered boxes.
-// Player drags a consumable from the bag list onto a slot.
-// Shows current assignment (icon + name) or empty state.
+// [🧱 BLOCK: Hotbar Assign Panel]
+// Four drop targets. Supports three drag interactions:
+//
+//  1. Bag → empty slot      — assign
+//  2. Bag → occupied slot   — replace (old assignment cleared)
+//  3. Slot → slot           — swap both assignments
+//
+// Each assigned slot is also draggable (source: 'slot') so the
+// player can rearrange without going back to the bag list.
+// The drag ghost always shows only the item icon.
 // ============================================================
-function HotbarAssignPanel({ playerConsumables, onAssign, refresh }: {
+function HotbarAssignPanel({ playerConsumables, onSwapSlots, onAssign, refresh }: {
   playerConsumables: PlayerConsumables;
+  onSwapSlots:       (a: number, b: number) => void;
   onAssign:          (slotIndex: number, id: ConsumableId | null) => void;
   refresh:           () => void;
 }) {
   const [dragOverSlot, setDragOverSlot] = useState<number | null>(null);
 
-  const handleDrop = (e: React.DragEvent, slotIndex: number) => {
+  // ── Build icon-only ghost ───────────────────────────────────
+  const makeGhost = (icon: string) => {
+    const ghost = document.createElement('div');
+    ghost.style.cssText = `
+      position:fixed; top:-100px; left:-100px;
+      width:36px; height:36px;
+      display:flex; align-items:center; justify-content:center;
+      font-size:22px; background:rgba(10,8,4,0.9);
+      border:1px solid #8b6914; border-radius:4px;
+      pointer-events:none;
+    `;
+    ghost.textContent = icon;
+    return ghost;
+  };
+
+  // ── Drop handler ────────────────────────────────────────────
+  const handleDrop = (e: React.DragEvent, targetSlotIndex: number) => {
     e.preventDefault();
-    const id = e.dataTransfer.getData('consumableId') as ConsumableId | '';
-    if (id) {
-      onAssign(slotIndex, id);
-      refresh();
-    }
     setDragOverSlot(null);
+
+    const raw     = e.dataTransfer.getData(DRAG_KEY);
+    const payload = decodeDrag(raw);
+    if (!payload) return;
+
+    if (payload.source === 'bag') {
+      // Bag → slot: just assign (replaces whatever was there)
+      onAssign(targetSlotIndex, payload.id);
+    } else if (payload.source === 'slot') {
+      const sourceSlotIndex = payload.slotIndex;
+      if (sourceSlotIndex === targetSlotIndex) return; // dropped on self
+
+      // Slot → slot: swap both assignments
+      onSwapSlots(sourceSlotIndex, targetSlotIndex);
+    }
+
+    refresh();
   };
 
   const SLOT_COOLDOWN_LABELS = ['3s', '4.5s', '6s', '7s'];
@@ -352,6 +411,18 @@ function HotbarAssignPanel({ playerConsumables, onAssign, refresh }: {
         const def        = assignedId ? playerConsumables.bag.get(assignedId)?.def ?? null : null;
         const count      = assignedId ? playerConsumables.bagCount(assignedId) : 0;
         const isOver     = dragOverSlot === i;
+
+        // ── Drag handler for already-assigned slot ────────────
+        const handleSlotDragStart = (e: React.DragEvent) => {
+          if (!assignedId || !def) return;
+          const ghost = makeGhost(def.icon);
+          document.body.appendChild(ghost);
+          e.dataTransfer.setDragImage(ghost, 18, 18);
+          setTimeout(() => document.body.removeChild(ghost), 0);
+
+          const payload: DragPayload = { source: 'slot', id: assignedId, slotIndex: i };
+          e.dataTransfer.setData(DRAG_KEY, encodeDrag(payload));
+        };
 
         return (
           <div
@@ -367,7 +438,13 @@ function HotbarAssignPanel({ playerConsumables, onAssign, refresh }: {
             </div>
 
             {def ? (
-              <div className="inv-hotbar-slot__assigned">
+              // ── Assigned slot — draggable ────────────────────
+              <div
+                className="inv-hotbar-slot__assigned"
+                draggable
+                onDragStart={handleSlotDragStart}
+                style={{ cursor: 'grab' }}
+              >
                 <span className="inv-hotbar-slot__assigned-icon">{def.icon}</span>
                 <div className="inv-hotbar-slot__assigned-info">
                   <div className="inv-hotbar-slot__assigned-name">{def.name}</div>
@@ -375,7 +452,11 @@ function HotbarAssignPanel({ playerConsumables, onAssign, refresh }: {
                 </div>
                 <button
                   className="inv-hotbar-slot__clear"
-                  onClick={() => { onAssign(i, null); refresh(); }}
+                  onClick={(e) => {
+                    e.stopPropagation(); // prevent drag from firing
+                    onAssign(i, null);
+                    refresh();
+                  }}
                 >✕</button>
               </div>
             ) : (
@@ -400,7 +481,6 @@ export default function Inventory({
 }: InventoryProps) {
   const [, forceUpdate] = useState(0);
   const refresh = () => forceUpdate((n) => n + 1);
-  const [draggingId, setDraggingId] = useState<ConsumableId | null>(null);
 
   // ESC closes inventory
   useEffect(() => {
@@ -418,6 +498,23 @@ export default function Inventory({
 
   const handleAssignSlot = (slotIndex: number, id: ConsumableId | null) => {
     playerConsumables.assignSlot(slotIndex, id);
+    refresh();
+  };
+
+  // ── Swap two hotbar slots ────────────────────────────────────
+  // Reads both current assignedIds, then writes them crossed.
+  // Cooldown / duration timers are NOT swapped — only the
+  // item assignment changes so active buffs keep ticking on
+  // their original slot.
+  const handleSwapSlots = (a: number, b: number) => {
+    const slotA = playerConsumables.slots[a];
+    const slotB = playerConsumables.slots[b];
+    const idA   = slotA.assignedId;
+    const idB   = slotB.assignedId;
+    // Direct mutation — assignSlot resets timers, which we don't
+    // want for a mid-combat rearrange, so swap assignedId directly.
+    slotA.assignedId = idB;
+    slotB.assignedId = idA;
     refresh();
   };
 
@@ -520,9 +617,10 @@ export default function Inventory({
 
               {/* Hotbar assignment */}
               <div>
-                <span className="inv-sec-label">Hotbar · Drag to assign</span>
+                <span className="inv-sec-label">Hotbar · Drag to assign or swap</span>
                 <HotbarAssignPanel
                   playerConsumables={playerConsumables}
+                  onSwapSlots={handleSwapSlots}
                   onAssign={handleAssignSlot}
                   refresh={refresh}
                 />
@@ -539,7 +637,7 @@ export default function Inventory({
                       <ConsumableBagRow
                         key={entry.def.id}
                         entry={entry}
-                        onDragStart={(id) => setDraggingId(id)}
+                        onDragStart={() => {}}
                       />
                     ))
                   )}
