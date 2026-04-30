@@ -9,19 +9,46 @@ import { WeaponItem, ArmorItem, ArmorSlot } from "@/engine/items/types";
 import { ItemDrop }      from "@/engine/ItemDrop";
 import { getWeaponPassive } from "@/engine/WeaponPassiveRegistry";
 import { ARMOR_SET_DEFS }   from "@/engine/items/ArmorRegistry";
+import { PlayerConsumables, BagEntry, HOTBAR_SLOTS } from "@/engine/PlayerConsumables";
+import { ConsumableId }  from "@/engine/ConsumableRegistry";
 import "@/styles/inventory.css";
 
 // ============================================================
 // [🧱 BLOCK: Props]
 // ============================================================
 interface InventoryProps {
-  playerStats:   PlayerStats;
-  player:        Player;
-  gold:          number;
-  nearbyDrops:   ItemDrop[];
-  onGoldChange:  (newGold: number) => void;
-  onEquipDrop:   (drop: ItemDrop) => void;
-  onClose:       () => void;
+  playerStats:        PlayerStats;
+  player:             Player;
+  gold:               number;
+  nearbyDrops:        ItemDrop[];
+  playerConsumables:  PlayerConsumables;
+  onGoldChange:       (newGold: number) => void;
+  onEquipDrop:        (drop: ItemDrop) => void;
+  onClose:            () => void;
+}
+
+// ============================================================
+// [🧱 BLOCK: Drag Payload]
+// A drag can originate from the bag list OR from an existing
+// hotbar slot. We encode the source so the drop handler knows
+// whether to swap slots or just assign from bag.
+//
+// source: 'bag'   — dragged from the Provisions bag list
+// source: 'slot'  — dragged from an existing hotbar slot (slotIndex set)
+// ============================================================
+type DragPayload =
+  | { source: 'bag';  id: ConsumableId }
+  | { source: 'slot'; id: ConsumableId; slotIndex: number };
+
+const DRAG_KEY = 'consumableDrag';
+
+function encodeDrag(payload: DragPayload): string {
+  return JSON.stringify(payload);
+}
+
+function decodeDrag(raw: string): DragPayload | null {
+  try { return JSON.parse(raw) as DragPayload; }
+  catch { return null; }
 }
 
 // ============================================================
@@ -39,7 +66,6 @@ const SLOT_LABELS: Record<ArmorSlot, { short: string; full: string }> = {
 
 // ============================================================
 // [🧱 BLOCK: Nearby Drop Row]
-// Shows Equip (empty slot) or Swap (slot occupied).
 // ============================================================
 function NearbyDropRow({ drop, playerStats, onEquip }: {
   drop:        ItemDrop;
@@ -61,15 +87,14 @@ function NearbyDropRow({ drop, playerStats, onEquip }: {
     isArmor  ? playerStats.hasArmorInSlot((item as ArmorItem).slot) :
                false;
 
-  const isCharmsFull   = isCharm && playerStats.charms.length >= playerStats.maxCharms;
+  const isCharmsFull    = isCharm && playerStats.charms.length >= playerStats.maxCharms;
   const alreadyEquipped =
     isWeapon ? playerStats.equippedWeaponItem?.id === item.id :
     isArmor  ? playerStats.armorSlots[(item as ArmorItem).slot]?.id === item.id :
                playerStats.hasCharm(item.id);
 
   const canEquip = !alreadyEquipped && !isCharmsFull;
-
-  const isSwap = isSlotOccupied && !alreadyEquipped;
+  const isSwap   = isSlotOccupied && !alreadyEquipped;
 
   return (
     <div className="inv-drop-row">
@@ -90,48 +115,26 @@ function NearbyDropRow({ drop, playerStats, onEquip }: {
 
 // ============================================================
 // [🧱 BLOCK: Attributes Panel]
-// Shows STR/VIT/AGI/END with level, bar, computed total,
-// and the contribution from that stat level alone.
 // ============================================================
 function AttributesPanel({ playerStats, player }: {
   playerStats: PlayerStats;
   player:      Player;
 }) {
-  const cap = 10; // visual bar max
-
-  // Computed totals factoring all bonuses
-  const totalAtk  = playerStats.atkBonus + (playerStats.equippedWeaponItem ? 0 : 0);
-  const totalHp   = player.maxHp;
-  const totalSpd  = player.maxSpeed;
-  const totalSta  = player.maxStamina;
-
-  // Contribution from stat level only
+  const cap        = 10;
+  const totalAtk   = playerStats.atkBonus;
+  const totalHp    = player.maxHp;
+  const totalSpd   = player.maxSpeed;
+  const totalSta   = player.maxStamina;
   const strContrib = playerStats.str * 3;
   const vitContrib = playerStats.vit * 10;
   const agiContrib = (playerStats.agi * 0.3).toFixed(1);
   const endContrib = playerStats.end * 5;
 
   const rows = [
-    {
-      icon: '⚔️', key: 'STR', level: playerStats.str,
-      total: `${totalAtk} ATK`,
-      bonus: strContrib > 0 ? `+${strContrib} lvl` : 'base',
-    },
-    {
-      icon: '❤️', key: 'VIT', level: playerStats.vit,
-      total: `${totalHp} HP`,
-      bonus: vitContrib > 0 ? `+${vitContrib} lvl` : 'base',
-    },
-    {
-      icon: '💨', key: 'AGI', level: playerStats.agi,
-      total: `${totalSpd.toFixed(1)} SPD`,
-      bonus: parseFloat(agiContrib) > 0 ? `+${agiContrib} lvl` : 'base',
-    },
-    {
-      icon: '⚡', key: 'END', level: playerStats.end,
-      total: `${totalSta} STA`,
-      bonus: endContrib > 0 ? `+${endContrib} lvl` : 'base',
-    },
+    { icon: '⚔️', key: 'STR', level: playerStats.str, total: `${totalAtk} ATK`, bonus: strContrib > 0 ? `+${strContrib} lvl` : 'base' },
+    { icon: '❤️', key: 'VIT', level: playerStats.vit, total: `${totalHp} HP`,   bonus: vitContrib > 0 ? `+${vitContrib} lvl` : 'base' },
+    { icon: '💨', key: 'AGI', level: playerStats.agi, total: `${totalSpd.toFixed(1)} SPD`, bonus: parseFloat(agiContrib) > 0 ? `+${agiContrib} lvl` : 'base' },
+    { icon: '⚡', key: 'END', level: playerStats.end, total: `${totalSta} STA`, bonus: endContrib > 0 ? `+${endContrib} lvl` : 'base' },
   ];
 
   return (
@@ -144,10 +147,7 @@ function AttributesPanel({ playerStats, player }: {
             <td className="inv-stat-table__lvl">{row.level}</td>
             <td className="inv-stat-table__bar">
               <div className="inv-stat-bar-bg">
-                <div
-                  className="inv-stat-bar-fill"
-                  style={{ width: `${(row.level / cap) * 100}%` }}
-                />
+                <div className="inv-stat-bar-fill" style={{ width: `${(row.level / cap) * 100}%` }} />
               </div>
             </td>
             <td className="inv-stat-table__total">{row.total}</td>
@@ -161,17 +161,14 @@ function AttributesPanel({ playerStats, player }: {
 
 // ============================================================
 // [🧱 BLOCK: Set Bonuses Panel]
-// All 3 sets, all tiers visible, active tiers highlighted.
 // ============================================================
 function SetBonusesPanel({ playerStats }: { playerStats: PlayerStats }) {
   const counts = playerStats.getEquippedSetCounts();
-
   return (
     <>
       {ARMOR_SET_DEFS.map((def, idx) => {
         const count = counts[def.id] ?? 0;
         const pct   = (count / 5) * 100;
-
         return (
           <React.Fragment key={def.id}>
             {idx > 0 && <div className="inv-set-divider" />}
@@ -187,12 +184,8 @@ function SetBonusesPanel({ playerStats }: { playerStats: PlayerStats }) {
                 const active = count >= tier.pieces;
                 return (
                   <div key={tier.pieces} className="inv-tier-row">
-                    <span className={`inv-tier-badge ${active ? 'inv-tier-badge--active' : ''}`}>
-                      {tier.pieces}pc
-                    </span>
-                    <span className={`inv-tier-desc ${active ? 'inv-tier-desc--active' : ''}`}>
-                      {tier.description}
-                    </span>
+                    <span className={`inv-tier-badge ${active ? 'inv-tier-badge--active' : ''}`}>{tier.pieces}pc</span>
+                    <span className={`inv-tier-desc  ${active ? 'inv-tier-desc--active'  : ''}`}>{tier.description}</span>
                   </div>
                 );
               })}
@@ -205,28 +198,20 @@ function SetBonusesPanel({ playerStats }: { playerStats: PlayerStats }) {
 }
 
 // ============================================================
-// [🧱 BLOCK: Weapon Slot]
+// [🧱 BLOCK: Weapon Slot Card]
 // ============================================================
-function WeaponSlotCard({ item, onSell }: {
-  item:    WeaponItem | null;
-  onSell:  () => void;
-}) {
+function WeaponSlotCard({ item, onSell }: { item: WeaponItem | null; onSell: () => void }) {
   const [confirm, setConfirm] = useState(false);
-
   if (!item) {
     return (
       <div className="inv-equip-card">
         <div className="inv-slot-box">WPN</div>
-        <div className="inv-equip-info">
-          <div className="inv-equip-empty">Bare fists — seek steel</div>
-        </div>
+        <div className="inv-equip-info"><div className="inv-equip-empty">Bare fists — seek steel</div></div>
       </div>
     );
   }
-
   const passive = getWeaponPassive(item.weaponType);
   const refund  = Math.ceil(item.cost * 0.5);
-
   return (
     <div className="inv-equip-card inv-equip-card--filled">
       <div className="inv-slot-box inv-slot-box--active">WPN</div>
@@ -239,7 +224,7 @@ function WeaponSlotCard({ item, onSell }: {
         <button className="inv-sell-btn" onClick={() => setConfirm(true)}>Sell</button>
       ) : (
         <div className="inv-confirm-row">
-          <button className="inv-confirm-btn--yes" onClick={() => { setConfirm(false); onSell(); }}>+{refund}g</button>
+          <button className="inv-confirm-btn--yes"    onClick={() => { setConfirm(false); onSell(); }}>+{refund}g</button>
           <button className="inv-confirm-btn--cancel" onClick={() => setConfirm(false)}>✕</button>
         </div>
       )}
@@ -250,27 +235,18 @@ function WeaponSlotCard({ item, onSell }: {
 // ============================================================
 // [🧱 BLOCK: Armor Slot Card]
 // ============================================================
-function ArmorSlotCard({ slot, item, onSell }: {
-  slot:   ArmorSlot;
-  item:   ArmorItem | null;
-  onSell: () => void;
-}) {
+function ArmorSlotCard({ slot, item, onSell }: { slot: ArmorSlot; item: ArmorItem | null; onSell: () => void }) {
   const [confirm, setConfirm] = useState(false);
   const label = SLOT_LABELS[slot];
-
   if (!item) {
     return (
       <div className="inv-equip-card">
         <div className="inv-slot-box">{label.short}</div>
-        <div className="inv-equip-info">
-          <div className="inv-equip-empty">Empty — {label.full}</div>
-        </div>
+        <div className="inv-equip-info"><div className="inv-equip-empty">Empty — {label.full}</div></div>
       </div>
     );
   }
-
   const refund = Math.ceil(item.cost * 0.5);
-
   return (
     <div className="inv-equip-card inv-equip-card--filled">
       <div className="inv-slot-box inv-slot-box--active">{label.short}</div>
@@ -282,7 +258,7 @@ function ArmorSlotCard({ slot, item, onSell }: {
         <button className="inv-sell-btn" onClick={() => setConfirm(true)}>Sell</button>
       ) : (
         <div className="inv-confirm-row">
-          <button className="inv-confirm-btn--yes" onClick={() => { setConfirm(false); onSell(); }}>+{refund}g</button>
+          <button className="inv-confirm-btn--yes"    onClick={() => { setConfirm(false); onSell(); }}>+{refund}g</button>
           <button className="inv-confirm-btn--cancel" onClick={() => setConfirm(false)}>✕</button>
         </div>
       )}
@@ -296,7 +272,6 @@ function ArmorSlotCard({ slot, item, onSell }: {
 function CharmRow({ charm, onSell }: { charm: Charm; onSell: () => void }) {
   const [confirm, setConfirm] = useState(false);
   const refund = Math.ceil(charm.cost * 0.5);
-
   return (
     <div className="inv-charm-row">
       <span className="inv-charm-icon">{charm.icon}</span>
@@ -309,7 +284,7 @@ function CharmRow({ charm, onSell }: { charm: Charm; onSell: () => void }) {
         <button className="inv-sell-btn" onClick={() => setConfirm(true)}>Sell</button>
       ) : (
         <div className="inv-confirm-row">
-          <button className="inv-confirm-btn--yes" onClick={() => { setConfirm(false); onSell(); }}>+{refund}g</button>
+          <button className="inv-confirm-btn--yes"    onClick={() => { setConfirm(false); onSell(); }}>+{refund}g</button>
           <button className="inv-confirm-btn--cancel" onClick={() => setConfirm(false)}>✕</button>
         </div>
       )}
@@ -318,10 +293,191 @@ function CharmRow({ charm, onSell }: { charm: Charm; onSell: () => void }) {
 }
 
 // ============================================================
+// [🧱 BLOCK: Consumable Bag Row]
+// Draggable row — only the item icon travels as the ghost.
+// Sets DragPayload { source: 'bag', id } on dataTransfer.
+// ============================================================
+function ConsumableBagRow({ entry, onDragStart }: {
+  entry:       BagEntry;
+  onDragStart: (id: ConsumableId) => void;
+}) {
+  const isPotion = entry.def.kind === 'potion';
+
+  const handleDragStart = (e: React.DragEvent) => {
+    // Icon-only ghost
+    const ghost = document.createElement('div');
+    ghost.style.cssText = `
+      position:fixed; top:-100px; left:-100px;
+      width:36px; height:36px;
+      display:flex; align-items:center; justify-content:center;
+      font-size:22px; background:rgba(10,8,4,0.9);
+      border:1px solid #8b6914; border-radius:4px;
+      pointer-events:none;
+    `;
+    ghost.textContent = entry.def.icon;
+    document.body.appendChild(ghost);
+    e.dataTransfer.setDragImage(ghost, 18, 18);
+    setTimeout(() => document.body.removeChild(ghost), 0);
+
+    const payload: DragPayload = { source: 'bag', id: entry.def.id };
+    e.dataTransfer.setData(DRAG_KEY, encodeDrag(payload));
+    onDragStart(entry.def.id);
+  };
+
+  return (
+    <div
+      className={`inv-consumable-row inv-consumable-row--${entry.def.kind}`}
+      draggable
+      onDragStart={handleDragStart}
+    >
+      <span className="inv-consumable-row__icon">{entry.def.icon}</span>
+      <div className="inv-consumable-row__info">
+        <div className="inv-consumable-row__name">{entry.def.name}</div>
+        <div className="inv-consumable-row__desc">{entry.def.description}</div>
+      </div>
+      <span className={`inv-consumable-row__kind inv-consumable-row__kind--${entry.def.kind}`}>
+        {isPotion ? 'Potion' : 'Scroll'}
+      </span>
+      <span className="inv-consumable-row__count">×{entry.count}</span>
+    </div>
+  );
+}
+
+// ============================================================
+// [🧱 BLOCK: Hotbar Assign Panel]
+// Four drop targets. Supports three drag interactions:
+//
+//  1. Bag → empty slot      — assign
+//  2. Bag → occupied slot   — replace (old assignment cleared)
+//  3. Slot → slot           — swap both assignments
+//
+// Each assigned slot is also draggable (source: 'slot') so the
+// player can rearrange without going back to the bag list.
+// The drag ghost always shows only the item icon.
+// ============================================================
+function HotbarAssignPanel({ playerConsumables, onSwapSlots, onAssign, refresh }: {
+  playerConsumables: PlayerConsumables;
+  onSwapSlots:       (a: number, b: number) => void;
+  onAssign:          (slotIndex: number, id: ConsumableId | null) => void;
+  refresh:           () => void;
+}) {
+  const [dragOverSlot, setDragOverSlot] = useState<number | null>(null);
+
+  // ── Build icon-only ghost ───────────────────────────────────
+  const makeGhost = (icon: string) => {
+    const ghost = document.createElement('div');
+    ghost.style.cssText = `
+      position:fixed; top:-100px; left:-100px;
+      width:36px; height:36px;
+      display:flex; align-items:center; justify-content:center;
+      font-size:22px; background:rgba(10,8,4,0.9);
+      border:1px solid #8b6914; border-radius:4px;
+      pointer-events:none;
+    `;
+    ghost.textContent = icon;
+    return ghost;
+  };
+
+  // ── Drop handler ────────────────────────────────────────────
+  const handleDrop = (e: React.DragEvent, targetSlotIndex: number) => {
+    e.preventDefault();
+    setDragOverSlot(null);
+
+    const raw     = e.dataTransfer.getData(DRAG_KEY);
+    const payload = decodeDrag(raw);
+    if (!payload) return;
+
+    if (payload.source === 'bag') {
+      // Bag → slot: just assign (replaces whatever was there)
+      onAssign(targetSlotIndex, payload.id);
+    } else if (payload.source === 'slot') {
+      const sourceSlotIndex = payload.slotIndex;
+      if (sourceSlotIndex === targetSlotIndex) return; // dropped on self
+
+      // Slot → slot: swap both assignments
+      onSwapSlots(sourceSlotIndex, targetSlotIndex);
+    }
+
+    refresh();
+  };
+
+  const SLOT_COOLDOWN_LABELS = ['3s', '4.5s', '6s', '7s'];
+
+  return (
+    <div className="inv-hotbar-assign">
+      {Array.from({ length: HOTBAR_SLOTS }).map((_, i) => {
+        const slot       = playerConsumables.slots[i];
+        const assignedId = slot.assignedId;
+        const def        = assignedId ? playerConsumables.bag.get(assignedId)?.def ?? null : null;
+        const count      = assignedId ? playerConsumables.bagCount(assignedId) : 0;
+        const isOver     = dragOverSlot === i;
+
+        // ── Drag handler for already-assigned slot ────────────
+        const handleSlotDragStart = (e: React.DragEvent) => {
+          if (!assignedId || !def) return;
+          const ghost = makeGhost(def.icon);
+          document.body.appendChild(ghost);
+          e.dataTransfer.setDragImage(ghost, 18, 18);
+          setTimeout(() => document.body.removeChild(ghost), 0);
+
+          const payload: DragPayload = { source: 'slot', id: assignedId, slotIndex: i };
+          e.dataTransfer.setData(DRAG_KEY, encodeDrag(payload));
+        };
+
+        return (
+          <div
+            key={i}
+            className={`inv-hotbar-slot ${isOver ? 'inv-hotbar-slot--dragover' : ''} ${!assignedId ? 'inv-hotbar-slot--empty' : ''}`}
+            onDragOver={(e) => { e.preventDefault(); setDragOverSlot(i); }}
+            onDragLeave={() => setDragOverSlot(null)}
+            onDrop={(e) => handleDrop(e, i)}
+          >
+            <div className="inv-hotbar-slot__header">
+              <span className="inv-hotbar-slot__key">{i + 1}</span>
+              <span className="inv-hotbar-slot__cd">{SLOT_COOLDOWN_LABELS[i]}</span>
+            </div>
+
+            {def ? (
+              // ── Assigned slot — draggable ────────────────────
+              <div
+                className="inv-hotbar-slot__assigned"
+                draggable
+                onDragStart={handleSlotDragStart}
+                style={{ cursor: 'grab' }}
+              >
+                <span className="inv-hotbar-slot__assigned-icon">{def.icon}</span>
+                <div className="inv-hotbar-slot__assigned-info">
+                  <div className="inv-hotbar-slot__assigned-name">{def.name}</div>
+                  <div className="inv-hotbar-slot__assigned-count">×{count} remaining</div>
+                </div>
+                <button
+                  className="inv-hotbar-slot__clear"
+                  onClick={(e) => {
+                    e.stopPropagation(); // prevent drag from firing
+                    onAssign(i, null);
+                    refresh();
+                  }}
+                >✕</button>
+              </div>
+            ) : (
+              <div className="inv-hotbar-slot__placeholder">
+                Drop item here
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// ============================================================
 // [🧱 BLOCK: Inventory Main]
 // ============================================================
 export default function Inventory({
-  playerStats, player, gold, nearbyDrops, onGoldChange, onEquipDrop, onClose,
+  playerStats, player, gold, nearbyDrops,
+  playerConsumables,
+  onGoldChange, onEquipDrop, onClose,
 }: InventoryProps) {
   const [, forceUpdate] = useState(0);
   const refresh = () => forceUpdate((n) => n + 1);
@@ -335,25 +491,34 @@ export default function Inventory({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [onClose]);
 
-  const handleSellWeapon = () => {
-    onGoldChange(playerStats.unequipWeapon(gold, player));
+  const handleSellWeapon = () => { onGoldChange(playerStats.unequipWeapon(gold, player)); refresh(); };
+  const handleSellArmor  = (slot: ArmorSlot) => { onGoldChange(playerStats.sellArmor(slot, gold, player)); refresh(); };
+  const handleSellCharm  = (id: string) => { onGoldChange(playerStats.sellCharm(id, gold, player)); refresh(); };
+  const handleEquipDrop  = (drop: ItemDrop) => { onEquipDrop(drop); refresh(); };
+
+  const handleAssignSlot = (slotIndex: number, id: ConsumableId | null) => {
+    playerConsumables.assignSlot(slotIndex, id);
     refresh();
   };
 
-  const handleSellArmor = (slot: ArmorSlot) => {
-    onGoldChange(playerStats.sellArmor(slot, gold, player));
+  // ── Swap two hotbar slots ────────────────────────────────────
+  // Reads both current assignedIds, then writes them crossed.
+  // Cooldown / duration timers are NOT swapped — only the
+  // item assignment changes so active buffs keep ticking on
+  // their original slot.
+  const handleSwapSlots = (a: number, b: number) => {
+    const slotA = playerConsumables.slots[a];
+    const slotB = playerConsumables.slots[b];
+    const idA   = slotA.assignedId;
+    const idB   = slotB.assignedId;
+    // Direct mutation — assignSlot resets timers, which we don't
+    // want for a mid-combat rearrange, so swap assignedId directly.
+    slotA.assignedId = idB;
+    slotB.assignedId = idA;
     refresh();
   };
 
-  const handleSellCharm = (charmId: string) => {
-    onGoldChange(playerStats.sellCharm(charmId, gold, player));
-    refresh();
-  };
-
-  const handleEquipDrop = (drop: ItemDrop) => {
-    onEquipDrop(drop);
-    refresh();
-  };
+  const bagEntries = playerConsumables.bagEntries();
 
   return (
     <div className="inv-backdrop">
@@ -372,12 +537,11 @@ export default function Inventory({
             </div>
           </div>
 
-          {/* ── 3-Column Body ── */}
+          {/* ── 4-Column Body ── */}
           <div className="inv-cols">
 
             {/* ── Column 1: Nearby Drops · Attributes · Set Bonuses ── */}
             <div className="inv-col">
-
               <div>
                 <span className="inv-sec-label">Nearby Drops</span>
                 <div className="inv-box">
@@ -395,75 +559,92 @@ export default function Inventory({
                   )}
                 </div>
               </div>
-
               <div>
                 <span className="inv-sec-label">Attributes</span>
                 <div className="inv-box">
                   <AttributesPanel playerStats={playerStats} player={player} />
                 </div>
               </div>
-
               <div className="inv-set-section">
                 <span className="inv-sec-label">Set Bonuses</span>
                 <div className="inv-set-box">
                   <SetBonusesPanel playerStats={playerStats} />
                 </div>
               </div>
-
             </div>
 
             {/* ── Column 2: Weapon + Armor ── */}
             <div className="inv-col">
-
               <div>
                 <span className="inv-sec-label">Weapon</span>
                 <div className="inv-box">
-                  <WeaponSlotCard
-                    item={playerStats.equippedWeaponItem}
-                    onSell={handleSellWeapon}
-                  />
+                  <WeaponSlotCard item={playerStats.equippedWeaponItem} onSell={handleSellWeapon} />
                 </div>
               </div>
-
               <div>
                 <span className="inv-sec-label">Armor</span>
                 <div className="inv-box">
                   {ARMOR_SLOTS.map((slot) => (
                     <ArmorSlotCard
-                      key={slot}
-                      slot={slot}
+                      key={slot} slot={slot}
                       item={playerStats.armorSlots[slot]}
                       onSell={() => handleSellArmor(slot)}
                     />
                   ))}
                 </div>
               </div>
-
             </div>
 
             {/* ── Column 3: Charms ── */}
             <div className="inv-col">
-
               <div>
                 <span className="inv-sec-label">
                   Charms ({playerStats.charms.length} / {playerStats.maxCharms})
                 </span>
                 <div className="inv-box">
                   {playerStats.charms.map((charm) => (
-                    <CharmRow
-                      key={charm.id}
-                      charm={charm}
-                      onSell={() => handleSellCharm(charm.id)}
-                    />
+                    <CharmRow key={charm.id} charm={charm} onSell={() => handleSellCharm(charm.id)} />
                   ))}
                   {Array.from({ length: playerStats.maxCharms - playerStats.charms.length }).map((_, i) => (
                     <div key={`empty-${i}`} className="inv-charm-empty">— Empty charm slot</div>
                   ))}
                 </div>
               </div>
-
             </div>
 
+            {/* ── Column 4: Provisions ── */}
+            <div className="inv-col">
+
+              {/* Hotbar assignment */}
+              <div>
+                <span className="inv-sec-label">Hotbar · Drag to assign or swap</span>
+                <HotbarAssignPanel
+                  playerConsumables={playerConsumables}
+                  onSwapSlots={handleSwapSlots}
+                  onAssign={handleAssignSlot}
+                  refresh={refresh}
+                />
+              </div>
+
+              {/* Bag list */}
+              <div className="inv-prov-bag">
+                <span className="inv-sec-label">Provisions</span>
+                <div className="inv-box inv-box--grow">
+                  {bagEntries.length === 0 ? (
+                    <div className="inv-drop-empty">No potions or scrolls carried</div>
+                  ) : (
+                    bagEntries.map((entry) => (
+                      <ConsumableBagRow
+                        key={entry.def.id}
+                        entry={entry}
+                        onDragStart={() => {}}
+                      />
+                    ))
+                  )}
+                </div>
+              </div>
+
+            </div>
           </div>
 
           {/* ── Footer ── */}

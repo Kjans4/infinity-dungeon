@@ -49,8 +49,6 @@ const REROLL_CAP       = 100;
 
 // ============================================================
 // [🧱 BLOCK: Armor Slots]
-// 'weapon' slot replaced with 'leggings'
-// Slot order: helmet, armor, leggings, gloves, boots
 // ============================================================
 export type ArmorSlots = {
   helmet:   ArmorItem | null;
@@ -195,9 +193,7 @@ export class PlayerStats {
 
   equipWeapon(item: WeaponItem, gold: number, player: Player): number {
     if (!this.canBuyWeapon(item, gold)) return gold;
-    if (this.equippedWeaponItem) {
-      this.removeWeaponPassive(this.equippedWeaponItem, player);
-    }
+    if (this.equippedWeaponItem) this.removeWeaponPassive(this.equippedWeaponItem, player);
     this.equippedWeaponItem = item;
     this.applyWeaponPassive(item, player);
     player.equippedWeapon = new Weapon(item.weaponType);
@@ -206,9 +202,7 @@ export class PlayerStats {
   }
 
   claimWeapon(item: WeaponItem, player: Player): void {
-    if (this.equippedWeaponItem) {
-      this.removeWeaponPassive(this.equippedWeaponItem, player);
-    }
+    if (this.equippedWeaponItem) this.removeWeaponPassive(this.equippedWeaponItem, player);
     this.equippedWeaponItem = item;
     this.applyWeaponPassive(item, player);
     player.equippedWeapon = new Weapon(item.weaponType);
@@ -313,8 +307,7 @@ export class PlayerStats {
   generateShopOptions(floor: number = 1) {
     const ownedCharmIds = this.charms.map((c) => c.id);
     const ownedWeaponId = this.equippedWeaponItem?.id ?? null;
-    const ownedArmorIds = Object.values(this.armorSlots)
-      .filter(Boolean).map((a) => a!.id);
+    const ownedArmorIds = Object.values(this.armorSlots).filter(Boolean).map((a) => a!.id);
     this.shopOptions      = getRandomShopItems(ownedCharmIds, ownedWeaponId, ownedArmorIds, 3, floor);
     this.rerollsThisVisit = 0;
   }
@@ -324,8 +317,7 @@ export class PlayerStats {
     const cost          = this.rerollCost;
     const ownedCharmIds = this.charms.map((c) => c.id);
     const ownedWeaponId = this.equippedWeaponItem?.id ?? null;
-    const ownedArmorIds = Object.values(this.armorSlots)
-      .filter(Boolean).map((a) => a!.id);
+    const ownedArmorIds = Object.values(this.armorSlots).filter(Boolean).map((a) => a!.id);
     this.shopOptions     = getRandomShopItems(ownedCharmIds, ownedWeaponId, ownedArmorIds, 3, floor);
     this.rerollsThisVisit++;
     return gold - cost;
@@ -335,7 +327,6 @@ export class PlayerStats {
   // [🧱 BLOCK: Apply Stats to Player]
   // Layers: base + stat levels + charm modifiers + armor pieces
   // + set bonus modifiers.
-  // leggings slot contributes moveSpeed (same as boots — stacks).
   // ============================================================
   applyToPlayer(player: Player) {
     let armorHp    = 0;
@@ -352,15 +343,10 @@ export class PlayerStats {
     });
 
     const sb = this._getSetBonuses();
-
     if ((this._getSetCounts()['blood_reaper'] ?? 0) < 5) resetBloodReaperCounter();
 
     player.maxHp = Math.max(1,
-      100
-      + (this.vit * 10)
-      + this.modifiers.bonusMaxHp
-      + armorHp
-      + sb.bonusMaxHp
+      100 + (this.vit * 10) + this.modifiers.bonusMaxHp + armorHp + sb.bonusMaxHp
     );
     player.hp         = Math.min(player.hp, player.maxHp);
     player.maxStamina = 100 + (this.end * 5) + this.modifiers.bonusMaxStamina;
@@ -369,8 +355,25 @@ export class PlayerStats {
   }
 
   // ============================================================
+  // [🧱 BLOCK: applySpeedOnly]
+  // Returns the base maxSpeed value derived from stats, charms,
+  // and armor WITHOUT writing to player or including consumable
+  // buffs. Used by ConsumableSystem each frame to compute the
+  // Wrath Potion speed bonus on top of the correct base.
+  // ============================================================
+  applySpeedOnly(player: Player): number {
+    let armorSpeed = 0;
+    const slots: ArmorSlot[] = ['helmet', 'armor', 'leggings', 'gloves', 'boots'];
+    slots.forEach((slot) => {
+      const piece = this.armorSlots[slot];
+      if (piece?.statType === 'moveSpeed') armorSpeed += piece.statValue;
+    });
+    const sb = this._getSetBonuses();
+    return 5 + (this.agi * 0.3) + this.modifiers.bonusSpeed + armorSpeed + sb.bonusMoveSpeed;
+  }
+
+  // ============================================================
   // [🧱 BLOCK: Computed Getters]
-  // atkBonus now reads gloves + leggings (leggings replaced weapon slot)
   // ============================================================
   get atkBonus(): number {
     let armorAtk = 0;
@@ -419,9 +422,7 @@ export class PlayerStats {
   // [🧱 BLOCK: Reset]
   // ============================================================
   reset(player: Player) {
-    if (this.equippedWeaponItem) {
-      this.removeWeaponPassive(this.equippedWeaponItem, player);
-    }
+    if (this.equippedWeaponItem) this.removeWeaponPassive(this.equippedWeaponItem, player);
     this.charms.forEach((c) => c.onRemove(player, this.modifiers));
 
     this.str = 0; this.vit = 0; this.agi = 0; this.end = 0;

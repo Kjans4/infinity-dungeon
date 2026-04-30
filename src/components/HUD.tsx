@@ -2,12 +2,13 @@
 
 import React from "react";
 import "@/styles/hud.css";
+import { RoomPhase } from "@/engine/RoomManager";
+import { HotbarSlot } from "@/engine/PlayerConsumables";
+import { CONSUMABLE_REGISTRY, ConsumableId, SLOT_COOLDOWNS } from "@/engine/ConsumableRegistry";
 
 // ============================================================
 // [🧱 BLOCK: HUD Props]
 // ============================================================
-import { RoomPhase } from "@/engine/RoomManager";
-
 interface HUDProps {
   hp:            number;
   maxHp:         number;
@@ -22,6 +23,7 @@ interface HUDProps {
   bossMaxHp:     number;
   bossIsEnraged: boolean;
   roomPhase:     RoomPhase;
+  hotbar:        [HotbarSlot, HotbarSlot, HotbarSlot, HotbarSlot];
 }
 
 // ============================================================
@@ -49,7 +51,6 @@ function ThinBar({ value, max, color, label }: {
 
 // ============================================================
 // [🧱 BLOCK: Gem Divider]
-// Vertical rule with a gold diamond at center.
 // ============================================================
 function Divider() {
   return (
@@ -88,7 +89,6 @@ function KillRing({ kills, threshold, isElite }: {
   return (
     <div className="hud-kill-ring-wrapper">
       <div className="hud-kill-ring-dial">
-        {/* Outer rune tick marks */}
         <svg
           style={{ position: "absolute", inset: "-4px", width: "calc(100% + 8px)", height: "calc(100% + 8px)" }}
           viewBox="0 0 52 52"
@@ -103,13 +103,9 @@ function KillRing({ kills, threshold, isElite }: {
             return <line key={i} x1={x1} y1={y1} x2={x2} y2={y2} stroke="#3a2808" strokeWidth="1.5" />;
           })}
         </svg>
-
         <svg className="hud-kill-ring-svg" width="44" height="44" viewBox="0 0 44 44">
-          {/* Track */}
           <circle cx="22" cy="22" r={radius} fill="none" stroke="#1a1208" strokeWidth="4" />
-          {/* Gold background ring */}
           <circle cx="22" cy="22" r={radius} fill="none" stroke="#2e2008" strokeWidth="4" />
-          {/* Fill */}
           <circle
             cx="22" cy="22" r={radius} fill="none"
             stroke={ringColor}
@@ -186,12 +182,121 @@ function BossHPBar({ hp, maxHp, isEnraged, floor }: {
 }
 
 // ============================================================
+// [🧱 BLOCK: Hotbar Slot]
+// Renders a single quickslot with:
+//  - item icon (or empty state)
+//  - stack count badge (×N)
+//  - cooldown sweep overlay (SVG arc)
+//  - duration bar along the bottom edge
+//  - key hint label (1–4)
+// ============================================================
+function HotbarSlotWidget({ slot, slotIndex, bagCount }: {
+  slot:       HotbarSlot;
+  slotIndex:  number;
+  bagCount:   number;
+}) {
+  const def         = slot.assignedId ? CONSUMABLE_REGISTRY[slot.assignedId] : null;
+  const cooldownMax = SLOT_COOLDOWNS[slotIndex];
+  const cdPct       = slot.cooldownMs > 0 ? slot.cooldownMs / cooldownMax : 0;
+  const durPct      = def && def.durationMs > 0 && slot.durationMs > 0
+    ? slot.durationMs / def.durationMs
+    : 0;
+
+  const isEmpty     = !def;
+  const onCooldown  = slot.cooldownMs > 0;
+  const noneLeft    = def && bagCount === 0;
+
+  // SVG cooldown sweep (clock wipe)
+  const R           = 18;
+  const CIRC        = 2 * Math.PI * R;
+  const sweepOffset = CIRC * (1 - cdPct);
+
+  const keyLabel = String(slotIndex + 1);
+
+  return (
+    <div className={`hud-hotbar-slot ${isEmpty ? "hud-hotbar-slot--empty" : ""} ${onCooldown ? "hud-hotbar-slot--cooldown" : ""} ${noneLeft ? "hud-hotbar-slot--depleted" : ""}`}>
+
+      {/* Key hint */}
+      <span className="hud-hotbar-slot__key">{keyLabel}</span>
+
+      {/* Icon */}
+      <span className="hud-hotbar-slot__icon">
+        {def ? def.icon : "·"}
+      </span>
+
+      {/* Stack count badge */}
+      {def && bagCount > 0 && (
+        <span className="hud-hotbar-slot__count">×{bagCount}</span>
+      )}
+
+      {/* Cooldown SVG sweep overlay */}
+      {onCooldown && (
+        <svg className="hud-hotbar-slot__cd-svg" viewBox="0 0 44 44">
+          <circle
+            cx="22" cy="22" r={R}
+            fill="none"
+            stroke="rgba(0,0,0,0.65)"
+            strokeWidth="36"
+            strokeDasharray={CIRC}
+            strokeDashoffset={sweepOffset}
+            strokeLinecap="butt"
+            style={{ transform: "rotate(-90deg)", transformOrigin: "22px 22px" }}
+          />
+        </svg>
+      )}
+
+      {/* Cooldown seconds remaining */}
+      {onCooldown && (
+        <span className="hud-hotbar-slot__cd-text">
+          {(slot.cooldownMs / 1000).toFixed(1)}
+        </span>
+      )}
+
+      {/* Duration bar — shown for active buff items */}
+      {durPct > 0 && (
+        <div className="hud-hotbar-slot__dur-bar">
+          <div
+            className="hud-hotbar-slot__dur-fill"
+            style={{ width: `${durPct * 100}%` }}
+          />
+        </div>
+      )}
+
+    </div>
+  );
+}
+
+// ============================================================
+// [🧱 BLOCK: Hotbar Row]
+// Four slots separated by slim dividers, integrated into the
+// HUD banner via an extra Divider + hotbar group.
+// ============================================================
+function HotbarRow({ hotbar, bagCounts }: {
+  hotbar:    [HotbarSlot, HotbarSlot, HotbarSlot, HotbarSlot];
+  bagCounts: number[];
+}) {
+  return (
+    <div className="hud-hotbar">
+      {hotbar.map((slot, i) => (
+        <HotbarSlotWidget
+          key={i}
+          slot={slot}
+          slotIndex={i}
+          bagCount={bagCounts[i] ?? 0}
+        />
+      ))}
+    </div>
+  );
+}
+
+// ============================================================
 // [🧱 BLOCK: HUD Root]
 // ============================================================
 export default function HUD({
   hp, maxHp, stamina, maxStamina,
   kills, killThreshold, room, floor, gold,
   bossHp, bossMaxHp, bossIsEnraged, roomPhase,
+  hotbar,
 }: HUDProps) {
   const isEliteRoom = roomPhase === 'elite';
   const isBossRoom  = roomPhase === 'boss';
@@ -200,6 +305,17 @@ export default function HUD({
     hp / maxHp > 0.5  ? "#4ade80" :
     hp / maxHp > 0.25 ? "#facc15" :
                         "#ef4444";
+
+  // Derive bag counts for each slot from the hotbar assignedIds.
+  // GameCanvas passes hotbar from playerConsumables.slots — bag
+  // counts are read separately and passed down as a flat array.
+  // We receive them via the hotbar prop shape for simplicity;
+  // GameCanvas computes them before passing.
+  const bagCounts = hotbar.map((slot) =>
+    slot.assignedId
+      ? (slot as any)._bagCount ?? 0
+      : 0
+  );
 
   return (
     <>
@@ -216,8 +332,8 @@ export default function HUD({
 
           {/* ── HP + Stamina ── */}
           <div className="hud-bars-group">
-            <ThinBar value={hp}      max={maxHp}      color={hpColor}   label="Vitality" />
-            <ThinBar value={stamina} max={maxStamina}  color="#60a5fa"   label="Stamina"  />
+            <ThinBar value={hp}      max={maxHp}     color={hpColor}  label="Vitality" />
+            <ThinBar value={stamina} max={maxStamina} color="#60a5fa"  label="Stamina"  />
           </div>
 
           <Divider />
@@ -255,6 +371,11 @@ export default function HUD({
 
           {/* ── Kill Ring ── */}
           <KillRing kills={kills} threshold={killThreshold} isElite={isEliteRoom} />
+
+          <Divider />
+
+          {/* ── Hotbar ── */}
+          <HotbarRow hotbar={hotbar} bagCounts={bagCounts} />
 
         </div>
       </div>
