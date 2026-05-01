@@ -3,10 +3,12 @@ import { Charm, CHARM_POOL }             from "../CharmRegistry";
 import { WeaponItem, ArmorItem }         from "./types";
 import { WEAPON_ITEM_POOL }              from "./WeaponItemRegistry";
 import { ARMOR_TEMPLATES, buildArmorItem } from "./ArmorRegistry";
+import { ConsumableDef, POTION_POOL, SCROLL_POOL } from "../ConsumableRegistry";
 
 // ============================================================
 // [🧱 BLOCK: Shop Item Union]
 // A shop slot holds a Charm, WeaponItem, or ArmorItem.
+// Consumables are sold separately via the Provisions section.
 // ============================================================
 export type ShopItem =
   | (Charm      & { kind: 'charm'  })
@@ -21,17 +23,16 @@ export type ShopItem =
 // ownedCharmIds  — charm IDs already equipped
 // ownedWeaponId  — current equipped weapon ID (or null)
 // ownedArmorIds  — armor piece IDs already in slots or pending
-// count          — how many items to return (default 3)
+// count          — how many items to return (default 5)
 // floor          — current floor, used to scale armor stat values
 //
-// Pool weights: each category contributes equally to the shuffle,
-// so the distribution is ~1/3 charm, ~1/3 weapon, ~1/3 armor.
+// Pool weights: each category contributes equally to the shuffle.
 // ============================================================
 export function getRandomShopItems(
   ownedCharmIds:  string[],
   ownedWeaponId:  string | null,
   ownedArmorIds:  string[] = [],
-  count:          number   = 3,
+  count:          number   = 5,
   floor:          number   = 1
 ): ShopItem[] {
   // ── Available charms ───────────────────────────────────────
@@ -45,9 +46,6 @@ export function getRandomShopItems(
     .map((w: WeaponItem) => ({ ...w, kind: 'weapon' as const }));
 
   // ── Available armor ────────────────────────────────────────
-  // Build floor-scaled ArmorItems from templates, excluding any
-  // piece the player already owns or has as pending loot.
-  // Filter nulls before adding kind so TypeScript can narrow cleanly.
   const availableArmor: ShopItem[] = ARMOR_TEMPLATES
     .filter((t) => !ownedArmorIds.includes(t.id))
     .map((t)    => buildArmorItem(t.id, floor))
@@ -59,4 +57,28 @@ export function getRandomShopItems(
     .sort(() => Math.random() - 0.5);
 
   return combined.slice(0, count);
+}
+
+// ============================================================
+// [🧱 BLOCK: Get Random Consumable Drop]
+// Used by HordeSystem to spawn consumable ground drops.
+// Weighted: potions slightly more common than scrolls.
+// ============================================================
+export function getRandomConsumableDrop(): ConsumableDef {
+  const usePotion = Math.random() < 0.55;
+  const pool      = usePotion ? POTION_POOL : SCROLL_POOL;
+  return pool[Math.floor(Math.random() * pool.length)];
+}
+
+// ============================================================
+// [🧱 BLOCK: Get Shop Consumable Options]
+// Returns a fixed set of consumables for the shop provisions
+// section — one of each potion + a selection of scrolls.
+// Shuffled so the merchant feels different each visit.
+// ============================================================
+export function getShopConsumableOptions(): ConsumableDef[] {
+  const potions  = [...POTION_POOL].sort(() => Math.random() - 0.5);
+  const scrolls  = [...SCROLL_POOL].sort(() => Math.random() - 0.5);
+  // Show all 4 potions + 3 random scrolls = 7 items
+  return [...potions, ...scrolls.slice(0, 3)];
 }

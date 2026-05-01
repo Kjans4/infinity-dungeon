@@ -4,6 +4,7 @@ import { Camera }                               from "../Camera";
 import { Door }                                 from "../Door";
 import { ShopNPC }                              from "../ShopNPC";
 import { ItemDrop }                             from "../ItemDrop";
+import { ConsumableDrop }                       from "../ConsumableDrop";
 import { BaseEnemy }                            from "../enemy/BaseEnemy";
 import { Grunt, Shooter, Tank, spawnWave }      from "../enemy";
 import { Dasher }                               from "../enemy/Dasher";
@@ -16,7 +17,7 @@ import { WeaponSystem }                         from "./WeaponSystem";
 import { RenderSystem }                         from "./RenderSystem";
 import { ConsumableSystem }                     from "../ConsumableSystem";
 import { spawnBurst, spawnHitSpark, spawnDamageNumber } from "../Particle";
-import { getRandomShopItems }                   from "../items/ItemPool";
+import { getRandomShopItems, getRandomConsumableDrop } from "../items/ItemPool";
 import { circleCircle, rectCenter }             from "../Collision";
 import {
   isRendMarked, clearRendMark, REND_BONUS_DAMAGE,
@@ -64,6 +65,19 @@ const DROP_CHANCE = {
   bomber:  0.08,
 };
 const ELITE_DROP_MULT = 1.5;
+
+// ============================================================
+// [🧱 BLOCK: Consumable Drop Chances]
+// Separate from equipment drops — always rolls independently.
+// ============================================================
+const CONSUMABLE_DROP_CHANCE = {
+  grunt:   0.04,
+  shooter: 0.06,
+  tank:    0.10,
+  dasher:  0.05,
+  bomber:  0.07,
+};
+const ELITE_CONSUMABLE_MULT = 1.5;
 
 // ============================================================
 // [🧱 BLOCK: Volatile Explosion Constants]
@@ -124,18 +138,19 @@ export class HordeSystem {
     state.player.vx = 0;
     state.player.vy = 0;
 
-    state.kills         = 0;
-    state.alive         = 0;
-    state.lastSpawn     = 0;
-    state.roomEntryTime = Date.now();
-    state.projectiles   = [];
-    state.goldDrops     = [];
-    state.itemDrops     = [];
-    state.particles     = [];
-    state.hitSparks     = [];
-    state.damageNumbers = [];
-    state.boss          = null;
-    state.enemies       = [];
+    state.kills          = 0;
+    state.alive          = 0;
+    state.lastSpawn      = 0;
+    state.roomEntryTime  = Date.now();
+    state.projectiles    = [];
+    state.goldDrops      = [];
+    state.itemDrops      = [];
+    state.consumableDrops = [];
+    state.particles      = [];
+    state.hitSparks      = [];
+    state.damageNumbers  = [];
+    state.boss           = null;
+    state.enemies        = [];
 
     state.door          = new Door(worldW);
     state.door.isActive = false;
@@ -149,18 +164,19 @@ export class HordeSystem {
   // [🧱 BLOCK: Reset]
   // ============================================================
   reset(state: GameState) {
-    state.enemies       = [];
-    state.projectiles   = [];
-    state.goldDrops     = [];
-    state.itemDrops     = [];
-    state.particles     = [];
-    state.hitSparks     = [];
-    state.damageNumbers = [];
-    state.door          = null;
-    state.shopNpc       = null;
-    state.kills         = 0;
-    state.alive         = 0;
-    state.lastSpawn     = 0;
+    state.enemies         = [];
+    state.projectiles     = [];
+    state.goldDrops       = [];
+    state.itemDrops       = [];
+    state.consumableDrops = [];
+    state.particles       = [];
+    state.hitSparks       = [];
+    state.damageNumbers   = [];
+    state.door            = null;
+    state.shopNpc         = null;
+    state.kills           = 0;
+    state.alive           = 0;
+    state.lastSpawn       = 0;
   }
 
   // ============================================================
@@ -258,9 +274,6 @@ export class HordeSystem {
 
   // ============================================================
   // [🧱 BLOCK: Apply Incoming Damage]
-  // Single helper that applies Iron Potion reduction, Ward
-  // absorb, block, and takeHit in the correct order.
-  // Returns true if damage was fully absorbed (Ward or iFrames).
   // ============================================================
   private applyIncomingDamage(
     state:    GameState,
@@ -426,12 +439,6 @@ export class HordeSystem {
 
     // ── Enemy update + combat resolution ─────────────────────
     state.enemies.forEach((enemy) => {
-      // ── Phantom Potion — enemies lose aggro ───────────────
-      // When invisible the enemy skips its normal update (no
-      // chase / attack). It does NOT freeze — it simply idles
-      // so it continues to wander if it has wander logic, or
-      // just stands still. We still run stun logic below so
-      // stuns applied before invisibility keep ticking.
       if (!playerIsInvisible) {
         if (!enemy.isStunned) {
           enemy.update(player, worldW, worldH);
@@ -442,8 +449,6 @@ export class HordeSystem {
           enemy.vy = 0;
         }
       } else {
-        // Still tick stun timer while invisible so it doesn't
-        // get frozen at full stun duration
         if (enemy.isStunned) {
           (enemy as any).stunTimer -= 16;
           if ((enemy as any).stunTimer < 0) (enemy as any).stunTimer = 0;
@@ -465,8 +470,6 @@ export class HordeSystem {
 
       if (enemy.isDead) return;
 
-      // ── Windup-phase parry window ─────────────────────────
-      // Skip melee contact checks while invisible
       if (playerIsInvisible) return;
 
       if (!enemy.isStunned) {
@@ -549,7 +552,6 @@ export class HordeSystem {
     const isHeavy  = player.attackType === "heavy" || player.attackType === "charged_heavy";
     const isLight  = player.attackType === "light" || player.attackType === "charged_light";
 
-    // ── Wrath Potion ATK bonus stacks additively ───────────────
     const atkBonus = ps.atkBonus + ps.lastStandBonus(player) + ConsumableSystem.wrathAtkBonus(state);
     const passive  = ps.weaponPassive;
 
@@ -645,6 +647,7 @@ export class HordeSystem {
           this.handleVolatileExplosion(state, enemy, player, ps, render);
         }
 
+        // ── Equipment item drop ──────────────────────────────
         if (state.pendingLoot.length < PENDING_LOOT_CAP) {
           const baseChance = DROP_CHANCE[type];
           const chance     = isElite ? baseChance * ELITE_DROP_MULT : baseChance;
@@ -656,6 +659,18 @@ export class HordeSystem {
               dropped
             ));
           }
+        }
+
+        // ── Consumable drop — independent roll ────────────────
+        const cBaseChance = CONSUMABLE_DROP_CHANCE[type];
+        const cChance     = isElite ? cBaseChance * ELITE_CONSUMABLE_MULT : cBaseChance;
+        if (Math.random() < cChance) {
+          const consumableDef = getRandomConsumableDrop();
+          state.consumableDrops.push(new ConsumableDrop(
+            enemy.x + enemy.width  / 2 + (Math.random() - 0.5) * 20,
+            enemy.y + enemy.height / 2 + (Math.random() - 0.5) * 20,
+            consumableDef
+          ));
         }
 
         ps.charms.forEach((charm) => charm.onKill?.(player, ps.modifiers));
@@ -674,6 +689,21 @@ export class HordeSystem {
       if (state.pendingLoot.length >= PENDING_LOOT_CAP) return !drop.collected;
       if (drop.playerIsNear) { state.pendingLoot.push(drop.item); return false; }
       return !drop.collected;
+    });
+
+    // ── Consumable drop auto-pickup ───────────────────────────
+    state.consumableDrops = state.consumableDrops.filter((drop) => {
+      if (drop.collected) return false;
+      drop.update(player);
+      if (drop.collected) {
+        // Add to player bag
+        state.playerConsumables.addToBag(drop.def, 1);
+        // Tiny particle burst on pickup
+        state.particles.push(...spawnBurst(drop.x, drop.y,
+          drop.def.kind === 'potion' ? '#a78bfa' : '#38bdf8', 5, 0.8));
+        return false;
+      }
+      return true;
     });
 
     // ── Wave spawning ─────────────────────────────────────────
@@ -762,9 +792,10 @@ export class HordeSystem {
   draw(state: GameState, ctx: CanvasRenderingContext2D, camera: Camera, player: Player, worldW: number) {
     state.door?.draw(ctx, camera);
     state.shopNpc?.draw(ctx, camera, worldW);
-    state.enemies.forEach((e)     => e.draw(ctx, camera));
-    state.projectiles.forEach((p) => p.draw(ctx, camera));
-    state.itemDrops.forEach((d)   => d.draw(ctx, camera));
+    state.enemies.forEach((e)           => e.draw(ctx, camera));
+    state.projectiles.forEach((p)       => p.draw(ctx, camera));
+    state.itemDrops.forEach((d)         => d.draw(ctx, camera));
+    state.consumableDrops.forEach((d)   => d.draw(ctx, camera));
     this.goldSystem.draw(state, ctx, camera);
 
     state.particles.forEach((p)   => p.update());

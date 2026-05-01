@@ -1,6 +1,7 @@
 /* ============================================================
    Shop — src/styles/shop.css
-   Fixed 1020×640 panel. Three columns. No scroll.
+   4-column layout at 1440×700. No scroll on main body.
+   Col 1: Attributes | Col 2: Wares+Healing | Col 3: Gear | Col 4: Provisions
    ============================================================ */
 
 @import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700&family=Cinzel+Decorative:wght@400;700&family=IM+Fell+English:ital@0;1&display=swap');
@@ -24,17 +25,16 @@
   align-items: center;
   justify-content: center;
   background: rgba(0, 0, 0, 0.88);
-  padding: 20px;
+  padding: 16px;
 }
 
 /* ============================================================
-   [🧱 BLOCK: Panel — Fixed Size, No Scroll]
-   Matches Inventory at 1020×640.
+   [🧱 BLOCK: Panel — 1440×700, no scroll]
    ============================================================ */
 .shop-panel {
   position: relative;
-  width:      1020px;
-  height:     640px;
+  width:      1440px;
+  height:     700px;
   overflow:   hidden;
 
   background:
@@ -83,11 +83,11 @@
 .shop-panel-inner {
   margin:   6px;
   border:   1px solid #1e1608;
-  padding:  14px 16px 12px;
+  padding:  12px 14px 10px;
   display:  flex;
   flex-direction: column;
   height:   calc(100% - 12px);
-  gap:      10px;
+  gap:      8px;
 }
 
 /* ============================================================
@@ -98,13 +98,13 @@
   justify-content: space-between;
   align-items:     flex-end;
   border-bottom:   2px solid #8b6914;
-  padding-bottom:  8px;
+  padding-bottom:  7px;
   flex-shrink:     0;
 }
 
 .shop-header__eyebrow {
   font-size:      8px;
-  color:          #3a2a0a;
+  color:          #6a5020;
   letter-spacing: 2px;
   text-transform: uppercase;
   margin-bottom:  3px;
@@ -112,7 +112,7 @@
 
 .shop-header__title {
   font-family:    'Cinzel Decorative', serif;
-  font-size:      20px;
+  font-size:      18px;
   color:          #d4af37;
   letter-spacing: 4px;
   font-weight:    700;
@@ -122,7 +122,7 @@
 
 .shop-header__gold-label {
   font-size:      8px;
-  color:          #3a2a0a;
+  color:          #6a5020;
   letter-spacing: 2px;
   text-transform: uppercase;
   margin-bottom:  2px;
@@ -130,7 +130,7 @@
 
 .shop-header__gold-value {
   font-family:    'Cinzel Decorative', serif;
-  font-size:      20px;
+  font-size:      18px;
   font-weight:    700;
   color:          #d4af37;
 }
@@ -141,7 +141,7 @@
 .shop-section__label {
   font-size:      8px;
   font-weight:    700;
-  color:          #7a6020;
+  color:          #c0a060;
   letter-spacing: 2px;
   text-transform: uppercase;
   border-left:    3px solid #8b6914;
@@ -152,23 +152,38 @@
 }
 
 /* ============================================================
-   [🧱 BLOCK: 3-Column Body]
+   [🧱 BLOCK: Gear Sublabel]
+   ============================================================ */
+.shop-gear__sublabel {
+  font-size:      7px;
+  font-weight:    700;
+  color:          #7a6020;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  margin-bottom:  4px;
+  padding-bottom: 3px;
+  border-bottom:  1px solid #2a1e08;
+}
+
+/* ============================================================
+   [🧱 BLOCK: 4-Column Body]
+   Columns: narrow | wide | medium | medium
    ============================================================ */
 .shop-body {
   display:               grid;
-  grid-template-columns: 1fr 1fr 1fr;
-  gap:                   12px;
+  grid-template-columns: 200px 1fr 240px 240px;
+  gap:                   10px;
   flex:                  1;
   min-height:            0;
 }
 
 /* ============================================================
-   [🧱 BLOCK: Column]
+   [🧱 BLOCK: Column Base]
    ============================================================ */
 .shop-col {
   display:        flex;
   flex-direction: column;
-  gap:            8px;
+  gap:            7px;
   min-height:     0;
   overflow:       hidden;
 }
@@ -178,51 +193,95 @@
   background:  rgba(0, 0, 0, 0.38);
   border:      1px solid #2a2418;
   box-shadow:  inset 0 0 0 1px #1a1610;
-  padding:     10px;
+  padding:     8px 10px;
   overflow:    hidden;
 }
 
-/* Grows to fill remaining column space */
 .shop-col__box--grow {
   flex: 1;
   min-height: 0;
 }
 
+/* Gear column scrollable box */
+.shop-col__box--gear-scroll {
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: #3a2808 #0a0804;
+}
+.shop-col__box--gear-scroll::-webkit-scrollbar { width: 4px; }
+.shop-col__box--gear-scroll::-webkit-scrollbar-track { background: #0a0804; }
+.shop-col__box--gear-scroll::-webkit-scrollbar-thumb { background: #3a2808; border-radius: 2px; }
+
+/* Provisions column scrollable box */
+.shop-col__box--provisions-scroll {
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: #3a2808 #0a0804;
+}
+.shop-col__box--provisions-scroll::-webkit-scrollbar { width: 4px; }
+.shop-col__box--provisions-scroll::-webkit-scrollbar-track { background: #0a0804; }
+.shop-col__box--provisions-scroll::-webkit-scrollbar-thumb { background: #3a2808; border-radius: 2px; }
+
 /* ============================================================
-   [🧱 BLOCK: Wares Header — label + reroll side by side]
+   [🧱 BLOCK: Attributes Column]
+   Squeezed — smaller pips, tighter rows
+   ============================================================ */
+.shop-col--attributes .shop-stat-row {
+  padding: 4px 0;
+  gap: 5px;
+}
+
+.shop-col--attributes .shop-stat-row__label {
+  font-size: 9px;
+  color: #d4af37;
+}
+
+.shop-col--attributes .shop-stat-row__desc {
+  font-size: 7px;
+  color: #7a6020;
+}
+
+.shop-col--attributes .shop-stat-pip {
+  width: 6px;
+  height: 6px;
+}
+
+/* ============================================================
+   [🧱 BLOCK: Wares Column]
    ============================================================ */
 .shop-wares__header {
   display:         flex;
   justify-content: space-between;
   align-items:     center;
   flex-shrink:     0;
+  margin-bottom:   4px;
 }
 
 .shop-wares__header .shop-section__label {
   margin-bottom: 0;
 }
 
-/* ============================================================
-   [🧱 BLOCK: Item Cards Row]
-   Three short cards side by side inside the wares box.
-   ============================================================ */
+/* ── 5-item horizontal row ── */
 .shop-items-row {
   display:    flex;
-  gap:        8px;
-  height:     100%;
+  gap:        7px;
+  width:      100%;
 }
 
+/* ============================================================
+   [🧱 BLOCK: Shop Item Card — compact horizontal]
+   ============================================================ */
 .shop-item-card {
-  background:  rgba(255,255,255,0.02);
-  border:      1px solid #2e2008;
-  border-top:  1px solid #3a2808;
-  padding:     10px 8px 8px;
-  display:     flex;
+  background:     rgba(255,255,255,0.02);
+  border:         1px solid #2e2008;
+  border-top:     1px solid #3a2808;
+  padding:        8px 7px 7px;
+  display:        flex;
   flex-direction: column;
-  gap:         4px;
-  flex:        1;
-  min-width:   0;
-  transition:  border-color 0.15s, box-shadow 0.15s;
+  gap:            3px;
+  flex:           1;
+  min-width:      0;
+  transition:     border-color 0.15s, box-shadow 0.15s;
 }
 
 .shop-item-card:hover {
@@ -232,12 +291,12 @@
 
 .shop-item-card--owned {
   border-color: #2a2010;
-  opacity: 0.6;
+  opacity: 0.55;
 }
 
 .shop-item-card__icon {
-  font-size:  20px;
-  text-align: center;
+  font-size:   18px;
+  text-align:  center;
   flex-shrink: 0;
 }
 
@@ -256,15 +315,16 @@
   color:       #d4af37;
   text-align:  center;
   flex-shrink: 0;
+  line-height: 1.2;
 }
 
 .shop-item-card__desc {
   font-family: 'IM Fell English', serif;
   font-style:  italic;
-  font-size:   8px;
+  font-size:   7px;
   color:       #7a6020;
   text-align:  center;
-  line-height: 1.4;
+  line-height: 1.3;
   flex:        1;
 }
 
@@ -276,18 +336,18 @@
 }
 
 .shop-item-card__passive {
-  display:       flex;
+  display:        flex;
   flex-direction: column;
-  gap:           2px;
-  background:    rgba(96,165,250,0.06);
-  border:        1px solid rgba(96,165,250,0.2);
-  border-left:   2px solid #4a7fa8;
-  padding:       4px 6px;
-  flex-shrink:   0;
+  gap:            2px;
+  background:     rgba(96,165,250,0.06);
+  border:         1px solid rgba(96,165,250,0.2);
+  border-left:    2px solid #4a7fa8;
+  padding:        3px 5px;
+  flex-shrink:    0;
 }
 
 .shop-item-card__passive-label {
-  font-size:      7px;
+  font-size:      6px;
   font-weight:    700;
   color:          #4a7fa8;
   letter-spacing: 1px;
@@ -297,14 +357,14 @@
 .shop-item-card__passive-desc {
   font-family: 'IM Fell English', serif;
   font-style:  italic;
-  font-size:   8px;
+  font-size:   7px;
   color:       #6a9fc8;
-  line-height: 1.3;
+  line-height: 1.2;
 }
 
 .shop-item-card__armor-slot {
   font-size:      7px;
-  color:          #3a5a3a;
+  color:          #4ade80;
   text-align:     center;
   letter-spacing: 1px;
   text-transform: uppercase;
@@ -317,18 +377,17 @@
 .shop-item-card__replace-warn {
   font-family: 'IM Fell English', serif;
   font-style:  italic;
-  font-size:   8px;
+  font-size:   7px;
   color:       #f97316;
   text-align:  center;
   flex-shrink: 0;
 }
 
-/* Cost + acquire button row pinned to bottom of card */
 .shop-item-card__footer {
   display:         flex;
   align-items:     center;
   justify-content: space-between;
-  gap:             4px;
+  gap:             3px;
   flex-shrink:     0;
   margin-top:      2px;
 }
@@ -342,8 +401,6 @@
 .shop-item-card__full-warning {
   font-size:  7px;
   color:      #c0392b;
-  flex:       1;
-  text-align: center;
 }
 
 .shop-empty-msg {
@@ -357,18 +414,25 @@
 .shop-none-msg {
   font-family: 'IM Fell English', serif;
   font-style:  italic;
-  font-size:   10px;
-  color:       #2a2010;
+  font-size:   9px;
+  color:       #3a2808;
+  margin-bottom: 4px;
 }
 
 /* ============================================================
-   [🧱 BLOCK: Healing — Column 3]
+   [🧱 BLOCK: Healing — inside wares column]
    ============================================================ */
+.shop-healing {
+  display:        flex;
+  flex-direction: column;
+  gap:            6px;
+  height:         100%;
+}
+
 .shop-healing__header {
   display:         flex;
   justify-content: space-between;
   align-items:     center;
-  margin-bottom:   6px;
 }
 
 .shop-healing__header .shop-section__label {
@@ -387,7 +451,6 @@
   height:        4px;
   background:    #0a0804;
   border:        1px solid #1a2818;
-  margin-bottom: 8px;
   overflow:      hidden;
 }
 
@@ -408,7 +471,7 @@
 .shop-healing__tiers {
   display:        flex;
   flex-direction: column;
-  gap:            5px;
+  gap:            4px;
 }
 
 .shop-healing__tier {
@@ -417,7 +480,7 @@
   justify-content: space-between;
   background:      rgba(255, 255, 255, 0.01);
   border:          1px solid #1a1610;
-  padding:         5px 8px;
+  padding:         4px 7px;
 }
 
 .shop-healing__tier-info {
@@ -426,12 +489,12 @@
   gap:         6px;
 }
 
-.shop-healing__tier-icon { font-size: 14px; }
+.shop-healing__tier-icon { font-size: 13px; }
 
 .shop-healing__tier-label {
   font-size:     9px;
   font-weight:   700;
-  color:         #7a6020;
+  color:         #c0a060;
   margin-bottom: 1px;
 }
 
@@ -439,50 +502,240 @@
   font-family: 'IM Fell English', serif;
   font-style:  italic;
   font-size:   8px;
-  color:       #3a2808;
+  color:       #4a3808;
 }
 
 /* ============================================================
-   [🧱 BLOCK: Owned Pills — Weapon & Charms]
+   [🧱 BLOCK: Stat Row — Attributes column]
+   ============================================================ */
+.shop-stat-row {
+  display:     flex;
+  align-items: center;
+  gap:         6px;
+  padding:     5px 0;
+  border-bottom: 1px solid #1a1610;
+}
+
+.shop-stat-row__icon { font-size: 13px; flex-shrink: 0; width: 18px; }
+
+.shop-stat-row__info {
+  display:        flex;
+  flex-direction: column;
+  gap:            2px;
+  flex:           1;
+  min-width:      0;
+}
+
+.shop-stat-row__header {
+  display:     flex;
+  align-items: baseline;
+  gap:         5px;
+}
+
+.shop-stat-row__label {
+  font-size:      9px;
+  font-weight:    700;
+  color:          #d4af37;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+.shop-stat-row__desc {
+  font-family: 'IM Fell English', serif;
+  font-style:  italic;
+  font-size:   7px;
+  color:       #7a6020;
+}
+
+.shop-stat-row__pips {
+  display: flex;
+  gap:     2px;
+  flex-wrap: wrap;
+}
+
+.shop-stat-pip {
+  width:         7px;
+  height:        7px;
+  background:    #1e1810;
+  border:        1px solid #3a2808;
+}
+
+.shop-stat-pip--filled {
+  background: #8b6914;
+  border-color: #c0860c;
+  box-shadow: 0 0 4px rgba(192, 134, 12, 0.4);
+}
+
+.shop-stat-row__actions {
+  display:     flex;
+  align-items: center;
+  gap:         4px;
+  flex-shrink: 0;
+}
+
+.shop-stat-row__cost {
+  font-size:   8px;
+  color:       #8b6914;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+/* ============================================================
+   [🧱 BLOCK: Owned Pills — Weapon, Armor & Charms]
    ============================================================ */
 .shop-owned-pill {
   display:     flex;
   align-items: center;
-  gap:         8px;
+  gap:         7px;
   border:      1px solid #2e2008;
-  padding:     5px 8px;
+  padding:     4px 7px;
+  margin-bottom: 3px;
 }
+
+.shop-owned-pill:last-child { margin-bottom: 0; }
 
 .shop-owned-pill--charm  { border-left: 2px solid #7a6020; }
 .shop-owned-pill--weapon { border-left: 2px solid #c0860c; }
+.shop-owned-pill--armor  { border-left: 2px solid #4ade80; }
 
-.shop-owned-pill__icon { font-size: 14px; flex-shrink: 0; }
+.shop-owned-pill--empty {
+  opacity: 0.45;
+  border-style: dashed;
+  border-color: #1e1608;
+}
+
+.shop-owned-pill__slot-label {
+  font-size:      8px;
+  color:          #3a2808;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  flex-shrink:    0;
+  min-width:      52px;
+}
+
+.shop-owned-pill__empty-text {
+  font-family: 'IM Fell English', serif;
+  font-style:  italic;
+  font-size:   9px;
+  color:       #2a1e08;
+  flex:        1;
+}
+
+.shop-owned-pill__icon { font-size: 13px; flex-shrink: 0; }
 
 .shop-owned-pill__name {
   font-size:   9px;
   color:       #c0860c;
   flex:        1;
   font-weight: 700;
+  white-space: nowrap;
+  overflow:    hidden;
+  text-overflow: ellipsis;
+  min-width:   0;
 }
 
 .shop-owned-pill__weapon-info { flex: 1; min-width: 0; }
 
 .shop-owned-pill__weapon-sub {
-  font-family: 'IM Fell English', serif;
-  font-style:  italic;
-  font-size:   8px;
-  color:       #3a2808;
-  white-space: nowrap;
-  overflow:    hidden;
+  font-family:   'IM Fell English', serif;
+  font-style:    italic;
+  font-size:     7px;
+  color:         #4a3808;
+  white-space:   nowrap;
+  overflow:      hidden;
   text-overflow: ellipsis;
 }
 
-.shop-owned-pill__confirm { display: flex; gap: 4px; }
+.shop-owned-pill__confirm { display: flex; gap: 3px; flex-shrink: 0; }
 
 .shop-charms-list {
   display:        flex;
   flex-direction: column;
-  gap:            4px;
+  gap:            0;
+}
+
+/* ============================================================
+   [🧱 BLOCK: Consumable Shop Row — Provisions column]
+   ============================================================ */
+.shop-consumable-row {
+  display:     flex;
+  align-items: center;
+  gap:         7px;
+  border:      1px solid #1e1a10;
+  padding:     5px 7px;
+  margin-bottom: 3px;
+  transition:  border-color 0.1s;
+}
+
+.shop-consumable-row:hover {
+  border-color: #3a2808;
+}
+
+.shop-consumable-row:last-child { margin-bottom: 0; }
+
+.shop-consumable-row__icon {
+  font-size:   15px;
+  flex-shrink: 0;
+  width:       20px;
+  text-align:  center;
+}
+
+.shop-consumable-row__info {
+  flex:      1;
+  min-width: 0;
+}
+
+.shop-consumable-row__name {
+  font-size:     9px;
+  font-weight:   700;
+  color:         #c8b89a;
+  white-space:   nowrap;
+  overflow:      hidden;
+  text-overflow: ellipsis;
+}
+
+.shop-consumable-row__desc {
+  font-family:   'IM Fell English', serif;
+  font-style:    italic;
+  font-size:     7px;
+  color:         #4a3808;
+  white-space:   nowrap;
+  overflow:      hidden;
+  text-overflow: ellipsis;
+  margin-top:    1px;
+}
+
+.shop-consumable-row__right {
+  display:     flex;
+  align-items: center;
+  gap:         5px;
+  flex-shrink: 0;
+}
+
+.shop-consumable-row__kind {
+  font-size:      7px;
+  font-weight:    700;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  padding:        1px 5px;
+  border:         1px solid;
+  flex-shrink:    0;
+}
+
+.shop-consumable-row__count {
+  font-size:   9px;
+  font-weight: 700;
+  color:       #d4af37;
+  min-width:   22px;
+  text-align:  right;
+}
+
+.shop-consumable-row__cost {
+  font-size:   9px;
+  font-weight: 700;
+  color:       #8b6914;
+  min-width:   30px;
+  text-align:  right;
 }
 
 /* ============================================================
@@ -491,7 +744,7 @@
 .shop-footer {
   display:         flex;
   justify-content: center;
-  padding-top:     8px;
+  padding-top:     7px;
   border-top:      1px solid #1e1608;
   flex-shrink:     0;
 }
@@ -502,7 +755,7 @@
 .shop-pill-btn {
   font-family:    'Cinzel', serif;
   font-weight:    700;
-  letter-spacing: 0.15em;
+  letter-spacing: 0.12em;
   text-transform: uppercase;
   background:     transparent;
   cursor:         pointer;
@@ -518,7 +771,7 @@
 }
 
 .shop-pill-btn--normal { font-size: 11px; padding: 9px 20px; }
-.shop-pill-btn--small  { font-size: 8px;  padding: 3px 10px; }
+.shop-pill-btn--small  { font-size: 8px;  padding: 3px 9px;  }
 
 .shop-pill-btn--disabled {
   color:            #3a2808;

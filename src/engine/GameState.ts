@@ -4,6 +4,7 @@ import { Camera, WORLD_W, WORLD_H } from "./Camera";
 import { Door }               from "./Door";
 import { GoldDrop }           from "./GoldDrop";
 import { ItemDrop }           from "./ItemDrop";
+import { ConsumableDrop }     from "./ConsumableDrop";
 import { ShopNPC }            from "./ShopNPC";
 import { Particle, HitSpark, DamageNumber } from "./Particle";
 import { PlayerStats }        from "./PlayerStats";
@@ -72,18 +73,19 @@ export class GameState {
   // ============================================================
   // [🧱 BLOCK: Entities]
   // ============================================================
-  player:      Player;
-  camera:      Camera;
-  enemies:     (Grunt | Shooter | Tank | Dasher | Bomber)[];
-  boss:        AnyBoss | null;
-  door:        Door | null;
-  shopNpc:     ShopNPC | null;
-  projectiles: Projectile[];
-  goldDrops:   GoldDrop[];
-  itemDrops:   ItemDrop[];
-  particles:   Particle[];
-  hitSparks:   HitSpark[];
-  damageNumbers: DamageNumber[];
+  player:           Player;
+  camera:           Camera;
+  enemies:          (Grunt | Shooter | Tank | Dasher | Bomber)[];
+  boss:             AnyBoss | null;
+  door:             Door | null;
+  shopNpc:          ShopNPC | null;
+  projectiles:      Projectile[];
+  goldDrops:        GoldDrop[];
+  itemDrops:        ItemDrop[];
+  consumableDrops:  ConsumableDrop[];
+  particles:        Particle[];
+  hitSparks:        HitSpark[];
+  damageNumbers:    DamageNumber[];
 
   // ============================================================
   // [🧱 BLOCK: Economy + Stats + Consumables]
@@ -123,18 +125,19 @@ export class GameState {
     this.screenW = screenW;
     this.screenH = screenH;
 
-    this.player      = new Player(WORLD_W / 2, WORLD_H / 2);
-    this.camera      = new Camera(screenW, screenH);
-    this.enemies     = [];
-    this.boss        = null;
-    this.door        = null;
-    this.shopNpc     = null;
-    this.projectiles = [];
-    this.goldDrops   = [];
-    this.itemDrops   = [];
-    this.particles   = [];
-    this.hitSparks   = [];
-    this.damageNumbers = [];
+    this.player          = new Player(WORLD_W / 2, WORLD_H / 2);
+    this.camera          = new Camera(screenW, screenH);
+    this.enemies         = [];
+    this.boss            = null;
+    this.door            = null;
+    this.shopNpc         = null;
+    this.projectiles     = [];
+    this.goldDrops       = [];
+    this.itemDrops       = [];
+    this.consumableDrops = [];
+    this.particles       = [];
+    this.hitSparks       = [];
+    this.damageNumbers   = [];
 
     this.gold              = 0;
     this.playerStats       = new PlayerStats();
@@ -158,22 +161,23 @@ export class GameState {
   // [🧱 BLOCK: Full Reset]
   // ============================================================
   reset() {
-    this.enemies       = [];
-    this.boss          = null;
-    this.door          = null;
-    this.shopNpc       = null;
-    this.projectiles   = [];
-    this.goldDrops     = [];
-    this.itemDrops     = [];
-    this.particles     = [];
-    this.hitSparks     = [];
-    this.damageNumbers = [];
-    this.gold          = 0;
-    this.kills         = 0;
-    this.alive         = 0;
-    this.lastSpawn     = 0;
-    this.roomEntryTime = 0;
-    this.pendingLoot   = [];
+    this.enemies         = [];
+    this.boss            = null;
+    this.door            = null;
+    this.shopNpc         = null;
+    this.projectiles     = [];
+    this.goldDrops       = [];
+    this.itemDrops       = [];
+    this.consumableDrops = [];
+    this.particles       = [];
+    this.hitSparks       = [];
+    this.damageNumbers   = [];
+    this.gold            = 0;
+    this.kills           = 0;
+    this.alive           = 0;
+    this.lastSpawn       = 0;
+    this.roomEntryTime   = 0;
+    this.pendingLoot     = [];
 
     this.totalKills      = 0;
     this.totalGoldEarned = 0;
@@ -192,20 +196,21 @@ export class GameState {
   // Bag + hotbar persist. In-flight projectiles cleared.
   // ============================================================
   resetRoom() {
-    this.enemies       = [];
-    this.projectiles   = [];
-    this.goldDrops     = [];
-    this.itemDrops     = [];
-    this.particles     = [];
-    this.hitSparks     = [];
-    this.damageNumbers = [];
-    this.kills         = 0;
-    this.alive         = 0;
-    this.lastSpawn     = 0;
-    this.roomEntryTime = 0;
-    this.door          = null;
-    this.shopNpc       = null;
-    this.boss          = null;
+    this.enemies         = [];
+    this.projectiles     = [];
+    this.goldDrops       = [];
+    this.itemDrops       = [];
+    this.consumableDrops = [];
+    this.particles       = [];
+    this.hitSparks       = [];
+    this.damageNumbers   = [];
+    this.kills           = 0;
+    this.alive           = 0;
+    this.lastSpawn       = 0;
+    this.roomEntryTime   = 0;
+    this.door            = null;
+    this.shopNpc         = null;
+    this.boss            = null;
     this.consumableSystem.reset();
     // playerConsumables intentionally NOT reset — bag/hotbar persist
   }

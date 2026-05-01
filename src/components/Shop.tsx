@@ -5,24 +5,28 @@ import React, { useState, useCallback, useRef } from "react";
 import { PlayerStats, STAT_DEFS, StatKey, statCost, statCap } from "@/engine/PlayerStats";
 import { Player }     from "@/engine/Player";
 import { Charm }      from "@/engine/CharmRegistry";
-import { WeaponItem, ArmorItem } from "@/engine/items/types";
+import { WeaponItem, ArmorItem, ArmorSlot } from "@/engine/items/types";
 import { ShopItem }   from "@/engine/items/ItemPool";
 import { getWeaponPassive } from "@/engine/WeaponPassiveRegistry";
+import { ConsumableDef, POTION_POOL, SCROLL_POOL } from "@/engine/ConsumableRegistry";
+import { PlayerConsumables } from "@/engine/PlayerConsumables";
+import { getShopConsumableOptions } from "@/engine/items/ItemPool";
 import "@/styles/shop.css";
 
 // ============================================================
 // [🧱 BLOCK: Props]
 // ============================================================
 interface ShopProps {
-  floor:        number;
-  room:         number;
-  gold:         number;
-  playerStats:  PlayerStats;
-  player:       Player;
-  isMidRoom:    boolean;
-  onGoldChange: (newGold: number) => void;
-  onContinue:   () => void;
-  onClose:      () => void;
+  floor:              number;
+  room:               number;
+  gold:               number;
+  playerStats:        PlayerStats;
+  player:             Player;
+  playerConsumables:  PlayerConsumables;
+  isMidRoom:          boolean;
+  onGoldChange:       (newGold: number) => void;
+  onContinue:         () => void;
+  onClose:            () => void;
 }
 
 // ============================================================
@@ -33,6 +37,19 @@ const HEAL_TIERS = [
   { label: "Draught",  hp: 50,  baseCost: 75,  icon: "💊" },
   { label: "Elixir",   hp: 999, baseCost: 120, icon: "❤️" },
 ];
+
+// ============================================================
+// [🧱 BLOCK: Armor Slot Labels]
+// ============================================================
+const ARMOR_SLOT_LABELS: Record<ArmorSlot, string> = {
+  helmet:   'Helmet',
+  armor:    'Armor',
+  leggings: 'Leggings',
+  gloves:   'Gloves',
+  boots:    'Boots',
+};
+
+const ARMOR_SLOTS: ArmorSlot[] = ['helmet', 'armor', 'leggings', 'gloves', 'boots'];
 
 // ============================================================
 // [🧱 BLOCK: Pill Button]
@@ -100,8 +117,8 @@ function StatRow({ statKey, playerStats, player, gold, floor, onSpend }: {
 }
 
 // ============================================================
-// [🧱 BLOCK: Shop Item Card]
-// Shorter card — no flex-grow, fixed compact height.
+// [🧱 BLOCK: Shop Item Card — Horizontal layout]
+// Used in the 5-slot wares row.
 // ============================================================
 function ShopItemCard({ item, gold, playerStats, player, onBuy }: {
   item: ShopItem; gold: number;
@@ -128,10 +145,10 @@ function ShopItemCard({ item, gold, playerStats, player, onBuy }: {
 
   const accentColor = isWeapon ? "#60a5fa" : isArmor ? "#4ade80" : "#f0c040";
   const typeLabel   = isWeapon
-    ? `${weaponItem!.weaponType.toUpperCase()} · Weapon`
+    ? `${weaponItem!.weaponType.toUpperCase()} · WPN`
     : isArmor
-    ? `${armorItem!.setName} · Armor`
-    : "Charm";
+    ? `${ARMOR_SLOT_LABELS[armorItem!.slot].toUpperCase()} · ARM`
+    : "CHARM";
 
   const existingArmor = isArmor ? playerStats.armorSlots[armorItem!.slot] : null;
 
@@ -156,26 +173,76 @@ function ShopItemCard({ item, gold, playerStats, player, onBuy }: {
           <div className="shop-item-card__passive">
             <span className="shop-item-card__passive-label">Passive · {p.name}</span>
             <span className="shop-item-card__passive-desc">{p.description}</span>
-            {p.tradeOff && <span className="shop-item-card__tradeoff">⚠ {p.tradeOff}</span>}
           </div>
         ) : null;
       })()}
       {isArmor && (
         <div className="shop-item-card__armor-slot">
-          Slot: {armorItem!.slot} · {armorItem!.setName}
+          {armorItem!.setName}
         </div>
       )}
-      {isCharm && item.tradeOff && <div className="shop-item-card__tradeoff">⚠ {item.tradeOff}</div>}
+      {(isCharm && item.tradeOff) && <div className="shop-item-card__tradeoff">⚠ {item.tradeOff}</div>}
       {existingArmor && !alreadyOwned && (
         <div className="shop-item-card__replace-warn">Replaces {existingArmor.name}</div>
       )}
       <div className="shop-item-card__footer">
         <span className="shop-item-card__cost">{item.cost}g</span>
-        {charmsFull && <span className="shop-item-card__full-warning">Sell a charm first</span>}
+        {charmsFull && <span className="shop-item-card__full-warning">Full</span>}
         <PillBtn
           label={alreadyOwned ? "Owned" : "Acquire"}
           onClick={handleBuy}
           disabled={!canBuy || alreadyOwned}
+          color={accentColor}
+          small
+        />
+      </div>
+    </div>
+  );
+}
+
+// ============================================================
+// [🧱 BLOCK: Consumable Shop Row]
+// Single row in the Provisions panel.
+// ============================================================
+function ConsumableShopRow({ def, gold, playerConsumables, onBuy }: {
+  def:               ConsumableDef;
+  gold:              number;
+  playerConsumables: PlayerConsumables;
+  onBuy:             (newGold: number) => void;
+}) {
+  const isPotion    = def.kind === 'potion';
+  const canAfford   = gold >= def.cost;
+  const currentCount = playerConsumables.bagCount(def.id);
+  const maxed       = currentCount >= 8;
+  const canBuy      = canAfford && !maxed;
+  const accentColor = isPotion ? '#a78bfa' : '#38bdf8';
+
+  return (
+    <div className="shop-consumable-row">
+      <span className="shop-consumable-row__icon">{def.icon}</span>
+      <div className="shop-consumable-row__info">
+        <div className="shop-consumable-row__name">{def.name}</div>
+        <div className="shop-consumable-row__desc">{def.description}</div>
+      </div>
+      <div className="shop-consumable-row__right">
+        <span
+          className="shop-consumable-row__kind"
+          style={{ color: accentColor, borderColor: isPotion ? '#4a2a6a' : '#0a3a4a' }}
+        >
+          {isPotion ? 'POTION' : 'SCROLL'}
+        </span>
+        {currentCount > 0 && (
+          <span className="shop-consumable-row__count">×{currentCount}</span>
+        )}
+        <span className="shop-consumable-row__cost">{def.cost}g</span>
+        <PillBtn
+          label={maxed ? "MAX" : canAfford ? "Buy" : "Need gold"}
+          onClick={() => {
+            if (!canBuy) return;
+            playerConsumables.addToBag(def, 1);
+            onBuy(gold - def.cost);
+          }}
+          disabled={!canBuy}
           color={accentColor}
           small
         />
@@ -217,7 +284,7 @@ function EquippedWeaponPill({ item, onSell }: { item: WeaponItem; onSell: () => 
       <span className="shop-owned-pill__icon">{item.icon}</span>
       <div className="shop-owned-pill__weapon-info">
         <div className="shop-owned-pill__name">{item.name}</div>
-        <div className="shop-owned-pill__weapon-sub">{item.weaponType} · {item.description}</div>
+        <div className="shop-owned-pill__weapon-sub">{item.weaponType}</div>
       </div>
       {confirm ? (
         <div className="shop-owned-pill__confirm">
@@ -232,7 +299,47 @@ function EquippedWeaponPill({ item, onSell }: { item: WeaponItem; onSell: () => 
 }
 
 // ============================================================
-// [🧱 BLOCK: Healing Section — Column 3]
+// [🧱 BLOCK: Equipped Armor Pill]
+// ============================================================
+function EquippedArmorPill({ slot, item, onSell }: {
+  slot:  ArmorSlot;
+  item:  ArmorItem | null;
+  onSell: () => void;
+}) {
+  const [confirm, setConfirm] = useState(false);
+  const label = ARMOR_SLOT_LABELS[slot];
+
+  if (!item) {
+    return (
+      <div className="shop-owned-pill shop-owned-pill--armor shop-owned-pill--empty">
+        <span className="shop-owned-pill__slot-label">{label}</span>
+        <span className="shop-owned-pill__empty-text">— Empty</span>
+      </div>
+    );
+  }
+
+  const refund = Math.ceil(item.cost * 0.5);
+  return (
+    <div className="shop-owned-pill shop-owned-pill--armor">
+      <span className="shop-owned-pill__icon">{item.icon}</span>
+      <div className="shop-owned-pill__weapon-info">
+        <div className="shop-owned-pill__name">{item.name}</div>
+        <div className="shop-owned-pill__weapon-sub">{item.setName} · {item.description}</div>
+      </div>
+      {confirm ? (
+        <div className="shop-owned-pill__confirm">
+          <PillBtn label={`+${refund}g`} onClick={onSell} color="#ef4444" small />
+          <PillBtn label="Keep" onClick={() => setConfirm(false)} color="#5a4010" small />
+        </div>
+      ) : (
+        <PillBtn label="Sell" onClick={() => setConfirm(true)} color="#5a4010" small />
+      )}
+    </div>
+  );
+}
+
+// ============================================================
+// [🧱 BLOCK: Healing Section]
 // ============================================================
 function HealingSection({ player, gold, floor, onHeal }: {
   player: Player; gold: number; floor: number; onHeal: (newGold: number) => void;
@@ -255,7 +362,7 @@ function HealingSection({ player, gold, floor, onHeal }: {
         />
       </div>
       {atFullHp ? (
-        <p className="shop-healing__full-msg">"Your wounds are mended, warrior."</p>
+        <p className="shop-healing__full-msg">"Your wounds are mended."</p>
       ) : (
         <div className="shop-healing__tiers">
           {HEAL_TIERS.map((tier) => {
@@ -290,22 +397,27 @@ function HealingSection({ player, gold, floor, onHeal }: {
 
 // ============================================================
 // [🧱 BLOCK: Shop Main]
-// Fixed 1020×640 panel. Three columns, no scroll.
+// 4-Column layout — 1440×700 panel, no scroll.
 //   Col 1 — Attributes (stat allocation)
-//   Col 2 — Wares (3 item cards + reroll)
-//   Col 3 — Healing / Equipped Weapon / Charms
+//   Col 2 — Wares (5 item cards horizontal + reroll) + Healing
+//   Col 3 — Equipped Gear (weapon + armor slots + charms)
+//   Col 4 — Provisions (buy potions/scrolls)
 // ============================================================
 export default function Shop({
   floor, room, gold, playerStats, player,
+  playerConsumables,
   isMidRoom,
   onGoldChange, onContinue, onClose,
 }: ShopProps) {
   const [, forceUpdate] = useState(0);
   const refresh = useCallback(() => forceUpdate((n) => n + 1), []);
 
+  // Generate shop options once on mount
   const shopInitRef = useRef(false);
+  const consumableOptionsRef = useRef<ConsumableDef[]>([]);
   if (!shopInitRef.current) {
     playerStats.generateShopOptions(floor);
+    consumableOptionsRef.current = getShopConsumableOptions();
     shopInitRef.current = true;
   }
 
@@ -314,7 +426,9 @@ export default function Shop({
   const handleReroll     = () => { onGoldChange(playerStats.reroll(gold, floor)); refresh(); };
   const handleSellCharm  = (id: string) => { onGoldChange(playerStats.sellCharm(id, gold, player)); refresh(); };
   const handleSellWeapon = () => { onGoldChange(playerStats.unequipWeapon(gold, player)); refresh(); };
+  const handleSellArmor  = (slot: ArmorSlot) => { onGoldChange(playerStats.sellArmor(slot, gold, player)); refresh(); };
   const handleHeal       = (ng: number) => { onGoldChange(ng); refresh(); };
+  const handleConsumableBuy = (ng: number) => { onGoldChange(ng); refresh(); };
 
   const cap            = statCap(floor);
   const nextRerollCost = playerStats.rerollCost;
@@ -339,11 +453,11 @@ export default function Shop({
             </div>
           </div>
 
-          {/* ── 3-Column Body ── */}
+          {/* ── 4-Column Body ── */}
           <div className="shop-body">
 
             {/* ── Column 1: Attributes ── */}
-            <div className="shop-col">
+            <div className="shop-col shop-col--attributes">
               <p className="shop-section__label">Attributes · Cap {cap}/10</p>
               <div className="shop-col__box shop-col__box--grow">
                 {STAT_DEFS.map((def) => (
@@ -356,56 +470,70 @@ export default function Shop({
               </div>
             </div>
 
-            {/* ── Column 2: Wares ── */}
-            <div className="shop-col">
-              <div className="shop-wares__header">
-                <p className="shop-section__label">Wares</p>
-                <PillBtn
-                  label={atRerollCap ? `Reroll ${nextRerollCost}g ·max` : `Reroll ${nextRerollCost}g`}
-                  onClick={handleReroll}
-                  disabled={gold < nextRerollCost}
-                  color="#5a4010"
-                  small
-                />
-              </div>
-              <div className="shop-col__box shop-col__box--grow">
-                <div className="shop-items-row">
-                  {playerStats.shopOptions.map((item, i) => (
-                    <ShopItemCard
-                      key={`${item.id}-${i}`}
-                      item={item as ShopItem} gold={gold}
-                      playerStats={playerStats} player={player}
-                      onBuy={handleBuy}
-                    />
-                  ))}
-                  {playerStats.shopOptions.length === 0 && (
-                    <p className="shop-empty-msg">"My stores are bare, traveller."</p>
-                  )}
+            {/* ── Column 2: Wares + Healing ── */}
+            <div className="shop-col shop-col--wares">
+
+              {/* Wares row — 5 items horizontal */}
+              <div>
+                <div className="shop-wares__header">
+                  <p className="shop-section__label">Wares</p>
+                  <PillBtn
+                    label={atRerollCap ? `Reroll ${nextRerollCost}g · max` : `Reroll ${nextRerollCost}g`}
+                    onClick={handleReroll}
+                    disabled={gold < nextRerollCost}
+                    color="#5a4010"
+                    small
+                  />
                 </div>
+                <div className="shop-col__box">
+                  <div className="shop-items-row">
+                    {playerStats.shopOptions.map((item, i) => (
+                      <ShopItemCard
+                        key={`${item.id}-${i}`}
+                        item={item as ShopItem} gold={gold}
+                        playerStats={playerStats} player={player}
+                        onBuy={handleBuy}
+                      />
+                    ))}
+                    {playerStats.shopOptions.length === 0 && (
+                      <p className="shop-empty-msg">"My stores are bare, traveller."</p>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Healing — below wares */}
+              <div className="shop-col__box shop-col__box--grow">
+                <HealingSection player={player} gold={gold} floor={floor} onHeal={handleHeal} />
               </div>
             </div>
 
-            {/* ── Column 3: Healing / Weapon / Charms ── */}
-            <div className="shop-col">
+            {/* ── Column 3: Equipped Gear ── */}
+            <div className="shop-col shop-col--gear">
+              <p className="shop-section__label">Equipped Gear</p>
+              <div className="shop-col__box shop-col__box--grow shop-col__box--gear-scroll">
 
-              {/* Healing */}
-              <div className="shop-col__box">
-                <HealingSection player={player} gold={gold} floor={floor} onHeal={handleHeal} />
-              </div>
-
-              {/* Equipped Weapon */}
-              <div className="shop-col__box">
-                <p className="shop-section__label">Equipped Weapon</p>
+                {/* Weapon */}
+                <p className="shop-gear__sublabel">Weapon</p>
                 {playerStats.equippedWeaponItem ? (
                   <EquippedWeaponPill item={playerStats.equippedWeaponItem} onSell={handleSellWeapon} />
                 ) : (
                   <p className="shop-none-msg">"Bare fists — seek steel."</p>
                 )}
-              </div>
 
-              {/* Charms */}
-              <div className="shop-col__box shop-col__box--grow">
-                <p className="shop-section__label">
+                {/* Armor */}
+                <p className="shop-gear__sublabel" style={{ marginTop: 10 }}>Armor</p>
+                {ARMOR_SLOTS.map((slot) => (
+                  <EquippedArmorPill
+                    key={slot}
+                    slot={slot}
+                    item={playerStats.armorSlots[slot]}
+                    onSell={() => handleSellArmor(slot)}
+                  />
+                ))}
+
+                {/* Charms */}
+                <p className="shop-gear__sublabel" style={{ marginTop: 10 }}>
                   Charms ({playerStats.charms.length}/{playerStats.maxCharms})
                 </p>
                 {playerStats.charms.length === 0 ? (
@@ -418,8 +546,35 @@ export default function Shop({
                   </div>
                 )}
               </div>
-
             </div>
+
+            {/* ── Column 4: Provisions ── */}
+            <div className="shop-col shop-col--provisions">
+              <p className="shop-section__label">Provisions</p>
+              <div className="shop-col__box shop-col__box--grow shop-col__box--provisions-scroll">
+                <p className="shop-gear__sublabel">Potions</p>
+                {POTION_POOL.map((def) => (
+                  <ConsumableShopRow
+                    key={def.id}
+                    def={def}
+                    gold={gold}
+                    playerConsumables={playerConsumables}
+                    onBuy={handleConsumableBuy}
+                  />
+                ))}
+                <p className="shop-gear__sublabel" style={{ marginTop: 8 }}>Scrolls</p>
+                {SCROLL_POOL.map((def) => (
+                  <ConsumableShopRow
+                    key={def.id}
+                    def={def}
+                    gold={gold}
+                    playerConsumables={playerConsumables}
+                    onBuy={handleConsumableBuy}
+                  />
+                ))}
+              </div>
+            </div>
+
           </div>
 
           {/* ── Footer ── */}

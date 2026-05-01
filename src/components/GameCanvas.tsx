@@ -28,6 +28,7 @@ import { WeaponItem, ArmorItem } from "@/engine/items/types";
 import { HotbarSlot }        from "@/engine/PlayerConsumables";
 import { ConsumableDef }     from "@/engine/ConsumableRegistry";
 import { ConsumableSystem }  from "@/engine/ConsumableSystem";
+import { ConsumableDrop }    from "@/engine/ConsumableDrop";
 import "@/styles/victory.css";
 import "@/styles/dev-panel.css";
 
@@ -160,8 +161,6 @@ export default function GameCanvas() {
 
   // ============================================================
   // [🧱 BLOCK: Apply Consumable Effect]
-  // Ward wardHits is set here; everything else dispatches to
-  // ConsumableSystem.activate() which handles the actual logic.
   // ============================================================
   const applyConsumableEffect = useCallback((def: ConsumableDef, slotIndex: number) => {
     const state = stateRef.current;
@@ -427,14 +426,6 @@ export default function GameCanvas() {
 
   // ============================================================
   // [🧱 BLOCK: Game Loop]
-  // Frame order:
-  //  1. playerConsumables.update()   — tick timers
-  //  2. consumableSystem.update()    — buff effects + projectile hits
-  //  3. Sync player.isInvisible
-  //  4. Normal world update (horde/boss/player)
-  //  5. consumableSystem.draw()      — projectiles, ward ring, shimmer
-  //  6. player.draw()                — skips body if invisible
-  //  7. damage numbers
   // ============================================================
   useGameLoop((_dt: number) => {
     const canvas = canvasRef.current; const state = stateRef.current; const input = inputRef.current;
@@ -545,9 +536,9 @@ export default function GameCanvas() {
       bossRef.current.draw(state, ctx, state.camera, player);
     }
 
-    // 5. Consumable VFX (projectiles, ward ring, phantom shimmer)
+    // 5. Consumable VFX
     state.consumableSystem.draw(ctx, state.camera, state, player);
-    // 6. Player (skips body if invisible)
+    // 6. Player
     player.draw(ctx, state.camera);
     // 7. Damage numbers
     render.drawDamageNumbers(ctx, state.camera, state.damageNumbers);
@@ -564,8 +555,35 @@ export default function GameCanvas() {
       <canvas ref={canvasRef} style={{ display: "block" }} />
       {!showMenu && <HUD hp={hud.hp} maxHp={MAX_HP} stamina={hud.stamina} maxStamina={MAX_STAMINA} kills={hud.kills} killThreshold={threshold} room={hud.room} floor={hud.floor} gold={gold} bossHp={hud.bossHp} bossMaxHp={hud.bossMaxHp} bossIsEnraged={hud.bossIsEnraged} roomPhase={roomRef.current.phase} hotbar={hud.hotbar} />}
       {!showMenu && !isGameOver && <Minimap state={stateRef.current} isBoss={roomRef.current.phase==='boss'||roomRef.current.phase==='victory'} />}
-      {showShop && state && <Shop floor={roomRef.current.floor} room={roomRef.current.roomDisplay} gold={gold} playerStats={state.playerStats} player={state.player} isMidRoom={isMidRoom} onGoldChange={handleGoldChange} onContinue={handleNpcClose} onClose={handleNpcClose} />}
-      {showInventory && state && <Inventory playerStats={state.playerStats} player={state.player} gold={gold} nearbyDrops={state.itemDrops} playerConsumables={state.playerConsumables} onGoldChange={handleGoldChange} onEquipDrop={handleEquipDrop} onClose={handleInventoryClose} />}
+
+      {/* ── Shop — now receives playerConsumables ── */}
+      {showShop && state && (
+        <Shop
+          floor={roomRef.current.floor}
+          room={roomRef.current.roomDisplay}
+          gold={gold}
+          playerStats={state.playerStats}
+          player={state.player}
+          playerConsumables={state.playerConsumables}
+          isMidRoom={isMidRoom}
+          onGoldChange={handleGoldChange}
+          onContinue={handleNpcClose}
+          onClose={handleNpcClose}
+        />
+      )}
+
+      {showInventory && state && (
+        <Inventory
+          playerStats={state.playerStats}
+          player={state.player}
+          gold={gold}
+          nearbyDrops={state.itemDrops}
+          playerConsumables={state.playerConsumables}
+          onGoldChange={handleGoldChange}
+          onEquipDrop={handleEquipDrop}
+          onClose={handleInventoryClose}
+        />
+      )}
       {isVictory && state && <VictoryOverlay floor={hud.floor} kills={victoryStats.kills} goldEarned={victoryStats.gold} totalKills={state.totalKills} totalGoldEarned={state.totalGoldEarned} runStartTime={state.runStartTime} playerStats={state.playerStats} onClose={handleVictoryClose} onQuit={handleQuitToMenu} />}
       {victoryMinimized && <button className="victory-badge" onClick={handleVictoryRestore}><span className="victory-badge__gem" /><span className="victory-badge__label">Floor Clear</span></button>}
       {showTransition && <FloorTransition targetFloor={transitionFloor} onComplete={handleTransitionComplete} />}
