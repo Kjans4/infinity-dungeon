@@ -7,6 +7,8 @@ import {
   ConsumableExplosion,
 } from "./ConsumableProjectile";
 import { BaseEnemy }          from "./enemy/BaseEnemy";
+import { AnyBoss }            from "./enemy/boss/index";
+import { Colossus }           from "./enemy/boss/Colossus";
 import { distSq, dist }       from "./Collision";
 import { spawnBurst, spawnHitSpark } from "./Particle";
 import { Camera }             from "./Camera";
@@ -38,6 +40,25 @@ const BLINK_DISTANCE     = 300;
 const BLINK_IFRAMES      = 400;
 
 const WARD_VISUAL_RADIUS = 38;
+
+// ============================================================
+// [🧱 BLOCK: Boss Hit Helpers]
+// Wrappers so scroll damage code can hit either a horde enemy
+// or the boss using the same interface.
+// Frost stun is skipped on bosses — they are immune to freeze
+// but still take the damage.
+// ============================================================
+function bossTakeDamage(boss: AnyBoss, damage: number): void {
+  if (boss instanceof Colossus) {
+    // Colossus armour check — treat scroll as non-heavy
+    boss.takeDamage(damage, false);
+  } else {
+    boss.takeDamage(damage);
+  }
+}
+
+function bossCenterX(boss: AnyBoss): number { return boss.x + boss.width  / 2; }
+function bossCenterY(boss: AnyBoss): number { return boss.y + boss.height / 2; }
 
 // ============================================================
 // [🧱 BLOCK: ConsumableSystem]
@@ -84,19 +105,12 @@ export class ConsumableSystem {
     // ── Per-frame buff effects ────────────────────────────────
 
     // Wrath Potion — speed boost applied directly to player
-    // Base maxSpeed is set by playerStats; we layer on top here.
     const wrathActive = pc.isActive('wrath_potion');
     if (wrathActive) {
-      // Speed bonus applied every frame — no double-stack risk
-      // because Player.update caps to maxSpeed and we reset each frame
       player.maxSpeed = state.playerStats.applySpeedOnly(player) + 1.5;
     } else {
-      // Ensure speed is always correct from base stats
       player.maxSpeed = state.playerStats.applySpeedOnly(player);
     }
-
-    // Phantom Potion — handled in draw (player invisible)
-    // and in HordeSystem (enemies lose aggro when isInvisible)
 
     // ── Tick projectiles ──────────────────────────────────────
     for (const proj of this.projectiles) {
@@ -114,7 +128,7 @@ export class ConsumableSystem {
 
     // ── Prune dead objects ────────────────────────────────────
     this.projectiles = this.projectiles.filter((p) => !p.done);
-    this.explosions  = this.explosions.filter((e) => !e.done);
+    this.explosions  = this.explosions.filter((e)  => !e.done);
   }
 
   // ============================================================
@@ -231,12 +245,10 @@ export class ConsumableSystem {
   // [🧱 BLOCK: Private — Fireball Spawn]
   // ============================================================
   private _spawnFireball(def: ConsumableDef, player: Player, state: GameState): void {
-    const cx = player.x + player.width  / 2;
-    const cy = player.y + player.height / 2;
-    const fx = player.facing.x;
-    const fy = player.facing.y;
-
-    // Total damage = base scroll damage + atkBonus
+    const cx     = player.x + player.width  / 2;
+    const cy     = player.y + player.height / 2;
+    const fx     = player.facing.x;
+    const fy     = player.facing.y;
     const damage = def.effectValue + state.playerStats.atkBonus;
 
     this.projectiles.push(new ConsumableProjectile({
@@ -256,22 +268,23 @@ export class ConsumableSystem {
 
   // ============================================================
   // [🧱 BLOCK: Private — Frost Cone (instant AoE)]
+  // Hits horde enemies AND the boss if present.
+  // Boss takes damage but is immune to freeze stun.
   // ============================================================
   private _applyFrost(def: ConsumableDef, player: Player, state: GameState): void {
-    const cx     = player.x + player.width  / 2;
-    const cy     = player.y + player.height / 2;
-    const fx     = player.facing.x;
-    const fy     = player.facing.y;
-    const damage = def.effectValue + state.playerStats.atkBonus;
+    const cx          = player.x + player.width  / 2;
+    const cy          = player.y + player.height / 2;
+    const fx          = player.facing.x;
+    const fy          = player.facing.y;
+    const damage      = def.effectValue + state.playerStats.atkBonus;
     const facingAngle = Math.atan2(fy, fx);
 
-    // Hit all enemies in cone
+    // ── Horde enemies ─────────────────────────────────────────
     for (const enemy of state.enemies) {
       if (enemy.isDead) continue;
-      const ecx  = enemy.x + enemy.width  / 2;
-      const ecy  = enemy.y + enemy.height / 2;
-      const d    = dist(cx, cy, ecx, ecy);
-      if (d > FROST_RANGE) continue;
+      const ecx = enemy.x + enemy.width  / 2;
+      const ecy = enemy.y + enemy.height / 2;
+      if (dist(cx, cy, ecx, ecy) > FROST_RANGE) continue;
 
       const angle = Math.atan2(ecy - cy, ecx - cx);
       let   diff  = angle - facingAngle;
@@ -284,7 +297,26 @@ export class ConsumableSystem {
       state.particles.push(...spawnHitSpark(ecx, ecy, '#93c5fd', 5));
     }
 
-    // Visual — instant AoE projectile that lives 1 frame
+    // ── Boss ─────────────────────────────────────────────────
+    const boss = state.boss;
+    if (boss && !boss.isDead) {
+      const bcx = bossCenterX(boss);
+      const bcy = bossCenterY(boss);
+      if (dist(cx, cy, bcx, bcy) <= FROST_RANGE) {
+        const angle = Math.atan2(bcy - cy, bcx - cx);
+        let   diff  = angle - facingAngle;
+        while (diff >  Math.PI) diff -= Math.PI * 2;
+        while (diff < -Math.PI) diff += Math.PI * 2;
+        if (Math.abs(diff) <= FROST_HALF_ANGLE) {
+          bossTakeDamage(boss, damage);
+          // Boss takes damage but is immune to freeze —
+          // still show ice sparks so it feels impactful
+          state.particles.push(...spawnHitSpark(bcx, bcy, '#93c5fd', 8));
+        }
+      }
+    }
+
+    // Visual — instant AoE projectile
     this.projectiles.push(new ConsumableProjectile({
       x: cx, y: cy,
       vx: 0, vy: 0,
@@ -331,22 +363,16 @@ export class ConsumableSystem {
   // [🧱 BLOCK: Private — Blink (teleport)]
   // ============================================================
   private _applyBlink(def: ConsumableDef, player: Player, state: GameState): void {
-    const fx      = player.facing.x;
-    const fy      = player.facing.y;
-    const worldW  = state.screenW; // rough — clamped below
-    const worldH  = state.screenH;
-
+    const fx   = player.facing.x;
+    const fy   = player.facing.y;
     const newX = player.x + fx * BLINK_DISTANCE;
     const newY = player.y + fy * BLINK_DISTANCE;
 
-    // Clamp to safe world bounds — proper world bounds handled by caller
     player.x = Math.max(0, newX);
     player.y = Math.max(0, newY);
 
-    // Grant i-frames through blink
     player.iFrames = Math.max(player.iFrames, BLINK_IFRAMES);
 
-    // VFX at origin + destination
     const ocx = player.x + player.width  / 2;
     const ocy = player.y + player.height / 2;
     state.particles.push(...spawnBurst(ocx, ocy, '#38bdf8', 10, 1.3));
@@ -354,23 +380,15 @@ export class ConsumableSystem {
 
   // ============================================================
   // [🧱 BLOCK: Private — Ward Shield]
-  // Sets wardHits on the active ward slot.
+  // Ward hit count set externally by GameCanvas after activate().
   // ============================================================
-  private _applyWard(player: Player): void {
-    // Find the ward slot — it was just activated so durationMs was set
-    // by PlayerConsumables.activateSlot before this is called.
-    // We just need to set wardHits to the effectValue (3).
-    // PlayerConsumables stores wardHits per slot.
-    // We reach the slot through the player consumables in state —
-    // passed by reference from GameCanvas, so we set it on the
-    // correct slot object directly in ConsumableSystem.activate().
-    // Ward hit count is set externally by GameCanvas after activate()
-    // returns — see GameCanvas._applyConsumableEffect().
-    // (Handled in GameCanvas directly for simplicity.)
+  private _applyWard(_player: Player): void {
+    // Handled in GameCanvas._applyConsumableEffect()
   }
 
   // ============================================================
   // [🧱 BLOCK: Private — Void Pull (instant AoE)]
+  // Pulls horde enemies AND nudges the boss toward pull point.
   // ============================================================
   private _applyVoid(def: ConsumableDef, player: Player, state: GameState): void {
     const cx = player.x + player.width  / 2;
@@ -378,23 +396,35 @@ export class ConsumableSystem {
     const fx = player.facing.x;
     const fy = player.facing.y;
 
-    // Pull point is ~120px ahead of the player in facing dir
+    // Pull point ~120px ahead in facing direction
     const px = cx + fx * 120;
     const py = cy + fy * 120;
 
+    // ── Horde enemies ─────────────────────────────────────────
     for (const enemy of state.enemies) {
       if (enemy.isDead) continue;
       const ecx = enemy.x + enemy.width  / 2;
       const ecy = enemy.y + enemy.height / 2;
       if (distSq(px, py, ecx, ecy) > VOID_PULL_RANGE * VOID_PULL_RANGE) continue;
 
-      // Nudge enemy toward pull point
-      const d  = dist(px, py, ecx, ecy);
+      const d = dist(px, py, ecx, ecy);
       if (d < 4) continue;
-      const dx = (px - ecx) / d;
-      const dy = (py - ecy) / d;
-      enemy.x += dx * VOID_PULL_STRENGTH;
-      enemy.y += dy * VOID_PULL_STRENGTH;
+      enemy.x += ((px - ecx) / d) * VOID_PULL_STRENGTH;
+      enemy.y += ((py - ecy) / d) * VOID_PULL_STRENGTH;
+    }
+
+    // ── Boss — pulled at half strength (it's heavy) ───────────
+    const boss = state.boss;
+    if (boss && !boss.isDead) {
+      const bcx = bossCenterX(boss);
+      const bcy = bossCenterY(boss);
+      if (distSq(px, py, bcx, bcy) <= VOID_PULL_RANGE * VOID_PULL_RANGE) {
+        const d = dist(px, py, bcx, bcy);
+        if (d >= 4) {
+          boss.x += ((px - bcx) / d) * (VOID_PULL_STRENGTH * 0.5);
+          boss.y += ((py - bcy) / d) * (VOID_PULL_STRENGTH * 0.5);
+        }
+      }
     }
 
     // Visual indicator
@@ -416,96 +446,181 @@ export class ConsumableSystem {
 
   // ============================================================
   // [🧱 BLOCK: Private — Projectile Hit Checks]
-  // Called per frame for each live projectile.
+  // Called per frame for each live travelling projectile.
+  // Checks both state.enemies (horde) AND state.boss.
+  // Frost and Void are instant on activate — no per-frame check.
   // ============================================================
   private _checkProjectileHits(
     proj:   ConsumableProjectile,
     state:  GameState,
     player: Player,
   ): void {
-    const enemies = state.enemies.filter((e) => !e.isDead);
+    const enemies  = state.enemies.filter((e) => !e.isDead);
+    const boss     = (state.boss && !state.boss.isDead) ? state.boss : null;
 
     switch (proj.kind) {
 
+      // ── Fireball ─────────────────────────────────────────────
       case 'fireball': {
+
+        // Check horde enemies first
         for (const enemy of enemies) {
           if (!proj.hitsEnemy(enemy)) continue;
-          // Detonate
-          proj.done = true;
-          const cx  = proj.x;
-          const cy  = proj.y;
-          // AoE — damage all enemies in explosion radius
-          for (const e of enemies) {
-            const ecx = e.x + e.width  / 2;
-            const ecy = e.y + e.height / 2;
-            if (distSq(cx, cy, ecx, ecy) < FIREBALL_AOE * FIREBALL_AOE) {
-              e.takeDamage(proj.damage);
-              state.particles.push(...spawnHitSpark(ecx, ecy, '#fb923c', 4));
-            }
-          }
-          this.explosions.push(new ConsumableExplosion(cx, cy, FIREBALL_AOE, '#fb923c'));
-          state.particles.push(...spawnBurst(cx, cy, '#fb923c', 14, 1.6));
+          this._detonateFireball(proj, state, enemies, boss);
           return;
         }
+
+        // Check boss
+        if (boss && proj.hitsEnemy(boss)) {
+          this._detonateFireball(proj, state, enemies, boss);
+          return;
+        }
+
         break;
       }
 
+      // ── Lightning ────────────────────────────────────────────
       case 'lightning': {
+
+        // Check horde enemies
         for (const enemy of enemies) {
           if (!proj.hitsEnemy(enemy)) continue;
-
           enemy.takeDamage(proj.damage);
           state.particles.push(...spawnHitSpark(
             enemy.x + enemy.width  / 2,
             enemy.y + enemy.height / 2,
             '#7dd3fc', 5
           ));
-
-          // Chain to nearest other enemy
-          if (proj.chainsLeft > 0) {
-            proj.done = true;
-            const ecx    = enemy.x + enemy.width  / 2;
-            const ecy    = enemy.y + enemy.height / 2;
-            const others = enemies
-              .filter((e) => e !== enemy)
-              .sort((a, b) =>
-                distSq(ecx, ecy, a.x + a.width/2, a.y + a.height/2) -
-                distSq(ecx, ecy, b.x + b.width/2, b.y + b.height/2)
-              );
-            const next = others.find((e) =>
-              distSq(ecx, ecy, e.x + e.width/2, e.y + e.height/2) <
-              LIGHTNING_CHAIN_R * LIGHTNING_CHAIN_R
-            );
-            if (next) {
-              const ncx = next.x + next.width  / 2;
-              const ncy = next.y + next.height / 2;
-              const d   = dist(ecx, ecy, ncx, ncy);
-              const vx  = ((ncx - ecx) / d) * LIGHTNING_SPEED;
-              const vy  = ((ncy - ecy) / d) * LIGHTNING_SPEED;
-              this.projectiles.push(new ConsumableProjectile({
-                x: ecx, y: ecy, vx, vy,
-                facingX: vx / LIGHTNING_SPEED,
-                facingY: vy / LIGHTNING_SPEED,
-                kind:       'lightning',
-                damage:     proj.damage,
-                speed:      LIGHTNING_SPEED,
-                maxRange:   LIGHTNING_CHAIN_R + 20,
-                lifetime:   2000,
-                radius:     LIGHTNING_RADIUS,
-                color:      '#7dd3fc',
-                chainsLeft: proj.chainsLeft - 1,
-              }));
-            }
-          } else {
-            proj.done = true;
-          }
+          this._chainLightning(proj, state, enemies, boss,
+            enemy.x + enemy.width / 2, enemy.y + enemy.height / 2, enemy);
           return;
         }
+
+        // Check boss
+        if (boss && proj.hitsEnemy(boss)) {
+          bossTakeDamage(boss, proj.damage);
+          state.particles.push(...spawnHitSpark(
+            bossCenterX(boss), bossCenterY(boss), '#7dd3fc', 8
+          ));
+          // Boss is a single target — no chain from boss, just end
+          proj.done = true;
+          return;
+        }
+
         break;
       }
 
-      // frost and void are instant — no per-frame hit checks needed
+      // frost and void are instant — no per-frame check needed
       default: break;
     }
+  }
+
+  // ============================================================
+  // [🧱 BLOCK: Private — Fireball Detonate]
+  // AoE explosion that damages all horde enemies AND the boss
+  // within FIREBALL_AOE radius of the impact point.
+  // ============================================================
+  private _detonateFireball(
+    proj:    ConsumableProjectile,
+    state:   GameState,
+    enemies: BaseEnemy[],
+    boss:    AnyBoss | null
+  ): void {
+    proj.done = true;
+    const cx = proj.x;
+    const cy = proj.y;
+
+    // Damage horde enemies in AoE
+    for (const e of enemies) {
+      const ecx = e.x + e.width  / 2;
+      const ecy = e.y + e.height / 2;
+      if (distSq(cx, cy, ecx, ecy) < FIREBALL_AOE * FIREBALL_AOE) {
+        e.takeDamage(proj.damage);
+        state.particles.push(...spawnHitSpark(ecx, ecy, '#fb923c', 4));
+      }
+    }
+
+    // Damage boss if in AoE
+    if (boss) {
+      const bcx = bossCenterX(boss);
+      const bcy = bossCenterY(boss);
+      if (distSq(cx, cy, bcx, bcy) < FIREBALL_AOE * FIREBALL_AOE) {
+        bossTakeDamage(boss, proj.damage);
+        state.particles.push(...spawnHitSpark(bcx, bcy, '#fb923c', 8));
+      }
+    }
+
+    this.explosions.push(new ConsumableExplosion(cx, cy, FIREBALL_AOE, '#fb923c'));
+    state.particles.push(...spawnBurst(cx, cy, '#fb923c', 14, 1.6));
+  }
+
+  // ============================================================
+  // [🧱 BLOCK: Private — Lightning Chain]
+  // Tries to chain to the nearest unvisited horde enemy.
+  // In boss rooms the boss is a valid first target but chains
+  // don't continue from the boss (it's a single entity).
+  // ============================================================
+  private _chainLightning(
+    proj:       ConsumableProjectile,
+    state:      GameState,
+    enemies:    BaseEnemy[],
+    boss:       AnyBoss | null,
+    fromX:      number,
+    fromY:      number,
+    hitEntity:  BaseEnemy | AnyBoss
+  ): void {
+    if (proj.chainsLeft <= 0) { proj.done = true; return; }
+
+    proj.done = true;
+
+    // Candidates: other horde enemies (not the one just hit)
+    const others = enemies
+      .filter((e) => e !== hitEntity)
+      .sort((a, b) =>
+        distSq(fromX, fromY, a.x + a.width / 2, a.y + a.height / 2) -
+        distSq(fromX, fromY, b.x + b.width / 2, b.y + b.height / 2)
+      );
+
+    // Also consider boss as a chain target if not the one just hit
+    let chainTarget: BaseEnemy | AnyBoss | null = null;
+    let chainDist = Infinity;
+
+    const nextEnemy = others.find((e) =>
+      distSq(fromX, fromY, e.x + e.width / 2, e.y + e.height / 2) <
+      LIGHTNING_CHAIN_R * LIGHTNING_CHAIN_R
+    );
+    if (nextEnemy) {
+      chainDist   = distSq(fromX, fromY, nextEnemy.x + nextEnemy.width / 2, nextEnemy.y + nextEnemy.height / 2);
+      chainTarget = nextEnemy;
+    }
+
+    if (boss && boss !== hitEntity) {
+      const bd = distSq(fromX, fromY, bossCenterX(boss), bossCenterY(boss));
+      if (bd < LIGHTNING_CHAIN_R * LIGHTNING_CHAIN_R && bd < chainDist) {
+        chainTarget = boss;
+      }
+    }
+
+    if (!chainTarget) return;
+
+    const tcx = (chainTarget as any).x + (chainTarget as any).width  / 2;
+    const tcy = (chainTarget as any).y + (chainTarget as any).height / 2;
+    const d   = dist(fromX, fromY, tcx, tcy);
+    const vx  = ((tcx - fromX) / d) * LIGHTNING_SPEED;
+    const vy  = ((tcy - fromY) / d) * LIGHTNING_SPEED;
+
+    this.projectiles.push(new ConsumableProjectile({
+      x: fromX, y: fromY, vx, vy,
+      facingX: vx / LIGHTNING_SPEED,
+      facingY: vy / LIGHTNING_SPEED,
+      kind:       'lightning',
+      damage:     proj.damage,
+      speed:      LIGHTNING_SPEED,
+      maxRange:   LIGHTNING_CHAIN_R + 20,
+      lifetime:   2000,
+      radius:     LIGHTNING_RADIUS,
+      color:      '#7dd3fc',
+      chainsLeft: proj.chainsLeft - 1,
+    }));
   }
 }
