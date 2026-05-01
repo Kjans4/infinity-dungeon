@@ -224,7 +224,6 @@
 
 /* ============================================================
    [🧱 BLOCK: Attributes Column]
-   Squeezed — smaller pips, tighter rows
    ============================================================ */
 .shop-col--attributes .shop-stat-row {
   padding: 4px 0;
@@ -656,15 +655,12 @@
 
 /* ============================================================
    [🧱 BLOCK: Consumable Shop Row — Provisions column]
+   Two-row layout: main info row + upgrade row below.
    ============================================================ */
 .shop-consumable-row {
-  display:     flex;
-  align-items: center;
-  gap:         7px;
-  border:      1px solid #1e1a10;
-  padding:     5px 7px;
-  margin-bottom: 3px;
-  transition:  border-color 0.1s;
+  border:        1px solid #1e1a10;
+  margin-bottom: 4px;
+  transition:    border-color 0.1s;
 }
 
 .shop-consumable-row:hover {
@@ -672,6 +668,14 @@
 }
 
 .shop-consumable-row:last-child { margin-bottom: 0; }
+
+/* ── Main info row ── */
+.shop-consumable-row__main {
+  display:     flex;
+  align-items: center;
+  gap:         7px;
+  padding:     5px 7px 3px;
+}
 
 .shop-consumable-row__icon {
   font-size:   15px;
@@ -736,6 +740,86 @@
   color:       #8b6914;
   min-width:   30px;
   text-align:  right;
+}
+
+/* ============================================================
+   [🧱 BLOCK: Consumable Upgrade Row]
+   Second row inside each consumable card.
+   Contains: level pips | current stat | arrow | next stat | spacer | cost | btn
+   ============================================================ */
+.shop-consumable-row__upgrade-row {
+  display:     flex;
+  align-items: center;
+  gap:         5px;
+  padding:     3px 7px 5px;
+  border-top:  1px solid #1a1610;
+  background:  rgba(0, 0, 0, 0.2);
+}
+
+/* ── Level pips — 5 small diamonds ── */
+.shop-consumable-row__level-pips {
+  display:     flex;
+  align-items: center;
+  gap:         2px;
+  flex-shrink: 0;
+}
+
+.shop-consumable-pip {
+  width:        6px;
+  height:       6px;
+  background:   #1a1610;
+  border:       1px solid #2a2010;
+  transform:    rotate(45deg);
+  flex-shrink:  0;
+  transition:   background 0.15s, border-color 0.15s, box-shadow 0.15s;
+}
+
+.shop-consumable-pip--filled {
+  /* color set inline per-item via style prop */
+  box-shadow: 0 0 4px currentColor;
+}
+
+/* ── Current stat display ── */
+.shop-consumable-row__level-stat {
+  font-size:      8px;
+  font-weight:    700;
+  letter-spacing: 0.5px;
+  white-space:    nowrap;
+  flex-shrink:    0;
+}
+
+/* ── Arrow between current and next level ── */
+.shop-consumable-row__upgrade-arrow {
+  font-size:   8px;
+  color:       #3a2808;
+  flex-shrink: 0;
+}
+
+/* ── Next level preview ── */
+.shop-consumable-row__next-stat {
+  font-size:   8px;
+  color:       #5a4818;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+/* ── Upgrade cost ── */
+.shop-consumable-row__upgrade-cost {
+  font-size:   8px;
+  font-weight: 700;
+  color:       #8b6914;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+/* ── MAX LEVEL badge ── */
+.shop-consumable-row__max-badge {
+  font-size:      7px;
+  font-weight:    700;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  opacity:        0.7;
+  flex-shrink:    0;
 }
 
 /* ============================================================

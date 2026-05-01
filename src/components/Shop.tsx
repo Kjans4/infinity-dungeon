@@ -8,7 +8,10 @@ import { Charm }      from "@/engine/CharmRegistry";
 import { WeaponItem, ArmorItem, ArmorSlot } from "@/engine/items/types";
 import { ShopItem }   from "@/engine/items/ItemPool";
 import { getWeaponPassive } from "@/engine/WeaponPassiveRegistry";
-import { ConsumableDef, POTION_POOL, SCROLL_POOL } from "@/engine/ConsumableRegistry";
+import {
+  ConsumableDef, POTION_POOL, SCROLL_POOL,
+  MAX_CONSUMABLE_LEVEL, getUpgradeCost,
+} from "@/engine/ConsumableRegistry";
 import { PlayerConsumables } from "@/engine/PlayerConsumables";
 import { getShopConsumableOptions } from "@/engine/items/ItemPool";
 import "@/styles/shop.css";
@@ -118,7 +121,6 @@ function StatRow({ statKey, playerStats, player, gold, floor, onSpend }: {
 
 // ============================================================
 // [🧱 BLOCK: Shop Item Card — Horizontal layout]
-// Used in the 5-slot wares row.
 // ============================================================
 function ShopItemCard({ item, gold, playerStats, player, onBuy }: {
   item: ShopItem; gold: number;
@@ -201,51 +203,129 @@ function ShopItemCard({ item, gold, playerStats, player, onBuy }: {
 }
 
 // ============================================================
-// [🧱 BLOCK: Consumable Shop Row]
-// Single row in the Provisions panel.
+// [🧱 BLOCK: Consumable Shop Row — with upgrade system]
+// Shows: icon | name+desc | kind badge | stack count | buy btn
+//        level pips (●●●○○) | upgrade cost | upgrade btn
 // ============================================================
-function ConsumableShopRow({ def, gold, playerConsumables, onBuy }: {
+function ConsumableShopRow({ def, gold, playerConsumables, onBuy, onUpgrade }: {
   def:               ConsumableDef;
   gold:              number;
   playerConsumables: PlayerConsumables;
   onBuy:             (newGold: number) => void;
+  onUpgrade:         (newGold: number) => void;
 }) {
-  const isPotion    = def.kind === 'potion';
-  const canAfford   = gold >= def.cost;
-  const currentCount = playerConsumables.bagCount(def.id);
-  const maxed       = currentCount >= 8;
-  const canBuy      = canAfford && !maxed;
-  const accentColor = isPotion ? '#a78bfa' : '#38bdf8';
+  const isPotion      = def.kind === 'potion';
+  const canAffordBuy  = gold >= def.cost;
+  const currentCount  = playerConsumables.bagCount(def.id);
+  const maxed         = currentCount >= 8;
+  const canBuy        = canAffordBuy && !maxed;
+  const accentColor   = isPotion ? '#a78bfa' : '#38bdf8';
+
+  // ── Upgrade state ──────────────────────────────────────────
+  const currentLevel  = playerConsumables.getLevel(def.id);
+  const isMaxLevel    = currentLevel >= MAX_CONSUMABLE_LEVEL;
+  const upgradeCost   = isMaxLevel ? 0 : playerConsumables.getUpgradeCost(def);
+  const canAffordUpg  = !isMaxLevel && gold >= upgradeCost;
+
+  // Level description shown next to pips
+  const levelDescriptions: Record<string, string[]> = {
+    health_potion:    ['40 HP', '55 HP', '75 HP', '100 HP', '130 HP'],
+    wrath_potion:     ['+25 ATK/15s', '+32 ATK/17s', '+40 ATK/20s', '+50 ATK/23s', '+65 ATK/27s'],
+    iron_potion:      ['40% DR/10s', '48%/12s', '55%/14s', '62%/17s', '70%/20s'],
+    phantom_potion:   ['12s', '16s', '20s', '25s', '32s'],
+    fireball_scroll:  ['45dmg/r90', '65/r105', '90/r125', '120/r148', '160/r175'],
+    frost_scroll:     ['28dmg/2s', '42/2.5s', '60/3s', '82/3.5s', '110/4s'],
+    lightning_scroll: ['32dmg/3c', '48/4c', '68/4c', '92/5c', '125/5c'],
+    blink_scroll:     ['300px', '380px', '470px', '570px', '680px'],
+    ward_scroll:      ['3hits/5s', '4/6s', '5/7s', '6/9s', '8/11s'],
+    void_scroll:      ['r160/s20', 'r200/s25', 'r250/s32', 'r310/s40', 'r380/s50'],
+  };
+  const currentDesc = levelDescriptions[def.id]?.[currentLevel - 1] ?? '';
+  const nextDesc    = !isMaxLevel ? levelDescriptions[def.id]?.[currentLevel] ?? '' : '';
 
   return (
-    <div className="shop-consumable-row">
-      <span className="shop-consumable-row__icon">{def.icon}</span>
-      <div className="shop-consumable-row__info">
-        <div className="shop-consumable-row__name">{def.name}</div>
-        <div className="shop-consumable-row__desc">{def.description}</div>
+    <div className="shop-consumable-row shop-consumable-row--upgradable">
+      {/* ── Top row: icon | info | kind | count | buy ── */}
+      <div className="shop-consumable-row__main">
+        <span className="shop-consumable-row__icon">{def.icon}</span>
+        <div className="shop-consumable-row__info">
+          <div className="shop-consumable-row__name">{def.name}</div>
+          <div className="shop-consumable-row__desc">{def.description}</div>
+        </div>
+        <div className="shop-consumable-row__right">
+          <span
+            className="shop-consumable-row__kind"
+            style={{ color: accentColor, borderColor: isPotion ? '#4a2a6a' : '#0a3a4a' }}
+          >
+            {isPotion ? 'POTION' : 'SCROLL'}
+          </span>
+          {currentCount > 0 && (
+            <span className="shop-consumable-row__count">×{currentCount}</span>
+          )}
+          <span className="shop-consumable-row__cost">{def.cost}g</span>
+          <PillBtn
+            label={maxed ? "MAX" : canAffordBuy ? "Buy" : "Need gold"}
+            onClick={() => {
+              if (!canBuy) return;
+              playerConsumables.addToBag(def, 1);
+              onBuy(gold - def.cost);
+            }}
+            disabled={!canBuy}
+            color={accentColor}
+            small
+          />
+        </div>
       </div>
-      <div className="shop-consumable-row__right">
-        <span
-          className="shop-consumable-row__kind"
-          style={{ color: accentColor, borderColor: isPotion ? '#4a2a6a' : '#0a3a4a' }}
-        >
-          {isPotion ? 'POTION' : 'SCROLL'}
+
+      {/* ── Bottom row: level pips + current stat + upgrade btn ── */}
+      <div className="shop-consumable-row__upgrade-row">
+        {/* Level pips */}
+        <div className="shop-consumable-row__level-pips">
+          {Array.from({ length: MAX_CONSUMABLE_LEVEL }).map((_, i) => (
+            <div
+              key={i}
+              className={`shop-consumable-pip ${i < currentLevel ? 'shop-consumable-pip--filled' : ''}`}
+              style={i < currentLevel ? { background: accentColor, borderColor: accentColor } : undefined}
+            />
+          ))}
+        </div>
+
+        {/* Current level stat */}
+        <span className="shop-consumable-row__level-stat" style={{ color: accentColor }}>
+          {currentDesc}
         </span>
-        {currentCount > 0 && (
-          <span className="shop-consumable-row__count">×{currentCount}</span>
+
+        {/* Arrow + next level preview */}
+        {!isMaxLevel && (
+          <>
+            <span className="shop-consumable-row__upgrade-arrow">→</span>
+            <span className="shop-consumable-row__next-stat">{nextDesc}</span>
+          </>
         )}
-        <span className="shop-consumable-row__cost">{def.cost}g</span>
-        <PillBtn
-          label={maxed ? "MAX" : canAfford ? "Buy" : "Need gold"}
-          onClick={() => {
-            if (!canBuy) return;
-            playerConsumables.addToBag(def, 1);
-            onBuy(gold - def.cost);
-          }}
-          disabled={!canBuy}
-          color={accentColor}
-          small
-        />
+
+        {/* Spacer */}
+        <div style={{ flex: 1 }} />
+
+        {/* Upgrade button */}
+        {isMaxLevel ? (
+          <span className="shop-consumable-row__max-badge" style={{ color: accentColor }}>
+            MAX LVL
+          </span>
+        ) : (
+          <>
+            <span className="shop-consumable-row__upgrade-cost">{upgradeCost}g</span>
+            <PillBtn
+              label={`↑ ${def.upgradeDesc}`}
+              onClick={() => {
+                const newGold = playerConsumables.upgrade(def, gold);
+                onUpgrade(newGold);
+              }}
+              disabled={!canAffordUpg}
+              color={accentColor}
+              small
+            />
+          </>
+        )}
       </div>
     </div>
   );
@@ -401,7 +481,7 @@ function HealingSection({ player, gold, floor, onHeal }: {
 //   Col 1 — Attributes (stat allocation)
 //   Col 2 — Wares (5 item cards horizontal + reroll) + Healing
 //   Col 3 — Equipped Gear (weapon + armor slots + charms)
-//   Col 4 — Provisions (buy potions/scrolls)
+//   Col 4 — Provisions (buy + upgrade potions/scrolls)
 // ============================================================
 export default function Shop({
   floor, room, gold, playerStats, player,
@@ -414,10 +494,8 @@ export default function Shop({
 
   // Generate shop options once on mount
   const shopInitRef = useRef(false);
-  const consumableOptionsRef = useRef<ConsumableDef[]>([]);
   if (!shopInitRef.current) {
     playerStats.generateShopOptions(floor);
-    consumableOptionsRef.current = getShopConsumableOptions();
     shopInitRef.current = true;
   }
 
@@ -429,6 +507,7 @@ export default function Shop({
   const handleSellArmor  = (slot: ArmorSlot) => { onGoldChange(playerStats.sellArmor(slot, gold, player)); refresh(); };
   const handleHeal       = (ng: number) => { onGoldChange(ng); refresh(); };
   const handleConsumableBuy = (ng: number) => { onGoldChange(ng); refresh(); };
+  const handleConsumableUpgrade = (ng: number) => { onGoldChange(ng); refresh(); };
 
   const cap            = statCap(floor);
   const nextRerollCost = playerStats.rerollCost;
@@ -472,8 +551,6 @@ export default function Shop({
 
             {/* ── Column 2: Wares + Healing ── */}
             <div className="shop-col shop-col--wares">
-
-              {/* Wares row — 5 items horizontal */}
               <div>
                 <div className="shop-wares__header">
                   <p className="shop-section__label">Wares</p>
@@ -502,7 +579,6 @@ export default function Shop({
                 </div>
               </div>
 
-              {/* Healing — below wares */}
               <div className="shop-col__box shop-col__box--grow">
                 <HealingSection player={player} gold={gold} floor={floor} onHeal={handleHeal} />
               </div>
@@ -513,7 +589,6 @@ export default function Shop({
               <p className="shop-section__label">Equipped Gear</p>
               <div className="shop-col__box shop-col__box--grow shop-col__box--gear-scroll">
 
-                {/* Weapon */}
                 <p className="shop-gear__sublabel">Weapon</p>
                 {playerStats.equippedWeaponItem ? (
                   <EquippedWeaponPill item={playerStats.equippedWeaponItem} onSell={handleSellWeapon} />
@@ -521,7 +596,6 @@ export default function Shop({
                   <p className="shop-none-msg">"Bare fists — seek steel."</p>
                 )}
 
-                {/* Armor */}
                 <p className="shop-gear__sublabel" style={{ marginTop: 10 }}>Armor</p>
                 {ARMOR_SLOTS.map((slot) => (
                   <EquippedArmorPill
@@ -532,7 +606,6 @@ export default function Shop({
                   />
                 ))}
 
-                {/* Charms */}
                 <p className="shop-gear__sublabel" style={{ marginTop: 10 }}>
                   Charms ({playerStats.charms.length}/{playerStats.maxCharms})
                 </p>
@@ -550,7 +623,7 @@ export default function Shop({
 
             {/* ── Column 4: Provisions ── */}
             <div className="shop-col shop-col--provisions">
-              <p className="shop-section__label">Provisions</p>
+              <p className="shop-section__label">Provisions · Buy &amp; Upgrade</p>
               <div className="shop-col__box shop-col__box--grow shop-col__box--provisions-scroll">
                 <p className="shop-gear__sublabel">Potions</p>
                 {POTION_POOL.map((def) => (
@@ -560,6 +633,7 @@ export default function Shop({
                     gold={gold}
                     playerConsumables={playerConsumables}
                     onBuy={handleConsumableBuy}
+                    onUpgrade={handleConsumableUpgrade}
                   />
                 ))}
                 <p className="shop-gear__sublabel" style={{ marginTop: 8 }}>Scrolls</p>
@@ -570,6 +644,7 @@ export default function Shop({
                     gold={gold}
                     playerConsumables={playerConsumables}
                     onBuy={handleConsumableBuy}
+                    onUpgrade={handleConsumableUpgrade}
                   />
                 ))}
               </div>

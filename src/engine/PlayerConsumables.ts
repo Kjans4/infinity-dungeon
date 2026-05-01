@@ -2,7 +2,8 @@
 
 import {
   ConsumableDef, ConsumableId,
-  SLOT_COOLDOWNS,
+  SLOT_COOLDOWNS, MAX_CONSUMABLE_LEVEL,
+  getUpgradeCost,
 } from "./ConsumableRegistry";
 
 // ============================================================
@@ -28,7 +29,7 @@ export interface BagEntry {
 // assignedId   — which consumable is slotted (null = empty)
 // cooldownMs   — ms remaining on this slot's cooldown
 // durationMs   — ms remaining on the active buff (0 if none / instant)
-// wardHits     — Ward Scroll hit absorption counter (Phase 2)
+// wardHits     — Ward Scroll hit absorption counter
 // ============================================================
 export interface HotbarSlot {
   assignedId:  ConsumableId | null;
@@ -43,8 +44,9 @@ function makeSlot(): HotbarSlot {
 
 // ============================================================
 // [🧱 BLOCK: PlayerConsumables Class]
-// Owns the bag (inventory of consumable stacks) and the
-// 4 hotbar slots. Updated every frame by GameCanvas.
+// Owns the bag (inventory of consumable stacks), the 4 hotbar
+// slots, and the upgrade level map for each consumable.
+// Upgrade levels persist across rooms — reset only on full run.
 // ============================================================
 export class PlayerConsumables {
   // Bag: consumableId → BagEntry
@@ -54,6 +56,48 @@ export class PlayerConsumables {
   slots: [HotbarSlot, HotbarSlot, HotbarSlot, HotbarSlot] = [
     makeSlot(), makeSlot(), makeSlot(), makeSlot(),
   ];
+
+  // ============================================================
+  // [🧱 BLOCK: Upgrade Levels]
+  // consumableId → current level (1–MAX_CONSUMABLE_LEVEL).
+  // Defaults to 1 if not present (no entry = base level).
+  // ============================================================
+  private upgradeLevels: Map<ConsumableId, number> = new Map();
+
+  // ============================================================
+  // [🧱 BLOCK: Level Getters]
+  // ============================================================
+
+  /** Returns the current upgrade level for a consumable (1–5). */
+  getLevel(id: ConsumableId): number {
+    return this.upgradeLevels.get(id) ?? 1;
+  }
+
+  /** Returns true if the consumable can still be upgraded. */
+  canUpgrade(id: ConsumableId): boolean {
+    return this.getLevel(id) < MAX_CONSUMABLE_LEVEL;
+  }
+
+  /**
+   * Returns the gold cost to upgrade this consumable by one level.
+   * Returns Infinity if already at max level.
+   */
+  getUpgradeCost(def: ConsumableDef): number {
+    const currentLevel = this.getLevel(def.id);
+    return getUpgradeCost(def, currentLevel);
+  }
+
+  /**
+   * Attempts to upgrade the consumable. Deducts gold and returns
+   * the new gold total. Returns unchanged gold if upgrade not possible.
+   */
+  upgrade(def: ConsumableDef, gold: number): number {
+    const cost = this.getUpgradeCost(def);
+    if (!this.canUpgrade(def.id) || gold < cost) return gold;
+    const currentLevel = this.getLevel(def.id);
+    this.upgradeLevels.set(def.id, currentLevel + 1);
+    return gold - cost;
+  }
 
   // ============================================================
   // [🧱 BLOCK: Bag Management]
@@ -121,8 +165,7 @@ export class PlayerConsumables {
   //    resetting, to reward chaining
   //
   // Returns the ConsumableDef that was activated, or null if
-  // activation was blocked. Callers (GameCanvas) apply the
-  // actual effect in Phase 2.
+  // activation was blocked.
   // ============================================================
   activateSlot(slotIndex: number): ConsumableDef | null {
     if (slotIndex < 0 || slotIndex >= HOTBAR_SLOTS) return null;
@@ -142,18 +185,38 @@ export class PlayerConsumables {
     // Start cooldown for this slot
     slot.cooldownMs = SLOT_COOLDOWNS[slotIndex];
 
-    // Duration stacking
+    // Duration stacking — use level-aware duration for buff items
     if (def.durationMs > 0) {
+      const leveledDuration = this.getLeveledDuration(def);
       if (slot.durationMs > 0) {
         // Buff already running — extend it
-        slot.durationMs += def.durationMs + STACK_BONUS_MS;
+        slot.durationMs += leveledDuration + STACK_BONUS_MS;
       } else {
         // Fresh activation
-        slot.durationMs = def.durationMs;
+        slot.durationMs = leveledDuration;
       }
     }
 
     return def;
+  }
+
+  // ============================================================
+  // [🧱 BLOCK: Level-Aware Duration Helper]
+  // Returns the correct durationMs for the current upgrade level.
+  // Used by activateSlot so buff extensions also scale with level.
+  // ============================================================
+  getLeveledDuration(def: ConsumableDef): number {
+    const level = this.getLevel(def.id);
+    const fx    = def.effectsByLevel[Math.min(level - 1, MAX_CONSUMABLE_LEVEL - 1)];
+    // Duration is stored as secondary effect for wrath/iron/ward
+    // and as primary for phantom
+    switch (def.id) {
+      case 'wrath_potion':    return fx[1] ?? def.durationMs;
+      case 'iron_potion':     return fx[1] ?? def.durationMs;
+      case 'phantom_potion':  return fx[0] ?? def.durationMs;
+      case 'ward_scroll':     return fx[1] ?? def.durationMs;
+      default:                return def.durationMs;
+    }
   }
 
   // ============================================================
@@ -174,8 +237,8 @@ export class PlayerConsumables {
 
   // ============================================================
   // [🧱 BLOCK: Buff State Helpers]
-  // Used by HordeSystem/BossSystem in Phase 2 to check active
-  // buffs each frame without scanning all slots manually.
+  // Used by HordeSystem/BossSystem in each frame to check active
+  // buffs without scanning all slots manually.
   // ============================================================
 
   /** Returns true if the given consumable has an active duration buff. */
@@ -199,10 +262,12 @@ export class PlayerConsumables {
 
   // ============================================================
   // [🧱 BLOCK: Reset]
-  // Called on full run reset — clears bag and all slot state.
+  // Called on full run reset — clears bag, all slot state,
+  // AND upgrade levels (fresh run, fresh progression).
   // ============================================================
   reset(): void {
     this.bag.clear();
     this.slots = [makeSlot(), makeSlot(), makeSlot(), makeSlot()];
+    this.upgradeLevels.clear();
   }
 }

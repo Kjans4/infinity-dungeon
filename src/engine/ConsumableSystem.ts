@@ -1,7 +1,7 @@
 // src/engine/ConsumableSystem.ts
 import { GameState }          from "./GameState";
 import { Player }             from "./Player";
-import { ConsumableDef }      from "./ConsumableRegistry";
+import { ConsumableDef, getEffectsAtLevel } from "./ConsumableRegistry";
 import {
   ConsumableProjectile,
   ConsumableExplosion,
@@ -17,40 +17,47 @@ import { Camera }             from "./Camera";
 // [🧱 BLOCK: Constants]
 // ============================================================
 const FIREBALL_SPEED     = 7;
-const FIREBALL_RANGE     = 500;
 const FIREBALL_RADIUS    = 10;
-const FIREBALL_AOE       = 80;    // explosion radius
 
-const FROST_RANGE        = 140;   // cone half-length
-const FROST_HALF_ANGLE   = Math.PI * 0.35; // ~63° half-angle
-const FROST_FREEZE_MS    = 2000;
-const FROST_RADIUS       = 140;   // visual radius for instant hit
+const FROST_RANGE        = 140;
+const FROST_HALF_ANGLE   = Math.PI * 0.35;
+const FROST_RADIUS       = 140;
 
 const LIGHTNING_SPEED    = 9;
 const LIGHTNING_RANGE    = 400;
 const LIGHTNING_RADIUS   = 8;
-const LIGHTNING_CHAINS   = 3;
-const LIGHTNING_CHAIN_R  = 140;   // px — chain search radius
+const LIGHTNING_CHAIN_R  = 140;
 
-const VOID_PULL_RANGE    = 200;   // enemies within this are pulled
-const VOID_PULL_STRENGTH = 18;    // px per frame toward point
-const VOID_RADIUS        = 200;   // visual radius
+const VOID_PULL_STRENGTH_BOSS_MULT = 0.5;
 
-const BLINK_DISTANCE     = 300;
 const BLINK_IFRAMES      = 400;
 
 const WARD_VISUAL_RADIUS = 38;
 
 // ============================================================
+// [🧱 BLOCK: Level-Aware Stat Helpers]
+// Convenience wrappers that read from the leveled effect array.
+// All callers pass `state` so we can look up the current level.
+// ============================================================
+function getFireballStats(state: GameState): { damage: number; aoeRadius: number } {
+  const def = state.playerConsumables['bag'].get('fireball_scroll')?.def
+    ?? Object.values(require('./ConsumableRegistry').CONSUMABLE_REGISTRY)
+       .find((d: any) => d.id === 'fireball_scroll') as ConsumableDef;
+  // Re-import cleanly via the registry record
+  const regDef = (require('./ConsumableRegistry').CONSUMABLE_REGISTRY as Record<string, ConsumableDef>)['fireball_scroll'];
+  const level  = state.playerConsumables.getLevel('fireball_scroll');
+  const fx     = getEffectsAtLevel(regDef, level);
+  return {
+    damage:    (fx[0] ?? 45) + state.playerStats.atkBonus,
+    aoeRadius: fx[1] ?? 90,
+  };
+}
+
+// ============================================================
 // [🧱 BLOCK: Boss Hit Helpers]
-// Wrappers so scroll damage code can hit either a horde enemy
-// or the boss using the same interface.
-// Frost stun is skipped on bosses — they are immune to freeze
-// but still take the damage.
 // ============================================================
 function bossTakeDamage(boss: AnyBoss, damage: number): void {
   if (boss instanceof Colossus) {
-    // Colossus armour check — treat scroll as non-heavy
     boss.takeDamage(damage, false);
   } else {
     boss.takeDamage(damage);
@@ -80,31 +87,28 @@ export class ConsumableSystem {
     state:  GameState,
   ): void {
     switch (def.id) {
-      case 'health_potion':    this._applyHealthPotion(def, player);           break;
+      case 'health_potion':    this._applyHealthPotion(def, player, state);    break;
       case 'wrath_potion':     /* buff applied via PlayerConsumables timers */  break;
       case 'iron_potion':      /* buff applied via PlayerConsumables timers */  break;
       case 'phantom_potion':   /* buff applied via PlayerConsumables timers */  break;
-      case 'fireball_scroll':  this._spawnFireball(def, player, state);         break;
-      case 'frost_scroll':     this._applyFrost(def, player, state);            break;
-      case 'lightning_scroll': this._spawnLightning(def, player, state);        break;
-      case 'blink_scroll':     this._applyBlink(def, player, state);            break;
-      case 'ward_scroll':      this._applyWard(player);                         break;
-      case 'void_scroll':      this._applyVoid(def, player, state);             break;
+      case 'fireball_scroll':  this._spawnFireball(def, player, state);        break;
+      case 'frost_scroll':     this._applyFrost(def, player, state);           break;
+      case 'lightning_scroll': this._spawnLightning(def, player, state);       break;
+      case 'blink_scroll':     this._applyBlink(def, player, state);           break;
+      case 'ward_scroll':      this._applyWard(player);                        break;
+      case 'void_scroll':      this._applyVoid(def, player, state);            break;
     }
   }
 
   // ============================================================
   // [🧱 BLOCK: Update]
   // Called every frame (~16ms). Ticks projectiles, checks hits,
-  // applies explosions. Also applies per-frame buff effects
-  // (Wrath speed boost is applied to player here).
+  // applies explosions. Also applies per-frame buff effects.
   // ============================================================
   update(state: GameState, player: Player, deltaMs: number = 16): void {
     const pc = state.playerConsumables;
 
-    // ── Per-frame buff effects ────────────────────────────────
-
-    // Wrath Potion — speed boost applied directly to player
+    // ── Wrath Potion — speed boost applied directly to player ─
     const wrathActive = pc.isActive('wrath_potion');
     if (wrathActive) {
       player.maxSpeed = state.playerStats.applySpeedOnly(player) + 1.5;
@@ -117,7 +121,6 @@ export class ConsumableSystem {
       if (proj.done) continue;
       proj.update(deltaMs);
       if (proj.done) continue;
-
       this._checkProjectileHits(proj, state, player);
     }
 
@@ -133,8 +136,6 @@ export class ConsumableSystem {
 
   // ============================================================
   // [🧱 BLOCK: Draw]
-  // Called after enemies are drawn. Projectiles + explosions
-  // on top. Also draws Ward ring and Phantom shimmer on player.
   // ============================================================
   draw(
     ctx:    CanvasRenderingContext2D,
@@ -144,7 +145,6 @@ export class ConsumableSystem {
   ): void {
     const pc = state.playerConsumables;
 
-    // Explosions under projectiles
     for (const exp of this.explosions) exp.draw(ctx, camera);
     for (const proj of this.projectiles) proj.draw(ctx, camera);
 
@@ -195,19 +195,42 @@ export class ConsumableSystem {
   }
 
   // ============================================================
-  // [🧱 BLOCK: Buff Query Helpers]
+  // [🧱 BLOCK: Buff Query Helpers — Level-Aware]
   // Used by HordeSystem and BossSystem to read active buffs
   // when computing damage received by the player.
   // ============================================================
 
-  /** Flat ATK bonus from Wrath Potion (20) or 0. */
+  /**
+   * Flat ATK bonus from Wrath Potion — reads the leveled atkBonus.
+   * Level 1: 25 | Level 2: 32 | Level 3: 40 | Level 4: 50 | Level 5: 65
+   */
   static wrathAtkBonus(state: GameState): number {
-    return state.playerConsumables.isActive('wrath_potion') ? 20 : 0;
+    if (!state.playerConsumables.isActive('wrath_potion')) return 0;
+    const level = state.playerConsumables.getLevel('wrath_potion');
+    // effectsByLevel[level-1][0] = atkBonus
+    const registry = ConsumableSystem._getRegistry(state);
+    const def = registry['wrath_potion'];
+    if (!def) return 25;
+    const fx = getEffectsAtLevel(def, level);
+    return fx[0] ?? 25;
   }
 
-  /** Damage reduction multiplier from Iron Potion (0.6) or 1.0. */
+  /**
+   * Damage reduction multiplier from Iron Potion — level-aware.
+   * Returns (1 - reduction) so callers can multiply:
+   *   e.g. level 1: reduction=0.40 → returns 0.60
+   *        level 5: reduction=0.70 → returns 0.30
+   * Stacks multiplicatively with charm/armor DR (handled in systems).
+   */
   static ironDamageReductionMult(state: GameState): number {
-    return state.playerConsumables.isActive('iron_potion') ? 0.6 : 1.0;
+    if (!state.playerConsumables.isActive('iron_potion')) return 1.0;
+    const level = state.playerConsumables.getLevel('iron_potion');
+    const registry = ConsumableSystem._getRegistry(state);
+    const def = registry['iron_potion'];
+    if (!def) return 0.6;
+    const fx = getEffectsAtLevel(def, level);
+    const reduction = fx[0] ?? 0.4;
+    return 1.0 - reduction;
   }
 
   /** True when Phantom Potion is active — enemies should lose aggro. */
@@ -235,49 +258,74 @@ export class ConsumableSystem {
   }
 
   // ============================================================
-  // [🧱 BLOCK: Private — Health Potion]
+  // [🧱 BLOCK: Registry Cache Helper]
+  // Avoids re-importing the registry each call. Returns the
+  // CONSUMABLE_REGISTRY record typed as a plain object.
   // ============================================================
-  private _applyHealthPotion(def: ConsumableDef, player: Player): void {
-    player.hp = Math.min(player.maxHp, player.hp + def.effectValue);
+  private static _registryCache: Record<string, ConsumableDef> | null = null;
+
+  private static _getRegistry(_state: GameState): Record<string, ConsumableDef> {
+    if (!ConsumableSystem._registryCache) {
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      ConsumableSystem._registryCache =
+        require('./ConsumableRegistry').CONSUMABLE_REGISTRY as Record<string, ConsumableDef>;
+    }
+    return ConsumableSystem._registryCache;
   }
 
   // ============================================================
-  // [🧱 BLOCK: Private — Fireball Spawn]
+  // [🧱 BLOCK: Private — Health Potion (level-aware)]
+  // ============================================================
+  private _applyHealthPotion(def: ConsumableDef, player: Player, state: GameState): void {
+    const level   = state.playerConsumables.getLevel(def.id);
+    const fx      = getEffectsAtLevel(def, level);
+    const healAmt = fx[0] ?? def.effectValue;
+    player.hp = Math.min(player.maxHp, player.hp + healAmt);
+  }
+
+  // ============================================================
+  // [🧱 BLOCK: Private — Fireball Spawn (level-aware)]
   // ============================================================
   private _spawnFireball(def: ConsumableDef, player: Player, state: GameState): void {
     const cx     = player.x + player.width  / 2;
     const cy     = player.y + player.height / 2;
-    const fx     = player.facing.x;
-    const fy     = player.facing.y;
-    const damage = def.effectValue + state.playerStats.atkBonus;
+    const fx_dir = player.facing.x;
+    const fy_dir = player.facing.y;
+    const level  = state.playerConsumables.getLevel(def.id);
+    const fx     = getEffectsAtLevel(def, level);
+    const damage = (fx[0] ?? 45) + state.playerStats.atkBonus;
+    const aoe    = fx[1] ?? 90;
 
     this.projectiles.push(new ConsumableProjectile({
       x: cx, y: cy,
-      vx: fx * FIREBALL_SPEED,
-      vy: fy * FIREBALL_SPEED,
-      facingX: fx, facingY: fy,
+      vx: fx_dir * FIREBALL_SPEED,
+      vy: fy_dir * FIREBALL_SPEED,
+      facingX: fx_dir, facingY: fy_dir,
       kind:     'fireball',
       damage,
       speed:    FIREBALL_SPEED,
-      maxRange: FIREBALL_RANGE,
+      maxRange: 500,
       lifetime: 4000,
       radius:   FIREBALL_RADIUS,
       color:    '#fb923c',
+      // store aoe for detonation — piggyback via chainsLeft field as aoeRadius
+      chainsLeft: aoe,
     }));
   }
 
   // ============================================================
-  // [🧱 BLOCK: Private — Frost Cone (instant AoE)]
-  // Hits horde enemies AND the boss if present.
-  // Boss takes damage but is immune to freeze stun.
+  // [🧱 BLOCK: Private — Frost Cone (level-aware, instant AoE)]
   // ============================================================
   private _applyFrost(def: ConsumableDef, player: Player, state: GameState): void {
     const cx          = player.x + player.width  / 2;
     const cy          = player.y + player.height / 2;
-    const fx          = player.facing.x;
-    const fy          = player.facing.y;
-    const damage      = def.effectValue + state.playerStats.atkBonus;
-    const facingAngle = Math.atan2(fy, fx);
+    const fx_dir      = player.facing.x;
+    const fy_dir      = player.facing.y;
+    const level       = state.playerConsumables.getLevel(def.id);
+    const fx          = getEffectsAtLevel(def, level);
+    const damage      = (fx[0] ?? 28) + state.playerStats.atkBonus;
+    const freezeMs    = fx[1] ?? 2000;
+    const facingAngle = Math.atan2(fy_dir, fx_dir);
 
     // ── Horde enemies ─────────────────────────────────────────
     for (const enemy of state.enemies) {
@@ -285,15 +333,13 @@ export class ConsumableSystem {
       const ecx = enemy.x + enemy.width  / 2;
       const ecy = enemy.y + enemy.height / 2;
       if (dist(cx, cy, ecx, ecy) > FROST_RANGE) continue;
-
       const angle = Math.atan2(ecy - cy, ecx - cx);
       let   diff  = angle - facingAngle;
       while (diff >  Math.PI) diff -= Math.PI * 2;
       while (diff < -Math.PI) diff += Math.PI * 2;
       if (Math.abs(diff) > FROST_HALF_ANGLE) continue;
-
       enemy.takeDamage(damage);
-      enemy.applyStun(FROST_FREEZE_MS);
+      enemy.applyStun(freezeMs);
       state.particles.push(...spawnHitSpark(ecx, ecy, '#93c5fd', 5));
     }
 
@@ -309,18 +355,15 @@ export class ConsumableSystem {
         while (diff < -Math.PI) diff += Math.PI * 2;
         if (Math.abs(diff) <= FROST_HALF_ANGLE) {
           bossTakeDamage(boss, damage);
-          // Boss takes damage but is immune to freeze —
-          // still show ice sparks so it feels impactful
           state.particles.push(...spawnHitSpark(bcx, bcy, '#93c5fd', 8));
         }
       }
     }
 
-    // Visual — instant AoE projectile
     this.projectiles.push(new ConsumableProjectile({
       x: cx, y: cy,
       vx: 0, vy: 0,
-      facingX: fx, facingY: fy,
+      facingX: fx_dir, facingY: fy_dir,
       kind:     'frost',
       damage:   0,
       speed:    0,
@@ -334,20 +377,23 @@ export class ConsumableSystem {
   }
 
   // ============================================================
-  // [🧱 BLOCK: Private — Lightning Spawn]
+  // [🧱 BLOCK: Private — Lightning Spawn (level-aware)]
   // ============================================================
   private _spawnLightning(def: ConsumableDef, player: Player, state: GameState): void {
     const cx     = player.x + player.width  / 2;
     const cy     = player.y + player.height / 2;
-    const fx     = player.facing.x;
-    const fy     = player.facing.y;
-    const damage = def.effectValue + state.playerStats.atkBonus;
+    const fx_dir = player.facing.x;
+    const fy_dir = player.facing.y;
+    const level  = state.playerConsumables.getLevel(def.id);
+    const fx     = getEffectsAtLevel(def, level);
+    const damage = (fx[0] ?? 32) + state.playerStats.atkBonus;
+    const chains = Math.round(fx[1] ?? 3);
 
     this.projectiles.push(new ConsumableProjectile({
       x: cx, y: cy,
-      vx: fx * LIGHTNING_SPEED,
-      vy: fy * LIGHTNING_SPEED,
-      facingX: fx, facingY: fy,
+      vx: fx_dir * LIGHTNING_SPEED,
+      vy: fy_dir * LIGHTNING_SPEED,
+      facingX: fx_dir, facingY: fy_dir,
       kind:       'lightning',
       damage,
       speed:      LIGHTNING_SPEED,
@@ -355,22 +401,25 @@ export class ConsumableSystem {
       lifetime:   4000,
       radius:     LIGHTNING_RADIUS,
       color:      '#7dd3fc',
-      chainsLeft: LIGHTNING_CHAINS,
+      chainsLeft: chains,
     }));
   }
 
   // ============================================================
-  // [🧱 BLOCK: Private — Blink (teleport)]
+  // [🧱 BLOCK: Private — Blink (level-aware teleport)]
   // ============================================================
   private _applyBlink(def: ConsumableDef, player: Player, state: GameState): void {
-    const fx   = player.facing.x;
-    const fy   = player.facing.y;
-    const newX = player.x + fx * BLINK_DISTANCE;
-    const newY = player.y + fy * BLINK_DISTANCE;
+    const level    = state.playerConsumables.getLevel(def.id);
+    const fx       = getEffectsAtLevel(def, level);
+    const distance = fx[0] ?? 300;
+
+    const fx_dir = player.facing.x;
+    const fy_dir = player.facing.y;
+    const newX   = player.x + fx_dir * distance;
+    const newY   = player.y + fy_dir * distance;
 
     player.x = Math.max(0, newX);
     player.y = Math.max(0, newY);
-
     player.iFrames = Math.max(player.iFrames, BLINK_IFRAMES);
 
     const ocx = player.x + player.width  / 2;
@@ -379,65 +428,69 @@ export class ConsumableSystem {
   }
 
   // ============================================================
-  // [🧱 BLOCK: Private — Ward Shield]
-  // Ward hit count set externally by GameCanvas after activate().
+  // [🧱 BLOCK: Private — Ward Shield (level-aware hit count)]
+  // Ward hit count and duration are set by GameCanvas after
+  // activate() via applyConsumableEffect. Level reading happens
+  // there by calling getEffectsAtLevel directly.
   // ============================================================
   private _applyWard(_player: Player): void {
     // Handled in GameCanvas._applyConsumableEffect()
   }
 
   // ============================================================
-  // [🧱 BLOCK: Private — Void Pull (instant AoE)]
-  // Pulls horde enemies AND nudges the boss toward pull point.
+  // [🧱 BLOCK: Private — Void Pull (level-aware)]
   // ============================================================
   private _applyVoid(def: ConsumableDef, player: Player, state: GameState): void {
-    const cx = player.x + player.width  / 2;
-    const cy = player.y + player.height / 2;
-    const fx = player.facing.x;
-    const fy = player.facing.y;
+    const cx     = player.x + player.width  / 2;
+    const cy     = player.y + player.height / 2;
+    const fx_dir = player.facing.x;
+    const fy_dir = player.facing.y;
+
+    const level       = state.playerConsumables.getLevel(def.id);
+    const fx          = getEffectsAtLevel(def, level);
+    const pullRange   = fx[0] ?? 160;
+    const pullStrength= fx[1] ?? 20;
 
     // Pull point ~120px ahead in facing direction
-    const px = cx + fx * 120;
-    const py = cy + fy * 120;
+    const px = cx + fx_dir * 120;
+    const py = cy + fy_dir * 120;
 
     // ── Horde enemies ─────────────────────────────────────────
     for (const enemy of state.enemies) {
       if (enemy.isDead) continue;
       const ecx = enemy.x + enemy.width  / 2;
       const ecy = enemy.y + enemy.height / 2;
-      if (distSq(px, py, ecx, ecy) > VOID_PULL_RANGE * VOID_PULL_RANGE) continue;
-
+      if (distSq(px, py, ecx, ecy) > pullRange * pullRange) continue;
       const d = dist(px, py, ecx, ecy);
       if (d < 4) continue;
-      enemy.x += ((px - ecx) / d) * VOID_PULL_STRENGTH;
-      enemy.y += ((py - ecy) / d) * VOID_PULL_STRENGTH;
+      enemy.x += ((px - ecx) / d) * pullStrength;
+      enemy.y += ((py - ecy) / d) * pullStrength;
     }
 
-    // ── Boss — pulled at half strength (it's heavy) ───────────
+    // ── Boss — half strength ──────────────────────────────────
     const boss = state.boss;
     if (boss && !boss.isDead) {
       const bcx = bossCenterX(boss);
       const bcy = bossCenterY(boss);
-      if (distSq(px, py, bcx, bcy) <= VOID_PULL_RANGE * VOID_PULL_RANGE) {
+      if (distSq(px, py, bcx, bcy) <= pullRange * pullRange) {
         const d = dist(px, py, bcx, bcy);
         if (d >= 4) {
-          boss.x += ((px - bcx) / d) * (VOID_PULL_STRENGTH * 0.5);
-          boss.y += ((py - bcy) / d) * (VOID_PULL_STRENGTH * 0.5);
+          boss.x += ((px - bcx) / d) * (pullStrength * VOID_PULL_STRENGTH_BOSS_MULT);
+          boss.y += ((py - bcy) / d) * (pullStrength * VOID_PULL_STRENGTH_BOSS_MULT);
         }
       }
     }
 
-    // Visual indicator
     this.projectiles.push(new ConsumableProjectile({
       x: px, y: py,
       vx: 0, vy: 0,
-      facingX: fx, facingY: fy,
+      facingX: fx_dir, facingY: fy_dir,
       kind:     'void',
       damage:   0,
       speed:    0,
       maxRange: 0,
       lifetime: 400,
-      radius:   VOID_RADIUS,
+      radius:   pullRange,
       color:    '#a78bfa',
     }));
 
@@ -446,9 +499,6 @@ export class ConsumableSystem {
 
   // ============================================================
   // [🧱 BLOCK: Private — Projectile Hit Checks]
-  // Called per frame for each live travelling projectile.
-  // Checks both state.enemies (horde) AND state.boss.
-  // Frost and Void are instant on activate — no per-frame check.
   // ============================================================
   private _checkProjectileHits(
     proj:   ConsumableProjectile,
@@ -460,29 +510,20 @@ export class ConsumableSystem {
 
     switch (proj.kind) {
 
-      // ── Fireball ─────────────────────────────────────────────
       case 'fireball': {
-
-        // Check horde enemies first
         for (const enemy of enemies) {
           if (!proj.hitsEnemy(enemy)) continue;
           this._detonateFireball(proj, state, enemies, boss);
           return;
         }
-
-        // Check boss
         if (boss && proj.hitsEnemy(boss)) {
           this._detonateFireball(proj, state, enemies, boss);
           return;
         }
-
         break;
       }
 
-      // ── Lightning ────────────────────────────────────────────
       case 'lightning': {
-
-        // Check horde enemies
         for (const enemy of enemies) {
           if (!proj.hitsEnemy(enemy)) continue;
           enemy.takeDamage(proj.damage);
@@ -495,30 +536,24 @@ export class ConsumableSystem {
             enemy.x + enemy.width / 2, enemy.y + enemy.height / 2, enemy);
           return;
         }
-
-        // Check boss
         if (boss && proj.hitsEnemy(boss)) {
           bossTakeDamage(boss, proj.damage);
           state.particles.push(...spawnHitSpark(
             bossCenterX(boss), bossCenterY(boss), '#7dd3fc', 8
           ));
-          // Boss is a single target — no chain from boss, just end
           proj.done = true;
           return;
         }
-
         break;
       }
 
-      // frost and void are instant — no per-frame check needed
       default: break;
     }
   }
 
   // ============================================================
-  // [🧱 BLOCK: Private — Fireball Detonate]
-  // AoE explosion that damages all horde enemies AND the boss
-  // within FIREBALL_AOE radius of the impact point.
+  // [🧱 BLOCK: Private — Fireball Detonate (level-aware AoE)]
+  // aoeRadius is stored in proj.chainsLeft when spawned.
   // ============================================================
   private _detonateFireball(
     proj:    ConsumableProjectile,
@@ -527,38 +562,34 @@ export class ConsumableSystem {
     boss:    AnyBoss | null
   ): void {
     proj.done = true;
-    const cx = proj.x;
-    const cy = proj.y;
+    const cx      = proj.x;
+    const cy      = proj.y;
+    const aoeR    = proj.chainsLeft > 0 ? proj.chainsLeft : 90; // aoeRadius stored here
 
-    // Damage horde enemies in AoE
     for (const e of enemies) {
       const ecx = e.x + e.width  / 2;
       const ecy = e.y + e.height / 2;
-      if (distSq(cx, cy, ecx, ecy) < FIREBALL_AOE * FIREBALL_AOE) {
+      if (distSq(cx, cy, ecx, ecy) < aoeR * aoeR) {
         e.takeDamage(proj.damage);
         state.particles.push(...spawnHitSpark(ecx, ecy, '#fb923c', 4));
       }
     }
 
-    // Damage boss if in AoE
     if (boss) {
       const bcx = bossCenterX(boss);
       const bcy = bossCenterY(boss);
-      if (distSq(cx, cy, bcx, bcy) < FIREBALL_AOE * FIREBALL_AOE) {
+      if (distSq(cx, cy, bcx, bcy) < aoeR * aoeR) {
         bossTakeDamage(boss, proj.damage);
         state.particles.push(...spawnHitSpark(bcx, bcy, '#fb923c', 8));
       }
     }
 
-    this.explosions.push(new ConsumableExplosion(cx, cy, FIREBALL_AOE, '#fb923c'));
+    this.explosions.push(new ConsumableExplosion(cx, cy, aoeR, '#fb923c'));
     state.particles.push(...spawnBurst(cx, cy, '#fb923c', 14, 1.6));
   }
 
   // ============================================================
   // [🧱 BLOCK: Private — Lightning Chain]
-  // Tries to chain to the nearest unvisited horde enemy.
-  // In boss rooms the boss is a valid first target but chains
-  // don't continue from the boss (it's a single entity).
   // ============================================================
   private _chainLightning(
     proj:       ConsumableProjectile,
@@ -570,10 +601,8 @@ export class ConsumableSystem {
     hitEntity:  BaseEnemy | AnyBoss
   ): void {
     if (proj.chainsLeft <= 0) { proj.done = true; return; }
-
     proj.done = true;
 
-    // Candidates: other horde enemies (not the one just hit)
     const others = enemies
       .filter((e) => e !== hitEntity)
       .sort((a, b) =>
@@ -581,7 +610,6 @@ export class ConsumableSystem {
         distSq(fromX, fromY, b.x + b.width / 2, b.y + b.height / 2)
       );
 
-    // Also consider boss as a chain target if not the one just hit
     let chainTarget: BaseEnemy | AnyBoss | null = null;
     let chainDist = Infinity;
 
