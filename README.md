@@ -15,7 +15,7 @@ A fast-paced top-down arena rogue-like built with **Next.js**, **TypeScript**, a
 
 ```bash
 # Clone the repo
-git clone https://github.com/your-username/infinity-dungeon.git
+git clone https://github.com/Kjans4/infinity-dungeon.git
 cd infinity-dungeon
 
 # Install dependencies
