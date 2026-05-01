@@ -35,15 +35,6 @@ function randInt(min: number, max: number): number {
   return Math.floor(Math.random() * (max - min + 1)) + min;
 }
 
-function spawnBossGold(state: GameState, x: number, y: number) {
-  const amount = randInt(BOSS_GOLD.min, BOSS_GOLD.max);
-  for (let i = 0; i < 5; i++) {
-    const ox = (Math.random() - 0.5) * 60;
-    const oy = (Math.random() - 0.5) * 60;
-    state.goldDrops.push(new GoldDrop(x + ox, y + oy, Math.floor(amount / 5)));
-  }
-}
-
 function spawnBossItemDrop(state: GameState, x: number, y: number) {
   if (state.pendingLoot.length >= PENDING_LOOT_CAP) return;
   const ownedCharmIds   = state.playerStats.charms.map((c) => c.id);
@@ -89,6 +80,7 @@ export class BossSystem {
 
   // ============================================================
   // [🧱 BLOCK: Setup]
+  // Clears consumableDrops so horde-room drops don't bleed in.
   // ============================================================
   setup(state: GameState, rs: RoomState) {
     state.player.x  = BOSS_WORLD_W / 2;
@@ -96,16 +88,17 @@ export class BossSystem {
     state.player.vx = 0;
     state.player.vy = 0;
 
-    state.enemies       = [];
-    state.projectiles   = [];
-    state.goldDrops     = [];
-    state.itemDrops     = [];
-    state.particles     = [];
-    state.hitSparks     = [];
-    state.damageNumbers = [];
-    state.kills         = 0;
-    state.door          = null;
-    state.shopNpc       = null;
+    state.enemies         = [];
+    state.projectiles     = [];
+    state.goldDrops       = [];
+    state.itemDrops       = [];
+    state.consumableDrops = [];   // ← clear on room entry
+    state.particles       = [];
+    state.hitSparks       = [];
+    state.damageNumbers   = [];
+    state.kills           = 0;
+    state.door            = null;
+    state.shopNpc         = null;
 
     state.boss = selectBoss(BOSS_WORLD_W / 2 - 50, 80, rs.floor);
     this.stagger = { timer: 0 };
@@ -117,16 +110,17 @@ export class BossSystem {
   // [🧱 BLOCK: Reset]
   // ============================================================
   reset(state: GameState) {
-    state.boss          = null;
-    state.door          = null;
-    state.shopNpc       = null;
-    state.goldDrops     = [];
-    state.itemDrops     = [];
-    state.particles     = [];
-    state.hitSparks     = [];
-    state.damageNumbers = [];
-    state.projectiles   = [];
-    this.stagger        = { timer: 0 };
+    state.boss            = null;
+    state.door            = null;
+    state.shopNpc         = null;
+    state.goldDrops       = [];
+    state.itemDrops       = [];
+    state.consumableDrops = [];   // ← clear on reset
+    state.particles       = [];
+    state.hitSparks       = [];
+    state.damageNumbers   = [];
+    state.projectiles     = [];
+    this.stagger          = { timer: 0 };
   }
 
   // ============================================================
@@ -137,6 +131,30 @@ export class BossSystem {
     state.door.isActive = true;
     state.shopNpc       = new ShopNPC(BOSS_WORLD_W);
     state.shopNpc.activate();
+  }
+
+  // ============================================================
+  // [🧱 BLOCK: Tick Consumable Drops]
+  // Shared helper — updates all consumable drops on the ground,
+  // auto-collects them into the bag when player walks over them,
+  // and spawns a pickup particle burst.
+  // Called both during the fight and in the post-victory phase.
+  // ============================================================
+  private tickConsumableDrops(state: GameState, player: Player): void {
+    state.consumableDrops = state.consumableDrops.filter((drop) => {
+      if (drop.collected) return false;
+      drop.update(player);
+      if (drop.collected) {
+        state.playerConsumables.addToBag(drop.def, 1);
+        state.particles.push(...spawnBurst(
+          drop.x, drop.y,
+          drop.def.kind === 'potion' ? '#a78bfa' : '#38bdf8',
+          5, 0.8
+        ));
+        return false;
+      }
+      return true;
+    });
   }
 
   // ============================================================
@@ -173,6 +191,9 @@ export class BossSystem {
       return !drop.collected;
     });
 
+    // ── Consumable drops still on ground post-victory ─────────
+    this.tickConsumableDrops(state, player);
+
     return goldCollected;
   }
 
@@ -202,8 +223,8 @@ export class BossSystem {
 
   // ============================================================
   // [🧱 BLOCK: Apply Incoming Damage]
-  // Centralises Ward absorb + Iron Potion reduction for all
-  // boss damage sources (projectiles, contact, slam, lunge).
+  // Centralises Ward absorb + Iron Potion reduction + block for
+  // all boss damage sources (projectiles, contact, slam, lunge).
   // Returns true if the hit was fully absorbed.
   // ============================================================
   private applyIncomingDamage(
@@ -222,6 +243,13 @@ export class BossSystem {
         '#a78bfa', 6, 1.0
       ));
       return true;
+    }
+
+    // Block — absorbs hit and costs stamina
+    if (player.isBlocking) {
+      const afterBlock = player.applyBlockedHit(rawDamage);
+      if (afterBlock === 0) return false; // absorbed by block
+      rawDamage = afterBlock;
     }
 
     // Iron Potion damage reduction (multiplicative)
@@ -283,6 +311,7 @@ export class BossSystem {
       proj.update();
       if (!proj.isHittingPlayer(player)) return;
 
+      // Parry check first — parry window deflects the projectile
       if (player.isParrying) {
         const parried = player.tryParry();
         if (parried) {
@@ -293,8 +322,7 @@ export class BossSystem {
         }
       }
 
-      if (player.iFrames > 0) { proj.isDone = true; return; }
-
+      // applyIncomingDamage handles iFrames, Ward, Block, Iron internally
       const rawDmg = Math.round(proj.damage * (1 - ps.damageReduction));
       this.applyIncomingDamage(state, player, rawDmg);
       proj.isDone = true;
@@ -392,6 +420,11 @@ export class BossSystem {
       if (drop.playerIsNear) { state.pendingLoot.push(drop.item); return false; }
       return !drop.collected;
     });
+
+    // ── Consumable drops on ground during boss fight ──────────
+    // These come from potions/scrolls the player carried into
+    // the room and dropped, or any future boss-room spawns.
+    this.tickConsumableDrops(state, player);
 
     // ── Enrage event ──────────────────────────────────────────
     if (boss.justEnragedThisFrame) {
@@ -522,6 +555,7 @@ export class BossSystem {
 
   // ============================================================
   // [🧱 BLOCK: Draw]
+  // consumableDrops drawn after item drops, before particles.
   // ============================================================
   draw(state: GameState, ctx: CanvasRenderingContext2D, camera: Camera, player: Player) {
     if (state.boss && this.isBossStaggered) {
@@ -537,9 +571,10 @@ export class BossSystem {
     state.boss?.draw(ctx, camera);
     state.door?.draw(ctx, camera);
     state.shopNpc?.draw(ctx, camera, BOSS_WORLD_W);
-    state.projectiles.forEach((p)  => p.draw(ctx, camera));
-    state.itemDrops.forEach((d)    => d.draw(ctx, camera));
-    state.goldDrops.forEach((drop) => drop.draw(ctx, camera));
+    state.projectiles.forEach((p)        => p.draw(ctx, camera));
+    state.itemDrops.forEach((d)          => d.draw(ctx, camera));
+    state.consumableDrops.forEach((d)    => d.draw(ctx, camera));  // ← added
+    state.goldDrops.forEach((drop)       => drop.draw(ctx, camera));
 
     state.particles.forEach((p)    => p.update());
     state.particles = state.particles.filter((p) => !p.isDone);
