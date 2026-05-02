@@ -16,8 +16,10 @@ import { AnyBoss }            from "./enemy/boss/index";
 
 // ============================================================
 // [🧱 BLOCK: Pending Loot Cap]
+// Raised from 3 → 6 to prevent silent drop suppression
+// mid-run when multiple items are on the ground at once.
 // ============================================================
-export const PENDING_LOOT_CAP = 3;
+export const PENDING_LOOT_CAP = 6;
 
 // ============================================================
 // [🧱 BLOCK: Run Record — localStorage persistence]

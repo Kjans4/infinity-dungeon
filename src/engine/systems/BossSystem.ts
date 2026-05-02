@@ -12,13 +12,14 @@ import { GameState, PENDING_LOOT_CAP } from "../GameState";
 import { BOSS_WORLD_W, BOSS_WORLD_H }  from "../Camera";
 import { GoldDrop }                    from "../GoldDrop";
 import { ItemDrop }                    from "../ItemDrop";
+import { ConsumableDrop }              from "../ConsumableDrop";
 import { Door }                        from "../Door";
 import { ShopNPC }                     from "../ShopNPC";
 import { RenderSystem }                from "./RenderSystem";
 import { ConsumableSystem }            from "../ConsumableSystem";
 import { spawnBurst, spawnHitSpark, spawnDamageNumber } from "../Particle";
 import { WeaponSystem }                from "./WeaponSystem";
-import { getRandomShopItems }          from "../items/ItemPool";
+import { getRandomShopItems, getRandomConsumableDrop } from "../items/ItemPool";
 import {
   isRiposteActive, tickRiposte, RIPOSTE_MULT, GLAIVE_EXTRA_COST,
 } from "../WeaponPassiveRegistry";
@@ -31,23 +32,77 @@ const BOSS_PARRY_VULN_MULT = 1.5;
 
 const BOSS_GOLD = { min: 80, max: 120 };
 
+// ============================================================
+// [🧱 BLOCK: Boss Drop Constants]
+// MIN_ITEM_DROPS      — guaranteed items every boss kill
+// FLOOR_BONUS_FLOOR   — floor threshold to add a 4th item
+// BONUS_DROP_CHANCE   — probability of a 5th bonus item
+// DROP_SPREAD_RADIUS  — max px offset so drops don't stack
+// ============================================================
+const MIN_ITEM_DROPS      = 3;
+const FLOOR_BONUS_FLOOR   = 3;
+const BONUS_DROP_CHANCE   = 0.40;
+const DROP_SPREAD_RADIUS  = 70;
+
 function randInt(min: number, max: number): number {
   return Math.floor(Math.random() * (max - min + 1)) + min;
 }
 
-function spawnBossItemDrop(state: GameState, x: number, y: number) {
-  if (state.pendingLoot.length >= PENDING_LOOT_CAP) return;
-  const ownedCharmIds   = state.playerStats.charms.map((c) => c.id);
-  const ownedWeaponId   = state.playerStats.equippedWeaponItem?.id ?? null;
-  const pendingCharmIds = state.pendingLoot.filter((i) => i.kind === "charm").map((i) => i.id);
-  const pendingWeaponId = state.pendingLoot.find((i) => i.kind === "weapon")?.id ?? null;
-  const pool = getRandomShopItems(
-    [...ownedCharmIds, ...pendingCharmIds],
-    ownedWeaponId ?? pendingWeaponId,
-    [],
-    1
-  );
-  if (pool[0]) state.itemDrops.push(new ItemDrop(x, y, pool[0]));
+// ============================================================
+// [🧱 BLOCK: Spawn Boss Item Drops]
+// Drops MIN_ITEM_DROPS (3) guaranteed items, +1 on floor 3+,
+// +1 at 40% chance. Each item is offset slightly so they
+// don't pile on top of each other.
+// Duplicate prevention checks both owned and pending loot.
+// ============================================================
+function spawnBossItemDrops(state: GameState, cx: number, cy: number) {
+  const floor       = state.boss ? (state.boss as any).floor ?? 1 : 1;
+  const floorBonus  = floor >= FLOOR_BONUS_FLOOR ? 1 : 0;
+  const bonusRoll   = Math.random() < BONUS_DROP_CHANCE ? 1 : 0;
+  const totalDrops  = MIN_ITEM_DROPS + floorBonus + bonusRoll;
+
+  for (let i = 0; i < totalDrops; i++) {
+    if (state.pendingLoot.length >= PENDING_LOOT_CAP) break;
+
+    const ownedCharmIds   = state.playerStats.charms.map((c) => c.id);
+    const ownedWeaponId   = state.playerStats.equippedWeaponItem?.id ?? null;
+    const ownedArmorIds   = Object.values(state.playerStats.armorSlots)
+      .filter(Boolean).map((a) => a!.id);
+    const pendingCharmIds = state.pendingLoot.filter((item) => item.kind === "charm").map((item) => item.id);
+    const pendingWeaponId = state.pendingLoot.find((item) => item.kind === "weapon")?.id ?? null;
+    const pendingArmorIds = state.pendingLoot.filter((item) => item.kind === "armor").map((item) => item.id);
+
+    const pool = getRandomShopItems(
+      [...ownedCharmIds, ...pendingCharmIds],
+      ownedWeaponId ?? pendingWeaponId,
+      [...ownedArmorIds, ...pendingArmorIds],
+      1
+    );
+
+    if (!pool[0]) continue;
+
+    // Spread drops in a rough arc so they don't overlap
+    const angle  = ((Math.PI * 2) / totalDrops) * i - Math.PI / 2;
+    const radius = DROP_SPREAD_RADIUS * (0.5 + Math.random() * 0.5);
+    const dx     = Math.cos(angle) * radius;
+    const dy     = Math.sin(angle) * radius;
+
+    state.itemDrops.push(new ItemDrop(cx + dx, cy + dy, pool[0]));
+  }
+}
+
+// ============================================================
+// [🧱 BLOCK: Spawn Boss Consumable Drop]
+// Always spawns exactly 1 consumable drop on boss death,
+// placed slightly offset from the boss center.
+// ============================================================
+function spawnBossConsumableDrop(state: GameState, cx: number, cy: number) {
+  const def = getRandomConsumableDrop();
+  state.consumableDrops.push(new ConsumableDrop(
+    cx + (Math.random() - 0.5) * 60,
+    cy + (Math.random() - 0.5) * 60,
+    def
+  ));
 }
 
 // ============================================================
@@ -422,8 +477,6 @@ export class BossSystem {
     });
 
     // ── Consumable drops on ground during boss fight ──────────
-    // These come from potions/scrolls the player carried into
-    // the room and dropped, or any future boss-room spawns.
     this.tickConsumableDrops(state, player);
 
     // ── Enrage event ──────────────────────────────────────────
@@ -437,6 +490,7 @@ export class BossSystem {
       const bx = boss.x + boss.width  / 2;
       const by = boss.y + boss.height / 2;
 
+      // ── Gold drops ────────────────────────────────────────
       const variantMult = boss.goldMultiplier;
       const baseAmount  = randInt(BOSS_GOLD.min, BOSS_GOLD.max);
       const finalAmount = Math.round(baseAmount * variantMult);
@@ -446,7 +500,13 @@ export class BossSystem {
         state.goldDrops.push(new GoldDrop(bx + ox, by + oy, Math.floor(finalAmount / 5)));
       }
 
-      spawnBossItemDrop(state, bx, by);
+      // ── Item drops — 3 minimum, +1 on floor 3+, +40% bonus ─
+      spawnBossItemDrops(state, bx, by);
+
+      // ── Guaranteed consumable drop ────────────────────────
+      spawnBossConsumableDrop(state, bx, by);
+
+      // ── Death VFX ─────────────────────────────────────────
       state.particles.push(...spawnBurst(bx, by, boss.color, 12, 1.8));
 
       if (ps.hasCharm('executioner')) {
@@ -573,7 +633,7 @@ export class BossSystem {
     state.shopNpc?.draw(ctx, camera, BOSS_WORLD_W);
     state.projectiles.forEach((p)        => p.draw(ctx, camera));
     state.itemDrops.forEach((d)          => d.draw(ctx, camera));
-    state.consumableDrops.forEach((d)    => d.draw(ctx, camera));  // ← added
+    state.consumableDrops.forEach((d)    => d.draw(ctx, camera));
     state.goldDrops.forEach((drop)       => drop.draw(ctx, camera));
 
     state.particles.forEach((p)    => p.update());

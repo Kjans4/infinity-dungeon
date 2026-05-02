@@ -56,15 +56,22 @@ const TANK_RADIUS_BONUS   = 10;
 
 // ============================================================
 // [🧱 BLOCK: Item Drop Chances]
+// Raised significantly so loot feels rewarding each room.
+//   grunt:   3%  → 20%
+//   shooter: 6%  → 30%
+//   tank:    12% → 20%
+//   dasher:  5%  → 20%
+//   bomber:  8%  → 25%
+// Elite rooms apply a 2× multiplier on top.
 // ============================================================
 const DROP_CHANCE = {
-  grunt:   0.03,
-  shooter: 0.06,
-  tank:    0.12,
-  dasher:  0.05,
-  bomber:  0.08,
+  grunt:   0.20,
+  shooter: 0.30,
+  tank:    0.20,
+  dasher:  0.20,
+  bomber:  0.25,
 };
-const ELITE_DROP_MULT = 1.5;
+const ELITE_DROP_MULT = 2.0;
 
 // ============================================================
 // [🧱 BLOCK: Consumable Drop Chances]
