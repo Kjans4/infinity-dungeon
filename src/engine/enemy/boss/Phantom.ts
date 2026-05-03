@@ -4,6 +4,7 @@ import { Camera }                         from "../../Camera";
 import { BaseEnemy, rollVariants }        from "../BaseEnemy";
 import { Projectile }                     from "../Projectile";
 import { rectCenter, circleCircle }       from "../../Collision";
+import { getBossHpScale, getBossDamageScale } from "../../RoomManager";
 
 // ============================================================
 // [🧱 BLOCK: Phantom States]
@@ -20,27 +21,34 @@ type PhantomState =
 
 // ============================================================
 // [🧱 BLOCK: Stats]
-// HP buffed: 220 → 300 base
+// Base HP raised: 300 → 550
+// Base damage raised and floor-scaled via getBossDamageScale
 // ============================================================
 const STATS = {
-  baseHp:       300,   // ↑ was 220
-  size:         56,
-  speed:        0,
-  xpValue:      20,
-  color:        '#a855f7',
-  rageColor:    '#6d28d9',
-  ringDamage:   10,
-  aimedDamage:  18,
-  ringCount:    8,
-  rageRingCount:12,
+  baseHp:          550,
+  size:            56,
+  speed:           0,
+  xpValue:         20,
+  color:           '#a855f7',
+  rageColor:       '#6d28d9',
+  baseRingDamage:  16,
+  baseAimedDamage: 28,
+  ringCount:       8,
+  rageRingCount:   14,
 };
 
+// ============================================================
+// [🧱 BLOCK: Timing Constants]
+// Faster across the board — Phantom blinks and attacks more.
+// Rage at 60% HP.
+// ============================================================
 const BLINK_MARGIN = 120;
-const FADE_MS    = 500;
-const WARN_MS    = 1200;
-const WARN_RAGE  = 750;
-const COOL_MS    = 1400;
-const COOL_RAGE  = 900;
+const FADE_MS      = 350;   // was 500 — snappier blink
+const WARN_MS      = 900;   // was 1200
+const WARN_RAGE    = 550;   // was 750
+const COOL_MS      = 950;   // was 1400
+const COOL_RAGE    = 550;   // was 900
+const RAGE_THRESHOLD = 0.60;
 
 // ============================================================
 // [🧱 BLOCK: Phantom Class]
@@ -49,7 +57,7 @@ export class Phantom extends BaseEnemy {
   readonly bossName = 'PHANTOM';
 
   phantomState: PhantomState = 'cooldown';
-  stateTimer:   number       = 800;
+  stateTimer:   number       = 600;
 
   alpha:        number = 1;
   isIntangible: boolean = false;
@@ -60,33 +68,37 @@ export class Phantom extends BaseEnemy {
   justEnragedThisFrame: boolean = false;
 
   private floor:       number;
+  private dmgScale:    number;
   private blinkTarget: { x: number; y: number } = { x: 0, y: 0 };
   private indicatorPulse: number = 0;
   private aimDir: { x: number; y: number } = { x: 0, y: 1 };
 
   constructor(x: number, y: number, floor: number = 1) {
-    const hpScale = 1 + (floor - 1) * 0.50;
+    const hpScale = getBossHpScale(floor);
     super(x, y, STATS.size, STATS.speed,
       Math.round(STATS.baseHp * hpScale), STATS.xpValue, STATS.color);
-    this.floor = floor;
+    this.floor    = floor;
+    this.dmgScale = getBossDamageScale(floor);
     this.applyVariants(rollVariants(floor, true));
   }
 
   // ============================================================
-  // [🧱 BLOCK: Effective Damage]
+  // [🧱 BLOCK: Effective Damage — floor scaled + variant + rage]
   // ============================================================
-  get ringDamageFinal()  { return Math.round(STATS.ringDamage  * this.damageMult); }
-  get aimedDamageFinal() { return Math.round(STATS.aimedDamage * this.damageMult); }
+  private get rageMult(): number { return this.isEnraged ? 1.25 : 1.0; }
+
+  get ringDamageFinal()  { return Math.round(STATS.baseRingDamage  * this.dmgScale * this.damageMult * this.rageMult); }
+  get aimedDamageFinal() { return Math.round(STATS.baseAimedDamage * this.dmgScale * this.damageMult * this.rageMult); }
 
   get contactDamage() { return 0; }
   get slamDamage()    { return 0; }
   get shootDamage()   { return this.aimedDamageFinal; }
 
   // ============================================================
-  // [🧱 BLOCK: Rage Check]
+  // [🧱 BLOCK: Rage Check — 60% HP]
   // ============================================================
   private checkRage(): void {
-    if (!this.isEnraged && this.hp / this.maxHp <= 0.5) {
+    if (!this.isEnraged && this.hp / this.maxHp <= RAGE_THRESHOLD) {
       this.isEnraged            = true;
       this.justEnragedThisFrame = true;
       this.color                = STATS.rageColor;
@@ -133,10 +145,11 @@ export class Phantom extends BaseEnemy {
 
   // ============================================================
   // [🧱 BLOCK: Fire Aimed Volley]
+  // Floor 1 now fires 2 projectiles (was 1) — more threatening early.
   // ============================================================
   private fireAimed(ecx: number, ecy: number, pcx: number, pcy: number): void {
     const base  = Math.atan2(pcy - ecy, pcx - ecx);
-    const count = this.floor >= 2 ? 3 : 1;
+    const count = this.floor >= 2 ? 3 : 2;   // floor 1 now fires 2 instead of 1
     const step  = Math.PI / 10;
     const dmg   = this.aimedDamageFinal;
     for (let i = 0; i < count; i++) {
@@ -272,7 +285,7 @@ export class Phantom extends BaseEnemy {
 
     if (this.phantomState === 'warn_aimed') {
       const pulse = Math.sin(this.indicatorPulse / 100) * 0.4 + 0.6;
-      const count = this.floor >= 2 ? 3 : 1;
+      const count = this.floor >= 2 ? 3 : 2;
       const step  = Math.PI / 10;
       const base  = Math.atan2(this.aimDir.y, this.aimDir.x);
       for (let i = 0; i < count; i++) {
@@ -323,7 +336,7 @@ export class Phantom extends BaseEnemy {
     this.drawHpBar(ctx, sx - this.width / 2, sy, barW, -14);
 
     if (!this.isEnraged) {
-      const markerX = sx - this.width / 2 + barW * 0.5;
+      const markerX = sx - this.width / 2 + barW * RAGE_THRESHOLD;
       ctx.fillStyle = "rgba(255,255,255,0.6)";
       ctx.fillRect(markerX - 1, sy - 15, 2, 6);
     }

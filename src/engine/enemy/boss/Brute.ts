@@ -4,6 +4,7 @@ import { Camera }                               from "../../Camera";
 import { BaseEnemy, rollVariants }              from "../BaseEnemy";
 import { Projectile }                           from "../Projectile";
 import { rectOverlap, circleCircle, rectCenter } from "../../Collision";
+import { getBossHpScale, getBossDamageScale }   from "../../RoomManager";
 
 // ============================================================
 // [🧱 BLOCK: Boss States]
@@ -21,30 +22,39 @@ type BruteState =
 
 // ============================================================
 // [🧱 BLOCK: Stats]
-// HP buffed: 300 → 420 base
+// Base HP raised: 420 → 800
+// All damage raised and now scaled per floor via getBossDamageScale
 // ============================================================
 const STATS = {
-  baseSpeed:      1.2,
-  rageSpeed:      2.0,
-  baseHp:         420,   // ↑ was 300
+  baseSpeed:      1.5,
+  rageSpeed:      2.6,
+  baseHp:         800,
   size:           80,
   color:          '#dc2626',
   rageColor:      '#7f1d1d',
   xpValue:        20,
-  damage:         20,
-  slamDamage:     30,
+  baseDamage:     35,
+  baseSlamDamage: 50,
   slamMaxRadius:  120,
   slam2MaxRadius: 80,
-  chargeSpeed:    14,
-  rageChargeSpeed:20,
-  shootDamage:    15,
+  baseChargeSpeed:    16,
+  rageChargeSpeed:    24,
+  baseShootDamage:    22,
 };
 
-const WARN_NORMAL  = 1500;
-const WARN_FLOOR4  =  900;
-const WARN_RAGE    =  700;
-const CHASE_NORMAL = 3000;
-const CHASE_RAGE   = 1800;
+// ============================================================
+// [🧱 BLOCK: Timing Constants]
+// Tighter across the board — boss is more aggressive.
+// Rage triggers at 60% HP (was 50%).
+// ============================================================
+const WARN_NORMAL  = 1100;   // was 1500
+const WARN_FLOOR4  =  650;   // was 900
+const WARN_RAGE    =  500;   // was 700
+const CHASE_NORMAL = 1800;   // was 3000
+const CHASE_RAGE   = 1000;   // was 1800
+const COOL_NORMAL  =  600;   // new — base cooldown
+const COOL_RAGE    =  350;   // new — rage cooldown
+const RAGE_THRESHOLD = 0.60; // was 0.50
 
 const SPREAD_ANGLES = [-Math.PI / 9, 0, Math.PI / 9];
 
@@ -75,13 +85,14 @@ export class Brute extends BaseEnemy {
   indicatorPulse: number = 0;
 
   private floor: number;
+  private dmgScale: number;
 
   constructor(x: number, y: number, floor: number = 1) {
-    const hpScale = 1 + (floor - 1) * 0.50;
+    const hpScale = getBossHpScale(floor);
     super(x, y, STATS.size, STATS.baseSpeed,
       Math.round(STATS.baseHp * hpScale), STATS.xpValue, STATS.color);
-    this.floor = floor;
-    // Bosses use a lower variant chance (isBoss = true)
+    this.floor    = floor;
+    this.dmgScale = getBossDamageScale(floor);
     this.applyVariants(rollVariants(floor, true));
   }
 
@@ -96,19 +107,30 @@ export class Brute extends BaseEnemy {
   private get chaseDuration(): number {
     return this.isEnraged ? CHASE_RAGE : CHASE_NORMAL;
   }
+  private get coolDuration(): number {
+    return this.isEnraged ? COOL_RAGE : COOL_NORMAL;
+  }
   private get currentChargeSpeed(): number {
-    return this.isEnraged ? STATS.rageChargeSpeed : STATS.chargeSpeed;
+    return this.isEnraged ? STATS.rageChargeSpeed : STATS.baseChargeSpeed;
   }
 
   // ============================================================
-  // [🧱 BLOCK: Effective Damage with Variant Mult]
+  // [🧱 BLOCK: Effective Damage — floor scaled + variant mult]
   // ============================================================
-  get contactDamage() { return Math.round(STATS.damage      * this.damageMult); }
-  get slamDamage()    { return Math.round(STATS.slamDamage  * this.damageMult); }
-  get shootDamage()   { return Math.round(STATS.shootDamage * this.damageMult); }
+  get contactDamage() { return Math.round(STATS.baseDamage      * this.dmgScale * this.damageMult); }
+  get slamDamage()    { return Math.round(STATS.baseSlamDamage  * this.dmgScale * this.damageMult); }
+  get shootDamage()   { return Math.round(STATS.baseShootDamage * this.dmgScale * this.damageMult); }
+
+  // Rage boosts outgoing damage an additional 25%
+  private get rageDmgMult(): number { return this.isEnraged ? 1.25 : 1.0; }
+
+  get effectiveContactDamage() { return Math.round(this.contactDamage * this.rageDmgMult); }
+  get effectiveSlamDamage()    { return Math.round(this.slamDamage    * this.rageDmgMult); }
+  get effectiveShootDamage()   { return Math.round(this.shootDamage   * this.rageDmgMult); }
 
   // ============================================================
   // [🧱 BLOCK: Pick Next Attack]
+  // Floor 2+: shoot added. More varied attack mix at floor 3+.
   // ============================================================
   private pickNextAttack(): BruteState {
     const roll = Math.random();
@@ -119,10 +141,10 @@ export class Brute extends BaseEnemy {
   }
 
   // ============================================================
-  // [🧱 BLOCK: Rage Check]
+  // [🧱 BLOCK: Rage Check — triggers at 60% HP]
   // ============================================================
   private checkRage(): void {
-    if (!this.isEnraged && this.hp / this.maxHp <= 0.5) {
+    if (!this.isEnraged && this.hp / this.maxHp <= RAGE_THRESHOLD) {
       this.isEnraged            = true;
       this.justEnragedThisFrame = true;
       this.speed                = STATS.rageSpeed;
@@ -139,7 +161,7 @@ export class Brute extends BaseEnemy {
       const angle = baseAngle + offset;
       const tx = ecx + Math.cos(angle) * 300;
       const ty = ecy + Math.sin(angle) * 300;
-      this.pendingProjectiles.push(new Projectile(ecx, ecy, tx, ty, this.shootDamage));
+      this.pendingProjectiles.push(new Projectile(ecx, ecy, tx, ty, this.effectiveShootDamage));
     });
   }
 
@@ -191,7 +213,7 @@ export class Brute extends BaseEnemy {
       case 'charging':
         this.x += this.chargeDir.x * this.currentChargeSpeed;
         this.y += this.chargeDir.y * this.currentChargeSpeed;
-        if (this.stateTimer <= 0) { this.bossState = 'cooldown'; this.stateTimer = 800; }
+        if (this.stateTimer <= 0) { this.bossState = 'cooldown'; this.stateTimer = this.coolDuration; }
         break;
 
       case 'warn_slam':
@@ -209,7 +231,7 @@ export class Brute extends BaseEnemy {
           if (this.floor >= 3) {
             this.bossState = 'slamming2'; this.stateTimer = this.warnDuration; this.slam2Radius = 0;
           } else {
-            this.bossState = 'cooldown'; this.stateTimer = 1000;
+            this.bossState = 'cooldown'; this.stateTimer = this.coolDuration;
           }
         }
         break;
@@ -220,7 +242,7 @@ export class Brute extends BaseEnemy {
           this.slam2Active = true;
           this.slam2Radius = STATS.slam2MaxRadius;
           this.slam2ActiveTimer = this.SLAM2_ACTIVE_MS;
-          this.bossState = 'cooldown'; this.stateTimer = 1200;
+          this.bossState = 'cooldown'; this.stateTimer = this.coolDuration;
         }
         break;
 
@@ -234,7 +256,7 @@ export class Brute extends BaseEnemy {
         break;
 
       case 'shooting':
-        if (this.stateTimer <= 0) { this.bossState = 'cooldown'; this.stateTimer = 1000; }
+        if (this.stateTimer <= 0) { this.bossState = 'cooldown'; this.stateTimer = this.coolDuration; }
         break;
 
       case 'cooldown':
@@ -342,7 +364,7 @@ export class Brute extends BaseEnemy {
     this.drawHpBar(ctx, sx - this.width / 2, sy, barW, -14);
 
     if (!this.isEnraged) {
-      const markerX = sx - this.width / 2 + barW * 0.5;
+      const markerX = sx - this.width / 2 + barW * RAGE_THRESHOLD;
       ctx.fillStyle = "rgba(255,255,255,0.6)";
       ctx.fillRect(markerX - 1, sy - 15, 2, 6);
     }

@@ -4,6 +4,7 @@ import { Camera }                         from "../../Camera";
 import { BaseEnemy, rollVariants }        from "../BaseEnemy";
 import { Projectile }                     from "../Projectile";
 import { rectCenter }                     from "../../Collision";
+import { getBossHpScale, getBossDamageScale } from "../../RoomManager";
 
 // ============================================================
 // [🧱 BLOCK: Shade States]
@@ -18,27 +19,35 @@ type ShadeState =
 
 // ============================================================
 // [🧱 BLOCK: Stats]
-// HP buffed: 180 → 260 base
+// Base HP raised: 260 → 480
+// Damage raised and floor-scaled via getBossDamageScale
+// Speed increased — Shade is the fastest boss.
 // ============================================================
 const STATS = {
-  baseHp:         260,   // ↑ was 180
-  size:           44,
-  speed:          3.5,
-  rageSpeed:      5.0,
-  color:          '#64748b',
-  rageColor:      '#334155',
-  xpValue:        20,
-  lungeDamage:    32,
-  lungeDamageRage:45,
-  lungeLength:    140,
-  lungeLengthRage:200,
-  lungeWidth:     22,
-  dashSpeed:      12,
-  dashSpeedRage:  18,
-  dashDuration:   180,
-  dashDurationRage: 120,
-  evadeDist:      220,
+  baseHp:            480,
+  size:              44,
+  speed:             4.2,    // was 3.5 — faster base chase
+  rageSpeed:         6.0,    // was 5.0
+  color:             '#64748b',
+  rageColor:         '#334155',
+  xpValue:           20,
+  baseLungeDamage:   48,     // was 32
+  baseLungeDamageRage: 65,   // was 45
+  lungeLength:       140,
+  lungeLengthRage:   220,    // was 200
+  lungeWidth:        22,
+  dashSpeed:         15,     // was 12
+  dashSpeedRage:     22,     // was 18
+  dashDuration:      160,    // was 180 — shorter windup
+  dashDurationRage:  100,    // was 120
+  evadeDist:         240,    // was 220
 };
+
+// ============================================================
+// [🧱 BLOCK: Rage Threshold]
+// Shade rages at 60% HP (was 50%).
+// ============================================================
+const RAGE_THRESHOLD = 0.60;
 
 // ============================================================
 // [🧱 BLOCK: Trail Point]
@@ -67,25 +76,27 @@ export class Shade extends BaseEnemy {
   private dashDir:  { x: number; y: number } = { x: 0, y: 1 };
   private trail: TrailPoint[] = [];
 
-  private floor: number;
+  private floor:    number;
+  private dmgScale: number;
 
   constructor(x: number, y: number, floor: number = 1) {
-    const hpScale = 1 + (floor - 1) * 0.50;
+    const hpScale = getBossHpScale(floor);
     super(x, y, STATS.size,
       STATS.speed * (1 + (floor - 1) * 0.15),
       Math.round(STATS.baseHp * hpScale),
       STATS.xpValue,
       STATS.color
     );
-    this.floor = floor;
+    this.floor    = floor;
+    this.dmgScale = getBossDamageScale(floor);
     this.applyVariants(rollVariants(floor, true));
   }
 
   // ============================================================
-  // [🧱 BLOCK: Rage Check]
+  // [🧱 BLOCK: Rage Check — 60% HP]
   // ============================================================
   private checkRage(): void {
-    if (!this.isEnraged && this.hp / this.maxHp <= 0.5) {
+    if (!this.isEnraged && this.hp / this.maxHp <= RAGE_THRESHOLD) {
       this.isEnraged            = true;
       this.justEnragedThisFrame = true;
       this.speed                = STATS.rageSpeed;
@@ -96,13 +107,19 @@ export class Shade extends BaseEnemy {
   private get dashSpeed():    number { return this.isEnraged ? STATS.dashSpeedRage    : STATS.dashSpeed;    }
   private get dashDuration(): number { return this.isEnraged ? STATS.dashDurationRage : STATS.dashDuration; }
   private get lungeLength():  number { return this.isEnraged ? STATS.lungeLengthRage  : STATS.lungeLength;  }
-  private get lungeDmg():     number {
-    const base = this.isEnraged ? STATS.lungeDamageRage : STATS.lungeDamage;
-    return Math.round(base * this.damageMult);
+
+  // ============================================================
+  // [🧱 BLOCK: Effective Damage — floor scaled + variant + rage]
+  // ============================================================
+  private get rageMult(): number { return this.isEnraged ? 1.25 : 1.0; }
+
+  private get lungeDmg(): number {
+    const base = this.isEnraged ? STATS.baseLungeDamageRage : STATS.baseLungeDamage;
+    return Math.round(base * this.dmgScale * this.damageMult * this.rageMult);
   }
 
   get lungeDamage():  number { return this.lungeDmg; }
-  get contactDamage() { return Math.round(10 * this.damageMult); }
+  get contactDamage() { return Math.round(14 * this.dmgScale * this.damageMult * this.rageMult); } // was 10
   get slamDamage()    { return 0; }
   get shootDamage()   { return 0; }
 
@@ -163,6 +180,8 @@ export class Shade extends BaseEnemy {
 
   // ============================================================
   // [🧱 BLOCK: Update]
+  // Approach range extended: 300 → 400px — Shade starts dashing earlier.
+  // Lunge warn timers tightened ~30%.
   // ============================================================
   update(player: Player, worldW: number, worldH: number) {
     if (this.isDead) return;
@@ -178,7 +197,7 @@ export class Shade extends BaseEnemy {
     this.checkRage();
 
     if (this.isEnraged) {
-      this.trail.push({ x: this.x + this.width / 2, y: this.y + this.height / 2, alpha: 0.5 });
+      this.trail.push({ x: this.x + this.width / 2, y: this.y + this.height / 2, alpha: 0.55 });
     }
     this.trail = this.trail
       .map((p) => ({ ...p, alpha: p.alpha - 0.04 }))
@@ -197,11 +216,12 @@ export class Shade extends BaseEnemy {
         this.x += this.vx;
         this.y += this.vy;
         if (dist < 80) {
+          // Close enough — lunge immediately
           this.shadeState = 'warn_lunge';
-          this.stateTimer = this.isEnraged ? 400 : 650;
+          this.stateTimer = this.isEnraged ? 280 : 450;  // was 400/650
           this.vx = 0; this.vy = 0;
           this.lungeDir = { x: dx / dist, y: dy / dist };
-        } else if (dist < 300 && this.stateTimer <= 0) {
+        } else if (dist < 400 && this.stateTimer <= 0) { // was 300
           this.dashDir    = { x: dx / dist, y: dy / dist };
           this.shadeState = 'approach_dash';
           this.stateTimer = this.dashDuration;
@@ -214,7 +234,7 @@ export class Shade extends BaseEnemy {
         this.clampToWorld(worldW, worldH);
         if (this.stateTimer <= 0) {
           this.shadeState = 'chase';
-          this.stateTimer = this.isEnraged ? 300 : 500;
+          this.stateTimer = this.isEnraged ? 200 : 350; // was 300/500
         }
         {
           const { x: nx, y: ny } = rectCenter(this);
@@ -224,7 +244,7 @@ export class Shade extends BaseEnemy {
             const dl  = Math.sqrt(ddx * ddx + ddy * ddy) || 1;
             this.lungeDir   = { x: ddx / dl, y: ddy / dl };
             this.shadeState = 'warn_lunge';
-            this.stateTimer = this.isEnraged ? 400 : 650;
+            this.stateTimer = this.isEnraged ? 280 : 450; // was 400/650
             this.vx = 0; this.vy = 0;
           }
         }
@@ -232,7 +252,7 @@ export class Shade extends BaseEnemy {
 
       case 'warn_lunge':
         this.vx = 0; this.vy = 0;
-        if (this.stateTimer > 150) {
+        if (this.stateTimer > 100) {
           const { x: nx, y: ny } = rectCenter(this);
           const ddx = pcx - nx; const ddy = pcy - ny;
           const dl  = Math.sqrt(ddx * ddx + ddy * ddy) || 1;
@@ -265,7 +285,7 @@ export class Shade extends BaseEnemy {
         this.clampToWorld(worldW, worldH);
         if (this.stateTimer <= 0) {
           this.shadeState = 'cooldown';
-          this.stateTimer = this.isEnraged ? 400 : 700;
+          this.stateTimer = this.isEnraged ? 250 : 500; // was 400/700
         }
         break;
 
@@ -299,7 +319,8 @@ export class Shade extends BaseEnemy {
     ctx.globalAlpha = 1;
 
     if (this.shadeState === 'warn_lunge') {
-      const progress = 1 - Math.max(0, this.stateTimer) / (this.isEnraged ? 400 : 650);
+      const warnMs   = this.isEnraged ? 280 : 450;
+      const progress = 1 - Math.max(0, this.stateTimer) / warnMs;
       const pulse    = Math.sin(this.indicatorPulse / 90) * 0.4 + 0.6;
       const angle    = Math.atan2(this.lungeDir.y, this.lungeDir.x);
       ctx.save();
@@ -362,7 +383,7 @@ export class Shade extends BaseEnemy {
     this.drawHpBar(ctx, sx - this.width * 0.4, sy, barW, -12);
 
     if (!this.isEnraged) {
-      const markerX = sx - this.width * 0.4 + barW * 0.5;
+      const markerX = sx - this.width * 0.4 + barW * RAGE_THRESHOLD;
       ctx.fillStyle = "rgba(255,255,255,0.6)";
       ctx.fillRect(markerX - 1, sy - 13, 2, 5);
     }

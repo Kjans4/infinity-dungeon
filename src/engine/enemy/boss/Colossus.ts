@@ -4,6 +4,7 @@ import { Camera }                         from "../../Camera";
 import { BaseEnemy, rollVariants }        from "../BaseEnemy";
 import { Projectile }                     from "../Projectile";
 import { rectCenter, circleCircle }       from "../../Collision";
+import { getBossHpScale, getBossDamageScale } from "../../RoomManager";
 
 // ============================================================
 // [🧱 BLOCK: Colossus States]
@@ -19,32 +20,40 @@ type ColossusState =
 
 // ============================================================
 // [🧱 BLOCK: Stats]
-// HP buffed: 500 → 650 base
+// Base HP raised: 650 → 1100
+// All damage raised and floor-scaled via getBossDamageScale
 // ============================================================
 const STATS = {
-  baseHp:           650,   // ↑ was 500
-  size:             100,
-  speed:            0.7,
-  rageSpeed:        1.3,
-  xpValue:          20,
-  color:            '#475569',
-  armorBrokenColor: '#dc2626',
-  contactDamage:    25,
-  stompDamage:      35,
-  stompRadius:      150,
-  quakeDamage:      20,
-  damageCooldown:   800,
+  baseHp:              1100,
+  size:                100,
+  speed:               0.9,    // was 0.7
+  rageSpeed:           1.7,    // was 1.3
+  xpValue:             20,
+  color:               '#475569',
+  armorBrokenColor:    '#dc2626',
+  baseContactDamage:   38,
+  baseStompDamage:     55,
+  stompRadius:         150,
+  baseQuakeDamage:     32,
+  damageCooldown:      800,
 };
 
 const ARMOR_REDUCTION    = 0.65;
 const HEAVY_ARMOR_PIERCE = 0.35;
 
-const WARN_MS    = 1800;
-const WARN_RAGE  = 1100;
-const CHASE_MS   = 2500;
-const CHASE_RAGE = 1600;
-const COOL_MS    = 1200;
-const COOL_RAGE  = 700;
+// ============================================================
+// [🧱 BLOCK: Timing Constants]
+// More aggressive — shorter chases and warns.
+// Stomp chain now always active (not just enraged).
+// Rage at 60% HP.
+// ============================================================
+const WARN_MS      = 1300;   // was 1800
+const WARN_RAGE    =  750;   // was 1100
+const CHASE_MS     = 1600;   // was 2500
+const CHASE_RAGE   =  900;   // was 1600
+const COOL_MS      =  800;   // was 1200
+const COOL_RAGE    =  450;   // was 700
+const RAGE_THRESHOLD = 0.60;
 
 // ============================================================
 // [🧱 BLOCK: Colossus Class]
@@ -70,13 +79,15 @@ export class Colossus extends BaseEnemy {
   damageCooldown: number = 0;
   indicatorPulse: number = 0;
 
-  private floor: number;
+  private floor:    number;
+  private dmgScale: number;
 
   constructor(x: number, y: number, floor: number = 1) {
-    const hpScale = 1 + (floor - 1) * 0.50;
+    const hpScale = getBossHpScale(floor);
     super(x, y, STATS.size, STATS.speed,
       Math.round(STATS.baseHp * hpScale), STATS.xpValue, STATS.color);
-    this.floor = floor;
+    this.floor    = floor;
+    this.dmgScale = getBossDamageScale(floor);
     this.applyVariants(rollVariants(floor, true));
   }
 
@@ -84,15 +95,17 @@ export class Colossus extends BaseEnemy {
   // [🧱 BLOCK: Armor State]
   // ============================================================
   get isArmored(): boolean {
-    return !this.isEnraged && this.hp / this.maxHp > 0.5;
+    return !this.isEnraged && this.hp / this.maxHp > RAGE_THRESHOLD;
   }
 
   // ============================================================
-  // [🧱 BLOCK: Effective Damage]
+  // [🧱 BLOCK: Effective Damage — floor scaled + variant + rage]
   // ============================================================
-  get contactDamage() { return Math.round(STATS.contactDamage * this.damageMult); }
-  get slamDamage()    { return Math.round(STATS.stompDamage   * this.damageMult); }
-  get shootDamage()   { return Math.round(STATS.quakeDamage   * this.damageMult); }
+  private get rageMult(): number { return this.isEnraged ? 1.25 : 1.0; }
+
+  get contactDamage() { return Math.round(STATS.baseContactDamage * this.dmgScale * this.damageMult * this.rageMult); }
+  get slamDamage()    { return Math.round(STATS.baseStompDamage   * this.dmgScale * this.damageMult * this.rageMult); }
+  get shootDamage()   { return Math.round(STATS.baseQuakeDamage   * this.dmgScale * this.damageMult * this.rageMult); }
 
   // ============================================================
   // [🧱 BLOCK: takeDamage Override — armor + variant DR]
@@ -113,10 +126,10 @@ export class Colossus extends BaseEnemy {
   }
 
   // ============================================================
-  // [🧱 BLOCK: Rage Check]
+  // [🧱 BLOCK: Rage Check — 60% HP]
   // ============================================================
   private checkRage(): void {
-    if (!this.isEnraged && this.hp / this.maxHp <= 0.5) {
+    if (!this.isEnraged && this.hp / this.maxHp <= RAGE_THRESHOLD) {
       this.isEnraged            = true;
       this.justEnragedThisFrame = true;
       this.speed                = STATS.rageSpeed;
@@ -141,9 +154,14 @@ export class Colossus extends BaseEnemy {
   private get chaseMs(): number { return this.isEnraged ? CHASE_RAGE : CHASE_MS; }
   private get coolMs():  number { return this.isEnraged ? COOL_RAGE  : COOL_MS;  }
 
+  // ============================================================
+  // [🧱 BLOCK: Pick Attack]
+  // Stomp chain is now always the follow-up after stomp (not just enraged).
+  // Enraged also adds quake option.
+  // ============================================================
   private pickAttack(): ColossusState {
-    if (!this.isEnraged) return 'warn_stomp';
-    return Math.random() < 0.5 ? 'warn_stomp' : 'warn_quake';
+    if (this.isEnraged) return Math.random() < 0.5 ? 'warn_stomp' : 'warn_quake';
+    return 'warn_stomp';
   }
 
   // ============================================================
@@ -200,14 +218,10 @@ export class Colossus extends BaseEnemy {
       case 'stomping':
         if (this.stateTimer <= 0) {
           this.stompActive = false; this.stompRadius = 0;
-          if (this.isEnraged) {
-            this.colossusState = 'stomp_chain';
-            this.stateTimer    = this.warnMs * 0.6;
-            this.stomp2Radius  = 0;
-          } else {
-            this.colossusState = 'cooldown';
-            this.stateTimer    = this.coolMs;
-          }
+          // Stomp chain always follows stomp now (not just when enraged)
+          this.colossusState = 'stomp_chain';
+          this.stateTimer    = this.warnMs * 0.6;
+          this.stomp2Radius  = 0;
         }
         break;
 
@@ -335,7 +349,7 @@ export class Colossus extends BaseEnemy {
     this.drawHpBar(ctx, sx - this.width * 0.6, sy, barW, -16);
 
     if (!this.isEnraged) {
-      const markerX = sx - this.width * 0.6 + barW * 0.5;
+      const markerX = sx - this.width * 0.6 + barW * RAGE_THRESHOLD;
       ctx.fillStyle = "rgba(148,163,184,0.8)";
       ctx.fillRect(markerX - 1, sy - 17, 2, 7);
     }

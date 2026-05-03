@@ -127,6 +127,8 @@ export abstract class BaseEnemy {
   // ============================================================
   // [🧱 BLOCK: Apply Variants]
   // Call after constructor to bake in stat changes.
+  // HP mult from 'tough' now applies to ALL enemies including
+  // bosses — isBoss guard removed so tough bosses are tankier.
   // ============================================================
   applyVariants(variantTypes: VariantType[]): void {
     this.variants = variantTypes;

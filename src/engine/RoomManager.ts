@@ -16,9 +16,10 @@ export interface RoomState {
 // [🧱 BLOCK: Scaling Helpers]
 // All functions work for any floor number — pure infinite scaling.
 //
-// Enemy HP:     +100% per floor  (floor 1=1× floor 10=10×)
-// Enemy Speed:  +25% per floor   (soft cap feel — fast but killable)
-// Boss HP:      +50% per floor   (ramps harder than horde)
+// Enemy HP:       +100% per floor  (floor 1=1× floor 10=10×)
+// Enemy Speed:    +25%  per floor
+// Boss HP:        +75%  per floor  (steeper than horde)
+// Boss Damage:    +40%  per floor  (scales threat without one-shotting)
 // ============================================================
 export function getEnemySpeedScale(floor: number): number {
   return 1 + (floor - 1) * 0.25;
@@ -29,7 +30,11 @@ export function getEnemyHpScale(floor: number): number {
 }
 
 export function getBossHpScale(floor: number): number {
-  return 1 + (floor - 1) * 0.50;
+  return 1 + (floor - 1) * 0.75;
+}
+
+export function getBossDamageScale(floor: number): number {
+  return 1 + (floor - 1) * 0.40;
 }
 
 // ============================================================

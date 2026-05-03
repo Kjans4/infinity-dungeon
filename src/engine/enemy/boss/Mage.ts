@@ -4,6 +4,7 @@ import { Camera }                   from "../../Camera";
 import { BaseEnemy, rollVariants }  from "../BaseEnemy";
 import { Projectile }               from "../Projectile";
 import { rectCenter }               from "../../Collision";
+import { getBossHpScale, getBossDamageScale } from "../../RoomManager";
 
 // ============================================================
 // [🧱 BLOCK: Mage States]
@@ -27,7 +28,7 @@ export class HomingProjectile extends Projectile {
   private homingDuration: number;
   private elapsed:        number = 0;
   private targetRef:      Player;
-  private turnSpeed:      number = 0.04;
+  private turnSpeed:      number = 0.05; // was 0.04 — turns faster
 
   constructor(
     x: number, y: number,
@@ -37,13 +38,13 @@ export class HomingProjectile extends Projectile {
     homingMs: number = 1500
   ) {
     super(x, y, targetX, targetY, damage);
-    const speed = 2.2;
+    const speed = 2.8; // was 2.2 — faster homing
     const dx    = targetX - x;
     const dy    = targetY - y;
     const dist  = Math.sqrt(dx * dx + dy * dy) || 1;
     this.vx             = (dx / dist) * speed;
     this.vy             = (dy / dist) * speed;
-    this.maxDistance    = 700;
+    this.maxDistance    = 750; // was 700
     this.radius         = 9;
     this.targetRef      = player;
     this.homingDuration = homingMs;
@@ -58,13 +59,14 @@ export class HomingProjectile extends Projectile {
       const dx   = px - this.x;
       const dy   = py - this.y;
       const dist = Math.sqrt(dx * dx + dy * dy) || 1;
-      const tx   = (dx / dist) * 2.2;
-      const ty   = (dy / dist) * 2.2;
+      const spd  = 2.8;
+      const tx   = (dx / dist) * spd;
+      const ty   = (dy / dist) * spd;
       this.vx += (tx - this.vx) * this.turnSpeed;
       this.vy += (ty - this.vy) * this.turnSpeed;
-      const spd = Math.sqrt(this.vx * this.vx + this.vy * this.vy) || 1;
-      this.vx   = (this.vx / spd) * 2.2;
-      this.vy   = (this.vy / spd) * 2.2;
+      const s = Math.sqrt(this.vx * this.vx + this.vy * this.vy) || 1;
+      this.vx = (this.vx / s) * spd;
+      this.vy = (this.vy / s) * spd;
     }
     this.x += this.vx;
     this.y += this.vy;
@@ -111,13 +113,13 @@ export class MageFake {
   private floor:     number;
 
   constructor(x: number, y: number, size: number, player: Player, floor: number) {
-    this.x       = x;
-    this.y       = y;
-    this.width   = size;
-    this.height  = size;
-    this.player  = player;
-    this.floor   = floor;
-    this.fireTimer = 800 + Math.random() * 800;
+    this.x         = x;
+    this.y         = y;
+    this.width     = size;
+    this.height    = size;
+    this.player    = player;
+    this.floor     = floor;
+    this.fireTimer = 600 + Math.random() * 600; // was 800 — fakes fire sooner
   }
 
   takeDamage(_amount: number) { this.isDead = true; }
@@ -128,7 +130,7 @@ export class MageFake {
     this.fireTimer -= 16;
     if (this.fireTimer <= 0) {
       this.fireFakeShot();
-      this.fireTimer = 1200 + Math.random() * 600;
+      this.fireTimer = 900 + Math.random() * 500; // was 1200 — fires more often
     }
   }
 
@@ -140,7 +142,7 @@ export class MageFake {
     const dx  = pcx - ecx;
     const dy  = pcy - ecy;
     const d   = Math.sqrt(dx * dx + dy * dy) || 1;
-    const proj = new Projectile(ecx, ecy, ecx + dx / d * 300, ecy + dy / d * 300, 4);
+    const proj = new Projectile(ecx, ecy, ecx + dx / d * 300, ecy + dy / d * 300, 6); // was 4 damage
     this.pendingProjectiles.push(proj);
   }
 
@@ -163,30 +165,38 @@ export class MageFake {
 
 // ============================================================
 // [🧱 BLOCK: Mage Stats]
-// HP buffed: 180 → 260 base
+// Base HP raised: 260 → 500
+// Damage raised and floor-scaled via getBossDamageScale
 // ============================================================
 const STATS = {
-  baseHp:        260,   // ↑ was 180
-  size:          52,
-  speed:         0,
-  xpValue:       20,
-  color:         '#0d9488',
-  rageColor:     '#0f766e',
-  homingDamage:  28,
-  burstDamage:   8,
-  burstCount:    3,
-  fakeCount:     2,
-  rageHomingDmg: 38,
-  rageBurstDmg:  12,
+  baseHp:           500,
+  size:             52,
+  speed:            0,
+  xpValue:          20,
+  color:            '#0d9488',
+  rageColor:        '#0f766e',
+  baseHomingDamage: 42,   // was 28
+  baseBurstDamage:  14,   // was 8
+  burstCount:       3,
+  rageBurstCount:   5,    // was same as normal — rage fires more
+  fakeCount:        2,
+  rageHomingDmg:    58,   // was 38
+  rageBurstDmg:     20,   // was 12
 };
 
+// ============================================================
+// [🧱 BLOCK: Timing Constants]
+// More aggressive — shorter cooldowns, faster blink.
+// Rage at 60% HP.
+// ============================================================
 const BLINK_MARGIN = 120;
-const FADE_MS      = 450;
-const WARN_MS      = 1300;
-const WARN_RAGE    = 800;
-const COOL_MS      = 1200;
-const COOL_RAGE    = 750;
+const FADE_MS      = 350;   // was 450
+const WARN_MS      = 950;   // was 1300
+const WARN_RAGE    = 550;   // was 800
+const COOL_MS      = 800;   // was 1200
+const COOL_RAGE    = 450;   // was 750
 const ILLUSION_MS  = 6000;
+const RAGE_THRESHOLD = 0.60;
 
 // ============================================================
 // [🧱 BLOCK: Mage Class]
@@ -195,7 +205,7 @@ export class Mage extends BaseEnemy {
   readonly bossName = 'MAGE';
 
   mageState:  MageState = 'cooldown';
-  stateTimer: number    = 800;
+  stateTimer: number    = 600; // was 800 — starts attacking sooner
 
   alpha:        number  = 1;
   isIntangible: boolean = false;
@@ -208,6 +218,7 @@ export class Mage extends BaseEnemy {
   fakes: MageFake[] = [];
 
   private floor:          number;
+  private dmgScale:       number;
   private blinkTarget:    { x: number; y: number } = { x: 0, y: 0 };
   private indicatorPulse: number = 0;
   private aimDir:         { x: number; y: number } = { x: 0, y: 1 };
@@ -215,18 +226,30 @@ export class Mage extends BaseEnemy {
   private playerRef:      Player | null = null;
 
   constructor(x: number, y: number, floor: number = 1) {
-    const hpScale = 1 + (floor - 1) * 0.50;
+    const hpScale = getBossHpScale(floor);
     super(x, y, STATS.size, STATS.speed,
       Math.round(STATS.baseHp * hpScale), STATS.xpValue, STATS.color);
-    this.floor = floor;
+    this.floor    = floor;
+    this.dmgScale = getBossDamageScale(floor);
     this.applyVariants(rollVariants(floor, true));
   }
 
   // ============================================================
-  // [🧱 BLOCK: Effective Damage with Variant Mult]
+  // [🧱 BLOCK: Effective Damage — floor scaled + variant + rage]
   // ============================================================
-  private get homingDmg()  { return Math.round((this.isEnraged ? STATS.rageHomingDmg : STATS.homingDamage) * this.damageMult); }
-  private get burstDmg()   { return Math.round((this.isEnraged ? STATS.rageBurstDmg  : STATS.burstDamage)  * this.damageMult); }
+  private get rageMult(): number { return this.isEnraged ? 1.25 : 1.0; }
+
+  private get homingDmg() {
+    const base = this.isEnraged ? STATS.rageHomingDmg : STATS.baseHomingDamage;
+    return Math.round(base * this.dmgScale * this.damageMult * this.rageMult);
+  }
+  private get burstDmg() {
+    const base = this.isEnraged ? STATS.rageBurstDmg : STATS.baseBurstDamage;
+    return Math.round(base * this.dmgScale * this.damageMult * this.rageMult);
+  }
+  private get burstCount(): number {
+    return this.isEnraged ? STATS.rageBurstCount : STATS.burstCount;
+  }
 
   get contactDamage() { return 0; }
   get slamDamage()    { return 0; }
@@ -244,10 +267,10 @@ export class Mage extends BaseEnemy {
   isSlamHittingPlayer(_player: Player):   boolean { return false; }
 
   // ============================================================
-  // [🧱 BLOCK: Rage Check]
+  // [🧱 BLOCK: Rage Check — 60% HP]
   // ============================================================
   private checkRage(): void {
-    if (!this.isEnraged && this.hp / this.maxHp <= 0.5) {
+    if (!this.isEnraged && this.hp / this.maxHp <= RAGE_THRESHOLD) {
       this.isEnraged            = true;
       this.justEnragedThisFrame = true;
       this.color                = STATS.rageColor;
@@ -268,7 +291,9 @@ export class Mage extends BaseEnemy {
   }
 
   private pickAttack(): MageState {
-    if (this.isEnraged && this.fakes.length === 0 && Math.random() < 0.45) return 'warn_illusion';
+    // Illusion more likely in rage (55% vs 45%)
+    const illusionChance = this.isEnraged ? 0.55 : 0.45;
+    if (this.isEnraged && this.fakes.length === 0 && Math.random() < illusionChance) return 'warn_illusion';
     return Math.random() < 0.5 ? 'warn_homing' : 'warn_burst';
   }
 
@@ -277,15 +302,17 @@ export class Mage extends BaseEnemy {
 
   private fireHoming(ecx: number, ecy: number, player: Player): void {
     this.pendingProjectiles.push(
-      new HomingProjectile(ecx, ecy, player.x + player.width / 2, player.y + player.height / 2, this.homingDmg, player, 1500)
+      new HomingProjectile(ecx, ecy, player.x + player.width / 2, player.y + player.height / 2,
+        this.homingDmg, player, 1800) // was 1500 — homes longer
     );
   }
 
   private fireBurst(ecx: number, ecy: number, pcx: number, pcy: number): void {
-    const base = Math.atan2(pcy - ecy, pcx - ecx);
-    const step = Math.PI / 14;
-    for (let i = 0; i < STATS.burstCount; i++) {
-      const angle = base + (i - 1) * step;
+    const base  = Math.atan2(pcy - ecy, pcx - ecx);
+    const step  = Math.PI / 14;
+    const count = this.burstCount;
+    for (let i = 0; i < count; i++) {
+      const angle = base + (i - Math.floor(count / 2)) * step;
       const tx    = ecx + Math.cos(angle) * 400;
       const ty    = ecy + Math.sin(angle) * 400;
       const proj  = new Projectile(ecx, ecy, tx, ty, this.burstDmg);
@@ -364,7 +391,7 @@ export class Mage extends BaseEnemy {
         this.alpha = 0;
         this.x = this.blinkTarget.x - this.width  / 2;
         this.y = this.blinkTarget.y - this.height / 2;
-        if (this.isEnraged && this.fakes.length > 0 && Math.random() < 0.4) this.doIllusionSwap();
+        if (this.isEnraged && this.fakes.length > 0 && Math.random() < 0.5) this.doIllusionSwap(); // was 0.4
         if (this.stateTimer <= 0) { this.mageState = 'fade_in'; this.stateTimer = FADE_MS; }
         break;
       case 'fade_in':
@@ -381,7 +408,7 @@ export class Mage extends BaseEnemy {
         }
         break;
       case 'warn_homing':
-        if (this.stateTimer > 400) {
+        if (this.stateTimer > 300) {
           const dx = pcx - ecx; const dy = pcy - ecy;
           const d  = Math.sqrt(dx * dx + dy * dy) || 1;
           this.aimDir = { x: dx / d, y: dy / d };
@@ -454,9 +481,9 @@ export class Mage extends BaseEnemy {
       const pulse = Math.sin(this.indicatorPulse / 90) * 0.4 + 0.6;
       const base  = Math.atan2(this.aimDir.y, this.aimDir.x);
       const step  = Math.PI / 14;
-      for (let i = 0; i < 3; i++) {
-        const a = base + (i - 1) * step;
-        ctx.strokeStyle = `rgba(239,68,68,${i === 1 ? pulse : pulse * 0.45})`;
+      for (let i = 0; i < this.burstCount; i++) {
+        const a = base + (i - Math.floor(this.burstCount / 2)) * step;
+        ctx.strokeStyle = `rgba(239,68,68,${i === Math.floor(this.burstCount / 2) ? pulse : pulse * 0.45})`;
         ctx.lineWidth = 1; ctx.setLineDash([4, 5]);
         ctx.beginPath(); ctx.moveTo(cx, cy);
         ctx.lineTo(cx + Math.cos(a) * 220, cy + Math.sin(a) * 220); ctx.stroke();
@@ -500,7 +527,7 @@ export class Mage extends BaseEnemy {
     const barW = this.width * 2;
     this.drawHpBar(ctx, sx - this.width / 2, sy, barW, -14);
     if (!this.isEnraged) {
-      const markerX = sx - this.width / 2 + barW * 0.5;
+      const markerX = sx - this.width / 2 + barW * RAGE_THRESHOLD;
       ctx.fillStyle = "rgba(255,255,255,0.6)";
       ctx.fillRect(markerX - 1, sy - 15, 2, 6);
     }
