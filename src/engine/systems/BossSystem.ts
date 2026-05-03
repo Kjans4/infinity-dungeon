@@ -34,15 +34,17 @@ const BOSS_GOLD = { min: 80, max: 120 };
 
 // ============================================================
 // [🧱 BLOCK: Boss Drop Constants]
-// MIN_ITEM_DROPS      — guaranteed items every boss kill
-// FLOOR_BONUS_FLOOR   — floor threshold to add a 4th item
-// BONUS_DROP_CHANCE   — probability of a 5th bonus item
-// DROP_SPREAD_RADIUS  — max px offset so drops don't stack
+// MIN_ITEM_DROPS    — guaranteed items every boss kill
+// FLOOR_BONUS_FLOOR — floor threshold to add a 4th item
+// BONUS_DROP_CHANCE — probability of a 5th bonus item
+//
+// Boss items go DIRECTLY into pendingLoot (not itemDrops) so
+// they are never proximity-gated or silently lost if the player
+// runs to the door before walking near the drop positions.
 // ============================================================
 const MIN_ITEM_DROPS      = 3;
 const FLOOR_BONUS_FLOOR   = 3;
 const BONUS_DROP_CHANCE   = 0.40;
-const DROP_SPREAD_RADIUS  = 70;
 
 function randInt(min: number, max: number): number {
   return Math.floor(Math.random() * (max - min + 1)) + min;
@@ -50,44 +52,39 @@ function randInt(min: number, max: number): number {
 
 // ============================================================
 // [🧱 BLOCK: Spawn Boss Item Drops]
-// Drops MIN_ITEM_DROPS (3) guaranteed items, +1 on floor 3+,
-// +1 at 40% chance. Each item is offset slightly so they
-// don't pile on top of each other.
-// Duplicate prevention checks both owned and pending loot.
+// Pushes items straight into state.pendingLoot — guaranteed
+// delivery regardless of player position or loot cap state.
+// Duplicate prevention checks both owned and already-pending.
 // ============================================================
 function spawnBossItemDrops(state: GameState, cx: number, cy: number) {
-  const floor       = state.boss ? (state.boss as any).floor ?? 1 : 1;
-  const floorBonus  = floor >= FLOOR_BONUS_FLOOR ? 1 : 0;
-  const bonusRoll   = Math.random() < BONUS_DROP_CHANCE ? 1 : 0;
-  const totalDrops  = MIN_ITEM_DROPS + floorBonus + bonusRoll;
+  const floor      = state.boss ? (state.boss as any).floor ?? 1 : 1;
+  const floorBonus = floor >= FLOOR_BONUS_FLOOR ? 1 : 0;
+  const bonusRoll  = Math.random() < BONUS_DROP_CHANCE ? 1 : 0;
+  const totalDrops = MIN_ITEM_DROPS + floorBonus + bonusRoll;
 
   for (let i = 0; i < totalDrops; i++) {
-    if (state.pendingLoot.length >= PENDING_LOOT_CAP) break;
-
+    // Collect what's already owned + already pending to avoid dupes
     const ownedCharmIds   = state.playerStats.charms.map((c) => c.id);
     const ownedWeaponId   = state.playerStats.equippedWeaponItem?.id ?? null;
     const ownedArmorIds   = Object.values(state.playerStats.armorSlots)
       .filter(Boolean).map((a) => a!.id);
-    const pendingCharmIds = state.pendingLoot.filter((item) => item.kind === "charm").map((item) => item.id);
-    const pendingWeaponId = state.pendingLoot.find((item) => item.kind === "weapon")?.id ?? null;
-    const pendingArmorIds = state.pendingLoot.filter((item) => item.kind === "armor").map((item) => item.id);
+    const pendingCharmIds = state.pendingLoot.filter((it) => it.kind === 'charm').map((it) => it.id);
+    const pendingWeaponId = state.pendingLoot.find((it)  => it.kind === 'weapon')?.id ?? null;
+    const pendingArmorIds = state.pendingLoot.filter((it) => it.kind === 'armor').map((it) => it.id);
 
     const pool = getRandomShopItems(
       [...ownedCharmIds, ...pendingCharmIds],
       ownedWeaponId ?? pendingWeaponId,
       [...ownedArmorIds, ...pendingArmorIds],
-      1
+      1,
+      floor
     );
 
     if (!pool[0]) continue;
 
-    // Spread drops in a rough arc so they don't overlap
-    const angle  = ((Math.PI * 2) / totalDrops) * i - Math.PI / 2;
-    const radius = DROP_SPREAD_RADIUS * (0.5 + Math.random() * 0.5);
-    const dx     = Math.cos(angle) * radius;
-    const dy     = Math.sin(angle) * radius;
-
-    state.itemDrops.push(new ItemDrop(cx + dx, cy + dy, pool[0]));
+    // Push directly into pendingLoot — no proximity gate, no cap risk.
+    // pendingLoot is cleared on resetRoom so stale items never carry over.
+    state.pendingLoot.push(pool[0]);
   }
 }
 
@@ -214,6 +211,9 @@ export class BossSystem {
 
   // ============================================================
   // [🧱 BLOCK: Tick Door and Shop Post-Victory]
+  // Item drops that still exist on the ground (from horde bleed-
+  // through or future ground-drop additions) continue ticking
+  // here. Boss drops themselves are already in pendingLoot.
   // ============================================================
   private tickDoorAndShop(state: GameState, player: Player): number {
     if (state.door) {
@@ -238,6 +238,7 @@ export class BossSystem {
     });
     state.goldDrops = state.goldDrops.filter((d) => !d.collected);
 
+    // Any remaining ground item drops (not boss drops) still tick normally
     state.itemDrops = state.itemDrops.filter((drop) => {
       if (drop.collected) return false;
       drop.update(player);
@@ -468,6 +469,7 @@ export class BossSystem {
     state.goldDrops = state.goldDrops.filter((d) => !d.collected);
     state.totalGoldEarned += goldCollected;
 
+    // Ground item drops during boss fight (not boss drops — those are in pendingLoot)
     state.itemDrops = state.itemDrops.filter((drop) => {
       if (drop.collected) return false;
       drop.update(player);
@@ -500,7 +502,9 @@ export class BossSystem {
         state.goldDrops.push(new GoldDrop(bx + ox, by + oy, Math.floor(finalAmount / 5)));
       }
 
-      // ── Item drops — 3 minimum, +1 on floor 3+, +40% bonus ─
+      // ── Item drops — pushed directly into pendingLoot ─────
+      // Guaranteed delivery: no proximity gate, no cap risk.
+      // Player will see items immediately in Inventory (hold I).
       spawnBossItemDrops(state, bx, by);
 
       // ── Guaranteed consumable drop ────────────────────────

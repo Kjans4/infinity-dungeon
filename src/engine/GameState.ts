@@ -16,10 +16,10 @@ import { AnyBoss }            from "./enemy/boss/index";
 
 // ============================================================
 // [🧱 BLOCK: Pending Loot Cap]
-// Raised from 3 → 6 to prevent silent drop suppression
-// mid-run when multiple items are on the ground at once.
+// Raised to 12 so boss drops (3–5 items) can never be silently
+// blocked by horde loot accumulated across earlier rooms.
 // ============================================================
-export const PENDING_LOOT_CAP = 6;
+export const PENDING_LOOT_CAP = 12;
 
 // ============================================================
 // [🧱 BLOCK: Run Record — localStorage persistence]
@@ -196,6 +196,8 @@ export class GameState {
   // ============================================================
   // [🧱 BLOCK: Room Reset]
   // Bag + hotbar persist. In-flight projectiles cleared.
+  // pendingLoot is cleared so stale horde drops don't fill the
+  // cap and silently block boss item drops on the next floor.
   // ============================================================
   resetRoom() {
     this.enemies         = [];
@@ -213,6 +215,7 @@ export class GameState {
     this.door            = null;
     this.shopNpc         = null;
     this.boss            = null;
+    this.pendingLoot     = [];   // ← cleared so boss drops are never capped out
     this.consumableSystem.reset();
     // playerConsumables intentionally NOT reset — bag/hotbar persist
   }
