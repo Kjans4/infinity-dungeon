@@ -38,13 +38,17 @@ const BOSS_GOLD = { min: 80, max: 120 };
 // FLOOR_BONUS_FLOOR — floor threshold to add a 4th item
 // BONUS_DROP_CHANCE — probability of a 5th bonus item
 //
-// Boss items go DIRECTLY into pendingLoot (not itemDrops) so
-// they are never proximity-gated or silently lost if the player
-// runs to the door before walking near the drop positions.
+// Boss items spawn as ItemDrop objects on the ground, spread
+// around the boss's death position. Player walks near them to
+// see them in Inventory (hold I) — consistent with horde drops.
+// No proximity auto-collect; player must explicitly equip.
 // ============================================================
 const MIN_ITEM_DROPS      = 3;
 const FLOOR_BONUS_FLOOR   = 3;
 const BONUS_DROP_CHANCE   = 0.40;
+
+// Spread radius for boss drop placement around death point
+const BOSS_DROP_SPREAD    = 80;
 
 function randInt(min: number, max: number): number {
   return Math.floor(Math.random() * (max - min + 1)) + min;
@@ -52,9 +56,10 @@ function randInt(min: number, max: number): number {
 
 // ============================================================
 // [🧱 BLOCK: Spawn Boss Item Drops]
-// Pushes items straight into state.pendingLoot — guaranteed
-// delivery regardless of player position or loot cap state.
-// Duplicate prevention checks both owned and already-pending.
+// Spawns ItemDrop objects scattered around the boss death point.
+// They sit on the ground — player walks near them to see them in
+// Inventory, then equips explicitly. No pendingLoot bypass.
+// Duplicate prevention checks both owned and already-on-ground.
 // ============================================================
 function spawnBossItemDrops(state: GameState, cx: number, cy: number) {
   const floor      = state.boss ? (state.boss as any).floor ?? 1 : 1;
@@ -63,28 +68,34 @@ function spawnBossItemDrops(state: GameState, cx: number, cy: number) {
   const totalDrops = MIN_ITEM_DROPS + floorBonus + bonusRoll;
 
   for (let i = 0; i < totalDrops; i++) {
-    // Collect what's already owned + already pending to avoid dupes
+    // Collect what's already owned + already on the ground to avoid dupes
     const ownedCharmIds   = state.playerStats.charms.map((c) => c.id);
     const ownedWeaponId   = state.playerStats.equippedWeaponItem?.id ?? null;
     const ownedArmorIds   = Object.values(state.playerStats.armorSlots)
       .filter(Boolean).map((a) => a!.id);
-    const pendingCharmIds = state.pendingLoot.filter((it) => it.kind === 'charm').map((it) => it.id);
-    const pendingWeaponId = state.pendingLoot.find((it)  => it.kind === 'weapon')?.id ?? null;
-    const pendingArmorIds = state.pendingLoot.filter((it) => it.kind === 'armor').map((it) => it.id);
+    // Also exclude items already sitting as ground drops
+    const groundCharmIds  = state.itemDrops.filter((d) => d.item.kind === 'charm').map((d) => d.item.id);
+    const groundWeaponId  = state.itemDrops.find((d)  => d.item.kind === 'weapon')?.item.id ?? null;
+    const groundArmorIds  = state.itemDrops.filter((d) => d.item.kind === 'armor').map((d) => d.item.id);
 
     const pool = getRandomShopItems(
-      [...ownedCharmIds, ...pendingCharmIds],
-      ownedWeaponId ?? pendingWeaponId,
-      [...ownedArmorIds, ...pendingArmorIds],
+      [...ownedCharmIds, ...groundCharmIds],
+      ownedWeaponId ?? groundWeaponId,
+      [...ownedArmorIds, ...groundArmorIds],
       1,
       floor
     );
 
     if (!pool[0]) continue;
 
-    // Push directly into pendingLoot — no proximity gate, no cap risk.
-    // pendingLoot is cleared on resetRoom so stale items never carry over.
-    state.pendingLoot.push(pool[0]);
+    // Scatter drops in a circle around the boss death point
+    const angle  = (i / totalDrops) * Math.PI * 2;
+    const radius = BOSS_DROP_SPREAD * (0.5 + Math.random() * 0.5);
+    state.itemDrops.push(new ItemDrop(
+      cx + Math.cos(angle) * radius,
+      cy + Math.sin(angle) * radius,
+      pool[0]
+    ));
   }
 }
 
@@ -132,7 +143,8 @@ export class BossSystem {
 
   // ============================================================
   // [🧱 BLOCK: Setup]
-  // Clears consumableDrops so horde-room drops don't bleed in.
+  // Clears consumableDrops and itemDrops so horde-room drops
+  // don't bleed into the boss arena.
   // ============================================================
   setup(state: GameState, rs: RoomState) {
     state.player.x  = BOSS_WORLD_W / 2;
@@ -143,8 +155,8 @@ export class BossSystem {
     state.enemies         = [];
     state.projectiles     = [];
     state.goldDrops       = [];
-    state.itemDrops       = [];
-    state.consumableDrops = [];   // ← clear on room entry
+    state.itemDrops       = [];           // ← clear horde drops on boss entry
+    state.consumableDrops = [];           // ← clear horde consumable drops
     state.particles       = [];
     state.hitSparks       = [];
     state.damageNumbers   = [];
@@ -167,7 +179,7 @@ export class BossSystem {
     state.shopNpc         = null;
     state.goldDrops       = [];
     state.itemDrops       = [];
-    state.consumableDrops = [];   // ← clear on reset
+    state.consumableDrops = [];
     state.particles       = [];
     state.hitSparks       = [];
     state.damageNumbers   = [];
@@ -211,9 +223,10 @@ export class BossSystem {
 
   // ============================================================
   // [🧱 BLOCK: Tick Door and Shop Post-Victory]
-  // Item drops that still exist on the ground (from horde bleed-
-  // through or future ground-drop additions) continue ticking
-  // here. Boss drops themselves are already in pendingLoot.
+  // Item drops (including boss drops) sit on the ground and tick
+  // for proximity detection only — no auto-collect, no removal.
+  // The only removal path is GameCanvas.handleEquipDrop setting
+  // collected = true when the player explicitly equips the item.
   // ============================================================
   private tickDoorAndShop(state: GameState, player: Player): number {
     if (state.door) {
@@ -238,13 +251,16 @@ export class BossSystem {
     });
     state.goldDrops = state.goldDrops.filter((d) => !d.collected);
 
-    // Any remaining ground item drops (not boss drops) still tick normally
+    // ── Item drops — proximity tick only, NO auto-collect ─────
+    // Boss drops (spawned as ItemDrop objects) and any remaining
+    // ground drops all follow the same rule: they stay on the
+    // ground until the player explicitly equips them via Inventory.
+    // playerIsNear is updated each frame so Inventory can show
+    // the nearby drop card.
     state.itemDrops = state.itemDrops.filter((drop) => {
       if (drop.collected) return false;
-      drop.update(player);
-      if (state.pendingLoot.length >= PENDING_LOOT_CAP) return !drop.collected;
-      if (drop.playerIsNear) { state.pendingLoot.push(drop.item); return false; }
-      return !drop.collected;
+      drop.update(player);   // ticks animation + playerIsNear flag
+      return true;           // always keep — never auto-remove
     });
 
     // ── Consumable drops still on ground post-victory ─────────
@@ -459,7 +475,7 @@ export class BossSystem {
       player.stamina = Math.min(player.maxStamina, player.stamina + ps.staminaRegenRate);
     }
 
-    // ── Gold + item drop collection ───────────────────────────
+    // ── Gold collection ───────────────────────────────────────
     let goldCollected = 0;
     state.goldDrops.forEach((drop) => {
       const was = drop.collected;
@@ -469,13 +485,12 @@ export class BossSystem {
     state.goldDrops = state.goldDrops.filter((d) => !d.collected);
     state.totalGoldEarned += goldCollected;
 
-    // Ground item drops during boss fight (not boss drops — those are in pendingLoot)
+    // ── Item drop tick during boss fight ──────────────────────
+    // Proximity tick only — no auto-collect, no removal.
     state.itemDrops = state.itemDrops.filter((drop) => {
       if (drop.collected) return false;
-      drop.update(player);
-      if (state.pendingLoot.length >= PENDING_LOOT_CAP) return !drop.collected;
-      if (drop.playerIsNear) { state.pendingLoot.push(drop.item); return false; }
-      return !drop.collected;
+      drop.update(player);   // ticks animation + playerIsNear flag
+      return true;           // always keep — never auto-remove
     });
 
     // ── Consumable drops on ground during boss fight ──────────
@@ -502,9 +517,9 @@ export class BossSystem {
         state.goldDrops.push(new GoldDrop(bx + ox, by + oy, Math.floor(finalAmount / 5)));
       }
 
-      // ── Item drops — pushed directly into pendingLoot ─────
-      // Guaranteed delivery: no proximity gate, no cap risk.
-      // Player will see items immediately in Inventory (hold I).
+      // ── Item drops — spawned as ground drops, NOT pendingLoot ─
+      // Player walks near them to see them in Inventory (hold I),
+      // then equips explicitly. Consistent with horde room drops.
       spawnBossItemDrops(state, bx, by);
 
       // ── Guaranteed consumable drop ────────────────────────

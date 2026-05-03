@@ -101,9 +101,15 @@ function goldMultiplierForKills(kills: number, threshold: number): number {
   return Math.max(0.20, 1.0 - tier * 0.20);
 }
 
+// ============================================================
+// [🧱 BLOCK: Roll Item Drop]
+// Passes floor so the item pool scales with progression.
+// Returns null if nothing rolled or pool is exhausted.
+// ============================================================
 function rollItemDrop(
   state:  GameState,
-  chance: number
+  chance: number,
+  floor:  number
 ): import("../items/ItemPool").ShopItem | null {
   if (Math.random() > chance) return null;
   const ownedCharmIds   = state.playerStats.charms.map((c) => c.id);
@@ -117,7 +123,8 @@ function rollItemDrop(
     [...ownedCharmIds, ...pendingCharmIds],
     ownedWeaponId ?? pendingWeaponId,
     [...ownedArmorIds, ...pendingArmorIds],
-    1
+    1,
+    floor   // ← floor passed so loot tier scales with progression
   );
   return pool[0] ?? null;
 }
@@ -658,9 +665,10 @@ export class HordeSystem {
         // Spawns an ItemDrop on the ground. The drop persists
         // indefinitely — player equips it via Inventory (hold I)
         // while standing near it. No auto-collect on proximity.
+        // floor is passed so the item pool scales correctly.
         const baseChance = DROP_CHANCE[type];
         const chance     = isElite ? baseChance * ELITE_DROP_MULT : baseChance;
-        const dropped    = rollItemDrop(state, chance);
+        const dropped    = rollItemDrop(state, chance, rs.floor);  // ← floor added
         if (dropped) {
           state.itemDrops.push(new ItemDrop(
             enemy.x + enemy.width  / 2,
@@ -690,11 +698,11 @@ export class HordeSystem {
       });
     }
 
-    // ── Item drop tick — proximity only, NO auto-collect ─────
-    // Drops stay on the ground until the player explicitly equips
-    // them via the Inventory panel (hold I while nearby).
-    // collected = true is set externally by GameCanvas.handleEquipDrop
-    // when the player presses Equip, which is the only removal path.
+    // ── Item drop tick ────────────────────────────────────────
+    // Drops stay on the ground indefinitely — no auto-collect,
+    // no proximity removal. `playerIsNear` is updated each frame
+    // so Inventory can show the nearby drop card. The ONLY removal
+    // path is GameCanvas.handleEquipDrop setting collected = true.
     state.itemDrops = state.itemDrops.filter((drop) => {
       if (drop.collected) return false;
       drop.update(player);   // ticks animation + playerIsNear flag
