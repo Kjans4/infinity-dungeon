@@ -655,17 +655,18 @@ export class HordeSystem {
         }
 
         // ── Equipment item drop ──────────────────────────────
-        if (state.pendingLoot.length < PENDING_LOOT_CAP) {
-          const baseChance = DROP_CHANCE[type];
-          const chance     = isElite ? baseChance * ELITE_DROP_MULT : baseChance;
-          const dropped    = rollItemDrop(state, chance);
-          if (dropped) {
-            state.itemDrops.push(new ItemDrop(
-              enemy.x + enemy.width  / 2,
-              enemy.y + enemy.height / 2,
-              dropped
-            ));
-          }
+        // Spawns an ItemDrop on the ground. The drop persists
+        // indefinitely — player equips it via Inventory (hold I)
+        // while standing near it. No auto-collect on proximity.
+        const baseChance = DROP_CHANCE[type];
+        const chance     = isElite ? baseChance * ELITE_DROP_MULT : baseChance;
+        const dropped    = rollItemDrop(state, chance);
+        if (dropped) {
+          state.itemDrops.push(new ItemDrop(
+            enemy.x + enemy.width  / 2,
+            enemy.y + enemy.height / 2,
+            dropped
+          ));
         }
 
         // ── Consumable drop — independent roll ────────────────
@@ -689,13 +690,15 @@ export class HordeSystem {
       });
     }
 
-    // ── Item drop pickup ──────────────────────────────────────
+    // ── Item drop tick — proximity only, NO auto-collect ─────
+    // Drops stay on the ground until the player explicitly equips
+    // them via the Inventory panel (hold I while nearby).
+    // collected = true is set externally by GameCanvas.handleEquipDrop
+    // when the player presses Equip, which is the only removal path.
     state.itemDrops = state.itemDrops.filter((drop) => {
       if (drop.collected) return false;
-      drop.update(player);
-      if (state.pendingLoot.length >= PENDING_LOOT_CAP) return !drop.collected;
-      if (drop.playerIsNear) { state.pendingLoot.push(drop.item); return false; }
-      return !drop.collected;
+      drop.update(player);   // ticks animation + playerIsNear flag
+      return true;           // always keep — never auto-remove on proximity
     });
 
     // ── Consumable drop auto-pickup ───────────────────────────
@@ -703,9 +706,7 @@ export class HordeSystem {
       if (drop.collected) return false;
       drop.update(player);
       if (drop.collected) {
-        // Add to player bag
         state.playerConsumables.addToBag(drop.def, 1);
-        // Tiny particle burst on pickup
         state.particles.push(...spawnBurst(drop.x, drop.y,
           drop.def.kind === 'potion' ? '#a78bfa' : '#38bdf8', 5, 0.8));
         return false;
