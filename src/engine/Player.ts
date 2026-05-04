@@ -28,30 +28,17 @@ const BLOCK_HIT_IFRAMES = 300;
 
 // ============================================================
 // [🧱 BLOCK: Sprite Layout Constants]
-// All offsets are relative to (sx, sy) — the top-left of the
-// 32×32 hitbox in screen space.
-//
-// The PNG files have significant transparent padding around the
-// actual art, so each layer is drawn at the full 32×32 box and
-// stacked with vertical overlap so they appear as one character.
-//
-// Layout within the 32px tall box:
-//   Head  — top ~56%    (-2..16px)
-//   Body  — middle ~56% (10..28px)
-//   Feet  — bottom ~44% (20..34px)
-//
-// Adjust DY values if art sits differently in your PNG files.
+// All PNG files share the same canvas size — art was exported
+// on a fixed canvas so layers align perfectly when drawn at the
+// same (x, y, w, h). No per-layer offsets needed.
+// Draw size slightly larger than hitbox so the character reads
+// clearly at game scale. Centered on the 32×32 hitbox.
 // ============================================================
-const HITBOX_W = 32;
-const HITBOX_H = 32;
-
-const HEAD_W = HITBOX_W;  const HEAD_H = 18;
-const BODY_W = HITBOX_W;  const BODY_H = 18;
-const FEET_W = HITBOX_W;  const FEET_H = 14;
-
-const HEAD_DY = -2;   // slightly above box top so the helmet clears
-const BODY_DY = 10;   // overlaps bottom of head
-const FEET_DY = 20;   // overlaps bottom of body, sits at box bottom
+const HITBOX_W   = 32;
+const HITBOX_H   = 32;
+const DRAW_SIZE  = 100;                          // render size in pixels
+const DRAW_OFF_X = (HITBOX_W - DRAW_SIZE) / 2; // -8 — center horizontally
+const DRAW_OFF_Y = (HITBOX_H - DRAW_SIZE) / 2; // -8 — center vertically
 
 // ============================================================
 // [🧱 BLOCK: Idle Animation Constants]
@@ -549,9 +536,11 @@ export class Player {
 
   // ============================================================
   // [🧱 BLOCK: Draw — Sprite Layers]
-  // Draws feet → body → head tightly stacked within the hitbox.
-  // Flips all layers horizontally when facing left (facing.x < 0).
-  // tintColor: null = no tint, string = color overlay on hit/charge.
+  // All PNGs share the same canvas size so they stack perfectly
+  // at identical coordinates — no per-layer offsets required.
+  // Draw order: feet → body → head (bottom to top).
+  // Flips horizontally when facing left via ctx transform.
+  // Idle breathe applied to body+head; sway applied to head only.
   // ============================================================
   private drawSpriteLayers(
     ctx:       CanvasRenderingContext2D,
@@ -563,13 +552,17 @@ export class Player {
     const s = getPlayerSprites();
     const { breatheY, swayX } = this.getIdleOffsets(isMoving);
 
-    const feetImg  = isMoving
+    const feetImg = isMoving
       ? (this.walkFrame === 0 ? s.feetMoving1 : s.feetMoving2)
       : s.feetIdle;
 
-    // ── Flip transform for left-facing ────────────────────────
-    // Translate to sprite center, scale(-1,1), translate back.
-    // This mirrors all three layers around the hitbox center X.
+    // Draw position — centered on hitbox
+    const dx = sx + DRAW_OFF_X;
+    const dy = sy + DRAW_OFF_Y;
+    const dw = DRAW_SIZE;
+    const dh = DRAW_SIZE;
+
+    // ── Facing flip ───────────────────────────────────────────
     const facingLeft = this.facing.x < -0.1;
     const centerX    = sx + HITBOX_W / 2;
 
@@ -580,30 +573,25 @@ export class Player {
       ctx.translate(-centerX, 0);
     }
 
-    // ── Feet (no breathe — grounded) ─────────────────────────
-    ctx.drawImage(feetImg, sx, sy + FEET_DY, FEET_W, FEET_H);
+    // ── Feet — grounded, no breathe ───────────────────────────
+    ctx.drawImage(feetImg, dx, dy, dw, dh);
 
-    // ── Body (breathes) ───────────────────────────────────────
-    ctx.drawImage(s.body, sx, sy + BODY_DY + breatheY, BODY_W, BODY_H);
+    // ── Body — breathes vertically ────────────────────────────
+    ctx.drawImage(s.body, dx, dy + breatheY, dw, dh);
 
-    // ── Head (breathes + sways; sway mirrors with flip) ───────
-    // When flipped, swayX direction is already mirrored by the
-    // ctx transform, so we apply it normally here.
-    ctx.drawImage(s.head, sx + swayX, sy + HEAD_DY + breatheY, HEAD_W, HEAD_H);
+    // ── Head — breathes + sways horizontally ──────────────────
+    ctx.drawImage(s.head, dx + swayX, dy + breatheY, dw, dh);
 
-    // ── Tint overlay ──────────────────────────────────────────
+    // ── Tint overlay for combat states / hit flash ────────────
     if (tintColor) {
-      // Redraw layers under source-atop to colorize sprite pixels only
       ctx.globalCompositeOperation = 'source-atop';
-      ctx.drawImage(feetImg, sx,          sy + FEET_DY,              FEET_W, FEET_H);
-      ctx.drawImage(s.body,  sx,          sy + BODY_DY + breatheY,   BODY_W, BODY_H);
-      ctx.drawImage(s.head,  sx + swayX,  sy + HEAD_DY + breatheY,   HEAD_W, HEAD_H);
-
+      ctx.drawImage(feetImg, dx,           dy,              dw, dh);
+      ctx.drawImage(s.body,  dx,           dy + breatheY,   dw, dh);
+      ctx.drawImage(s.head,  dx + swayX,   dy + breatheY,   dw, dh);
       ctx.globalAlpha              = 0.55;
       ctx.fillStyle                = tintColor;
       ctx.globalCompositeOperation = 'source-atop';
-      ctx.fillRect(sx, sy + HEAD_DY, HITBOX_W, FEET_DY + FEET_H - HEAD_DY);
-
+      ctx.fillRect(dx, dy, dw, dh);
       ctx.globalAlpha              = 1;
       ctx.globalCompositeOperation = 'source-over';
     }
