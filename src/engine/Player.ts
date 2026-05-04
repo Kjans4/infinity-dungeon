@@ -1,8 +1,9 @@
 // src/engine/Player.ts
-import { InputHandler } from "./Input";
-import { Camera }       from "./Camera";
-import { Weapon }       from "./items/Weapon";
-import { AttackDef }    from "./items/types";
+import { InputHandler }   from "./Input";
+import { Camera }         from "./Camera";
+import { Weapon }         from "./items/Weapon";
+import { AttackDef }      from "./items/types";
+import { getPlayerSprites } from "./PlayerSprites";
 
 // ============================================================
 // [🧱 BLOCK: Constants]
@@ -26,6 +27,50 @@ const BLOCK_HIT_COST    = 12;
 const BLOCK_HIT_IFRAMES = 300;
 
 // ============================================================
+// [🧱 BLOCK: Sprite Layout Constants]
+// All offsets are relative to (sx, sy) — the top-left of the
+// 32×32 hitbox in screen space.
+//
+// The PNG files have significant transparent padding around the
+// actual art, so each layer is drawn at the full 32×32 box and
+// stacked with vertical overlap so they appear as one character.
+//
+// Layout within the 32px tall box:
+//   Head  — top ~56%    (-2..16px)
+//   Body  — middle ~56% (10..28px)
+//   Feet  — bottom ~44% (20..34px)
+//
+// Adjust DY values if art sits differently in your PNG files.
+// ============================================================
+const HITBOX_W = 32;
+const HITBOX_H = 32;
+
+const HEAD_W = HITBOX_W;  const HEAD_H = 18;
+const BODY_W = HITBOX_W;  const BODY_H = 18;
+const FEET_W = HITBOX_W;  const FEET_H = 14;
+
+const HEAD_DY = -2;   // slightly above box top so the helmet clears
+const BODY_DY = 10;   // overlaps bottom of head
+const FEET_DY = 20;   // overlaps bottom of body, sits at box bottom
+
+// ============================================================
+// [🧱 BLOCK: Idle Animation Constants]
+// Breathe: body + head bob vertically on a slow sine
+// Sway:    head drifts horizontally on a slower, offset sine
+// ============================================================
+const BREATHE_AMPLITUDE = 2.0;    // px up/down
+const BREATHE_PERIOD    = 1500;   // ms per full cycle
+const SWAY_AMPLITUDE    = 1.5;    // px left/right (head only)
+const SWAY_PERIOD       = 2500;   // ms per full cycle
+const SWAY_PHASE_OFFSET = 800;    // ms — head sways slightly behind breathe
+
+// ============================================================
+// [🧱 BLOCK: Walk Animation Constants]
+// ============================================================
+const WALK_FRAME_MS      = 150;   // ms per foot frame alternation
+const WALK_SPEED_THRESH  = 0.3;   // min speed to count as moving
+
+// ============================================================
 // [🧱 BLOCK: Combat State Types]
 // ============================================================
 export type ChargeState =
@@ -47,8 +92,8 @@ export type BlockState =
 // ============================================================
 export class Player {
   x: number; y: number;
-  width:  number = 32;
-  height: number = 32;
+  width:  number = HITBOX_W;
+  height: number = HITBOX_H;
   vx: number = 0; vy: number = 0;
 
   accel:    number = 0.8;
@@ -84,9 +129,6 @@ export class Player {
 
   // ============================================================
   // [🧱 BLOCK: Consumable State Flags]
-  // Set externally by ConsumableSystem each frame.
-  // isInvisible — Phantom Potion active; draw skips body rect,
-  //   ConsumableSystem renders the shimmer overlay instead.
   // ============================================================
   isInvisible: boolean = false;
 
@@ -96,6 +138,16 @@ export class Player {
   private prevLight: boolean = false;
   private prevHeavy: boolean = false;
   private prevBlock: boolean = false;
+
+  // ============================================================
+  // [🧱 BLOCK: Animation State]
+  // walkTimer    — accumulates ms, flips foot frame at threshold
+  // walkFrame    — 0 = feetMoving1, 1 = feetMoving2
+  // animClock    — global ms clock for idle sine waves
+  // ============================================================
+  private walkTimer: number  = 0;
+  private walkFrame: number  = 0;
+  private animClock: number  = 0;
 
   constructor(x: number, y: number) {
     this.x = x;
@@ -222,8 +274,6 @@ export class Player {
     this.y += this.vy;
 
     // ── Resources ─────────────────────────────────────────────
-    // Stamina regen handled by HordeSystem/BossSystem via
-    // ps.staminaRegenRate so charm multipliers are respected.
     if (this.heavyCooldown > 0) this.heavyCooldown  -= 16;
     if (this.iFrames       > 0) this.iFrames        -= 16;
     if (this.hitFlashTimer > 0) {
@@ -233,6 +283,23 @@ export class Player {
 
     if (this.chargeState !== 'none') this.chargeVisual += 16;
     else                              this.chargeVisual  = 0;
+
+    // ── Walk animation clock ──────────────────────────────────
+    const isMoving = Math.abs(this.vx) + Math.abs(this.vy) > WALK_SPEED_THRESH;
+    if (isMoving) {
+      this.walkTimer += 16;
+      if (this.walkTimer >= WALK_FRAME_MS) {
+        this.walkTimer = 0;
+        this.walkFrame = this.walkFrame === 0 ? 1 : 0;
+      }
+    } else {
+      // Reset to idle stance when stopping
+      this.walkTimer = 0;
+      this.walkFrame = 0;
+    }
+
+    // ── Global animation clock ────────────────────────────────
+    this.animClock += 16;
 
     this.prevLight = lightDown;
     this.prevHeavy = heavyDown;
@@ -467,16 +534,92 @@ export class Player {
   }
 
   // ============================================================
+  // [🧱 BLOCK: Draw — Idle Animation Helpers]
+  // Returns the current breathe and sway offsets for this frame.
+  // Both are 0 while moving so motion doesn't fight the idle anim.
+  // ============================================================
+  private getIdleOffsets(isMoving: boolean): { breatheY: number; swayX: number } {
+    if (isMoving) return { breatheY: 0, swayX: 0 };
+    const breatheY = Math.sin((this.animClock / BREATHE_PERIOD) * Math.PI * 2)
+      * BREATHE_AMPLITUDE;
+    const swayX    = Math.sin(((this.animClock - SWAY_PHASE_OFFSET) / SWAY_PERIOD) * Math.PI * 2)
+      * SWAY_AMPLITUDE;
+    return { breatheY, swayX };
+  }
+
+  // ============================================================
+  // [🧱 BLOCK: Draw — Sprite Layers]
+  // Draws feet → body → head tightly stacked within the hitbox.
+  // Flips all layers horizontally when facing left (facing.x < 0).
+  // tintColor: null = no tint, string = color overlay on hit/charge.
+  // ============================================================
+  private drawSpriteLayers(
+    ctx:       CanvasRenderingContext2D,
+    sx:        number,
+    sy:        number,
+    isMoving:  boolean,
+    tintColor: string | null
+  ): void {
+    const s = getPlayerSprites();
+    const { breatheY, swayX } = this.getIdleOffsets(isMoving);
+
+    const feetImg  = isMoving
+      ? (this.walkFrame === 0 ? s.feetMoving1 : s.feetMoving2)
+      : s.feetIdle;
+
+    // ── Flip transform for left-facing ────────────────────────
+    // Translate to sprite center, scale(-1,1), translate back.
+    // This mirrors all three layers around the hitbox center X.
+    const facingLeft = this.facing.x < -0.1;
+    const centerX    = sx + HITBOX_W / 2;
+
+    ctx.save();
+    if (facingLeft) {
+      ctx.translate(centerX, 0);
+      ctx.scale(-1, 1);
+      ctx.translate(-centerX, 0);
+    }
+
+    // ── Feet (no breathe — grounded) ─────────────────────────
+    ctx.drawImage(feetImg, sx, sy + FEET_DY, FEET_W, FEET_H);
+
+    // ── Body (breathes) ───────────────────────────────────────
+    ctx.drawImage(s.body, sx, sy + BODY_DY + breatheY, BODY_W, BODY_H);
+
+    // ── Head (breathes + sways; sway mirrors with flip) ───────
+    // When flipped, swayX direction is already mirrored by the
+    // ctx transform, so we apply it normally here.
+    ctx.drawImage(s.head, sx + swayX, sy + HEAD_DY + breatheY, HEAD_W, HEAD_H);
+
+    // ── Tint overlay ──────────────────────────────────────────
+    if (tintColor) {
+      // Redraw layers under source-atop to colorize sprite pixels only
+      ctx.globalCompositeOperation = 'source-atop';
+      ctx.drawImage(feetImg, sx,          sy + FEET_DY,              FEET_W, FEET_H);
+      ctx.drawImage(s.body,  sx,          sy + BODY_DY + breatheY,   BODY_W, BODY_H);
+      ctx.drawImage(s.head,  sx + swayX,  sy + HEAD_DY + breatheY,   HEAD_W, HEAD_H);
+
+      ctx.globalAlpha              = 0.55;
+      ctx.fillStyle                = tintColor;
+      ctx.globalCompositeOperation = 'source-atop';
+      ctx.fillRect(sx, sy + HEAD_DY, HITBOX_W, FEET_DY + FEET_H - HEAD_DY);
+
+      ctx.globalAlpha              = 1;
+      ctx.globalCompositeOperation = 'source-over';
+    }
+
+    ctx.restore();
+  }
+
+  // ============================================================
   // [🧱 BLOCK: Draw]
-  // When isInvisible is true the body rect is skipped entirely —
-  // ConsumableSystem.draw() renders the shimmer overlay instead
-  // so the player is still locatable but clearly invisible.
-  // All overlays (charge ring, block ring, HP/stamina bars)
-  // are suppressed during invisibility to avoid giving away
-  // the player's exact position.
+  // Sprite version — replaces the colored fillRect body.
+  // Falls back to fillRect if sprites haven't loaded yet.
+  // All combat overlays (charge ring, parry ring, block ring,
+  // parry flash, dash afterimage, HP/stamina bars) are preserved.
   // ============================================================
   draw(ctx: CanvasRenderingContext2D, camera: Camera): void {
-    // Standard iFrame flicker (not during invisibility)
+    // ── iFrame flicker (not during invisibility) ──────────────
     if (!this.isInvisible &&
         !this.isHit &&
         this.iFrames > 0 &&
@@ -485,7 +628,7 @@ export class Player {
       return;
     }
 
-    // Skip full draw when invisible — shimmer handled externally
+    // ── Skip full draw when invisible ─────────────────────────
     if (this.isInvisible) return;
 
     const sx = camera.toScreenX(this.x);
@@ -493,16 +636,22 @@ export class Player {
     const cx = sx + this.width  / 2;
     const cy = sy + this.height / 2;
 
-    // ── Dash afterimage ──────────────────────────────────────
+    const isMoving = Math.abs(this.vx) + Math.abs(this.vy) > WALK_SPEED_THRESH;
+
+    // ── Dash afterimage ───────────────────────────────────────
     if (this.isDashing) {
       const progress = this.dashTimer / DASH_DURATION;
       ctx.globalAlpha = 0.25 * progress;
-      ctx.fillStyle   = "#38bdf8";
-      ctx.fillRect(sx - this.vx * 2, sy - this.vy * 2, this.width, this.height);
+      if (getPlayerSprites().ready) {
+        this.drawSpriteLayers(ctx, sx - this.vx * 2, sy - this.vy * 2, isMoving, '#38bdf8');
+      } else {
+        ctx.fillStyle = '#38bdf8';
+        ctx.fillRect(sx - this.vx * 2, sy - this.vy * 2, this.width, this.height);
+      }
       ctx.globalAlpha = 1;
     }
 
-    // ── Charge glow ring ─────────────────────────────────────
+    // ── Charge glow ring ──────────────────────────────────────
     if (this.chargeState !== 'none') {
       const isLight  = this.chargeState === 'charging_light' || this.chargeState === 'charged_light';
       const isReady  = this.chargeState === 'charged_light'  || this.chargeState === 'charged_heavy';
@@ -578,19 +727,28 @@ export class Player {
       ctx.stroke();
     }
 
-    // ── Body ─────────────────────────────────────────────────
-    ctx.fillStyle =
-      this.isHit                            ? "#ffffff"  :
-      this.isDashing                        ? "#38bdf8"  :
-      this.blockState === 'parrying'        ? "#7dd3fc"  :
-      this.blockState === 'blocking'        ? "#94a3b8"  :
-      this.chargeState === 'charged_light'  ? "#e2e8f0"  :
-      this.chargeState === 'charged_heavy'  ? "#fde68a"  :
-      this.isChargingLight || this.isChargingHeavy ? "#fca5a5" :
-      "#f87171";
-    ctx.fillRect(sx, sy, this.width, this.height);
+    // ── Determine tint color for combat states ─────────────────
+    // null = no tint (normal rendering)
+    const tintColor: string | null =
+      this.isHit                                              ? '#ffffff'  :
+      this.isDashing                                          ? '#38bdf8'  :
+      this.blockState === 'parrying'                          ? '#7dd3fc'  :
+      this.blockState === 'blocking'                          ? '#94a3b8'  :
+      this.chargeState === 'charged_light'                    ? '#e2e8f0'  :
+      this.chargeState === 'charged_heavy'                    ? '#fde68a'  :
+      (this.isChargingLight || this.isChargingHeavy)          ? '#fca5a5'  :
+      null;
 
-    // ── HP bar ───────────────────────────────────────────────
+    // ── Sprite body (or fallback rect) ────────────────────────
+    if (getPlayerSprites().ready) {
+      this.drawSpriteLayers(ctx, sx, sy, isMoving, tintColor);
+    } else {
+      // Fallback colored rect while sprites are loading
+      ctx.fillStyle = tintColor ?? '#f87171';
+      ctx.fillRect(sx, sy, this.width, this.height);
+    }
+
+    // ── HP bar ────────────────────────────────────────────────
     ctx.fillStyle = "#1e293b";
     ctx.fillRect(sx, sy - 15, this.width, 4);
     ctx.fillStyle = "#ef4444";
