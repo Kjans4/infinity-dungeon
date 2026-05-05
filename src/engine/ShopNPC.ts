@@ -1,7 +1,8 @@
 // src/engine/ShopNPC.ts
-import { Player }        from "./Player";
-import { Camera }        from "./Camera";
-import { withinRadius }  from "./Collision";
+import { Player }             from "./Player";
+import { Camera }             from "./Camera";
+import { withinRadius }       from "./Collision";
+import { getShopNPCSprites }  from "./ShopNPCSprites";
 
 // ============================================================
 // [🧱 BLOCK: ShopNPC Constants]
@@ -12,6 +13,26 @@ const NPC_OFFSET_X     = 100;
 const SAFE_ZONE_HEIGHT = 160;
 const INTERACT_RADIUS  = 70;
 
+// ============================================================
+// [🧱 BLOCK: Sprite Draw Constants]
+// Same fixed-canvas alignment approach as Player.ts.
+// Draw size is larger than hitbox — centered on it.
+// ============================================================
+const DRAW_SIZE  = 120;
+const DRAW_OFF_X = (NPC_W - DRAW_SIZE) / 2;   // center horizontally on hitbox
+const DRAW_OFF_Y = (NPC_H - DRAW_SIZE) / 2;   // center vertically on hitbox
+
+// ============================================================
+// [🧱 BLOCK: Idle Animation Constants]
+// Head only — vertical breathe sine wave.
+// Body is always static (no offset applied).
+// ============================================================
+const BREATHE_AMPLITUDE = 2.0;   // px up/down
+const BREATHE_PERIOD    = 1600;  // ms per full cycle (slightly slower than player)
+
+// ============================================================
+// [🧱 BLOCK: ShopNPC Class]
+// ============================================================
 export class ShopNPC {
   x:        number;
   y:        number;
@@ -25,6 +46,12 @@ export class ShopNPC {
   // Enemies cannot enter y < safeLineY
   safeLineY: number;
 
+  // ============================================================
+  // [🧱 BLOCK: Animation State]
+  // animClock accumulates ms each update tick for the breathe sine.
+  // pulseTimer drives the "[F] TALK" hint opacity.
+  // ============================================================
+  private animClock:  number = 0;
   private pulseTimer: number = 0;
 
   constructor(worldW: number) {
@@ -47,6 +74,7 @@ export class ShopNPC {
   update() {
     if (!this.isActive) return;
     this.pulseTimer += 16;
+    this.animClock  += 16;
   }
 
   // ============================================================
@@ -57,7 +85,7 @@ export class ShopNPC {
   }
 
   // ============================================================
-  // [🧱 BLOCK: Check Player Proximity — uses withinRadius]
+  // [🧱 BLOCK: Check Player Proximity]
   // ============================================================
   checkPlayerProximity(player: Player): void {
     if (!this.isActive) { this.playerIsNear = false; return; }
@@ -66,15 +94,18 @@ export class ShopNPC {
 
   // ============================================================
   // [🧱 BLOCK: Draw]
+  // Body is drawn static. Head gets a vertical breathe offset.
+  // The hitbox box is invisible — no strokeRect / fillRect.
+  // Safe zone dashed line and interaction hint are preserved.
+  // Falls back to the old text box if sprites haven't loaded yet.
   // ============================================================
   draw(ctx: CanvasRenderingContext2D, camera: Camera, worldW: number) {
     if (!this.isActive) return;
 
-    const sx    = camera.toScreenX(this.x);
-    const sy    = camera.toScreenY(this.y);
-    const pulse = Math.sin(this.pulseTimer / 400) * 0.35 + 0.65;
+    const sx = camera.toScreenX(this.x);
+    const sy = camera.toScreenY(this.y);
 
-    // ── Safe zone line ─────────────────────────────────────
+    // ── Safe zone dashed line ──────────────────────────────
     const lineY = camera.toScreenY(this.safeLineY);
     ctx.strokeStyle = "rgba(56,189,248,0.08)";
     ctx.lineWidth   = 1;
@@ -85,36 +116,45 @@ export class ShopNPC {
     ctx.stroke();
     ctx.setLineDash([]);
 
-    // ── NPC box ────────────────────────────────────────────
-    ctx.shadowColor = "#38bdf8";
-    ctx.shadowBlur  = 12 * pulse;
+    // ── Sprite draw ────────────────────────────────────────
+    const s = getShopNPCSprites();
 
-    ctx.fillStyle   = `rgba(14, 30, 50, 0.9)`;
-    ctx.fillRect(sx, sy, this.width, this.height);
+    if (s.ready) {
+      const dx = sx + DRAW_OFF_X;
+      const dy = sy + DRAW_OFF_Y;
+      const dw = DRAW_SIZE;
+      const dh = DRAW_SIZE;
 
-    ctx.strokeStyle = `rgba(56, 189, 248, ${pulse})`;
-    ctx.lineWidth   = 2;
-    ctx.strokeRect(sx, sy, this.width, this.height);
+      // Breathe offset — head only
+      const breatheY = Math.sin((this.animClock / BREATHE_PERIOD) * Math.PI * 2)
+        * BREATHE_AMPLITUDE;
 
-    ctx.shadowBlur  = 0;
-    ctx.shadowColor = "transparent";
+      // Body — static
+      ctx.drawImage(s.body, dx, dy, dw, dh);
 
-    ctx.fillStyle   = `rgba(56, 189, 248, ${pulse})`;
-    ctx.font        = "bold 8px 'Courier New'";
-    ctx.textAlign   = "center";
-    ctx.fillText("SHOP",  sx + this.width / 2, sy + this.height / 2 - 6);
-    ctx.fillText("NPC",   sx + this.width / 2, sy + this.height / 2 + 6);
+      // Head — bobs vertically
+      ctx.drawImage(s.head, dx, dy + breatheY, dw, dh);
 
-    if (this.playerIsNear) {
-      ctx.font      = "bold 8px 'Courier New'";
-      ctx.fillStyle = "rgba(248,250,252,0.9)";
-      ctx.fillText("[F] TALK", sx + this.width / 2, sy + this.height + 14);
     } else {
-      ctx.font      = "7px 'Courier New'";
-      ctx.fillStyle = "rgba(148,163,184,0.5)";
-      ctx.fillText("SHOP", sx + this.width / 2, sy + this.height + 12);
+      // ── Fallback: minimal text label while sprites load ──
+      ctx.fillStyle   = "rgba(14, 30, 50, 0.85)";
+      ctx.fillRect(sx, sy, this.width, this.height);
+      ctx.fillStyle   = "rgba(56, 189, 248, 0.9)";
+      ctx.font        = "bold 8px 'Courier New'";
+      ctx.textAlign   = "center";
+      ctx.fillText("SHOP", sx + this.width / 2, sy + this.height / 2 - 4);
+      ctx.fillText("NPC",  sx + this.width / 2, sy + this.height / 2 + 6);
+      ctx.textAlign   = "left";
     }
 
-    ctx.textAlign = "left";
+    // ── Interaction hint ───────────────────────────────────
+    if (this.playerIsNear) {
+      const pulse = Math.sin(this.pulseTimer / 300) * 0.25 + 0.75;
+      ctx.font      = "bold 8px 'Courier New'";
+      ctx.fillStyle = `rgba(248,250,252,${pulse})`;
+      ctx.textAlign = "center";
+      ctx.fillText("[F] TALK", sx + this.width / 2, sy + this.height + 18);
+      ctx.textAlign = "left";
+    }
   }
 }
