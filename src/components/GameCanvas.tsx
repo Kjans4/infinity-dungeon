@@ -73,7 +73,6 @@ const NPC_COL_OFF_Y  = (48 - NPC_COL_H) / 2;   // 4px
 function pushPlayerOutOfNPC(player: Player, npc: ShopNPC): void {
   if (!npc.isActive) return;
 
-  // Reduced collision box for NPC
   const nx = npc.x + NPC_COL_OFF_X;
   const ny = npc.y + NPC_COL_OFF_Y;
   const nw = NPC_COL_W;
@@ -84,19 +83,16 @@ function pushPlayerOutOfNPC(player: Player, npc: ShopNPC): void {
   const pw = player.width;
   const ph = player.height;
 
-  // No overlap — nothing to do
   if (px + pw <= nx || px >= nx + nw || py + ph <= ny || py >= ny + nh) return;
 
-  // Overlap depths on each axis
-  const overlapLeft  = (px + pw) - nx;       // player right into npc left
-  const overlapRight = (nx + nw) - px;       // player left  into npc right
-  const overlapTop   = (py + ph) - ny;       // player bottom into npc top
-  const overlapBot   = (ny + nh) - py;       // player top   into npc bottom
+  const overlapLeft  = (px + pw) - nx;
+  const overlapRight = (nx + nw) - px;
+  const overlapTop   = (py + ph) - ny;
+  const overlapBot   = (ny + nh) - py;
 
   const minX = Math.min(overlapLeft, overlapRight);
   const minY = Math.min(overlapTop,  overlapBot);
 
-  // Push on axis of least penetration
   if (minX < minY) {
     if (overlapLeft < overlapRight) {
       player.x  -= overlapLeft;
@@ -433,23 +429,40 @@ export default function GameCanvas() {
 
   // ============================================================
   // [🧱 BLOCK: Equip Drop]
+  // Uses claim* methods — item drops are free loot, no gold check.
+  // If a slot is already occupied the old item is ejected as a new
+  // drop near the player so it is never silently destroyed.
+  // applyToPlayer() is called inside every claim* method already.
   // ============================================================
   const handleEquipDrop = useCallback((drop: ItemDrop) => {
     const state = stateRef.current; if (!state) return;
-    const item = drop.item; const player = state.player;
-    const dropX = player.x + player.width  + SWAP_DROP_OFFSET;
-    const dropY = player.y + player.height + SWAP_DROP_OFFSET;
+    const item   = drop.item;
+    const player = state.player;
+    const dropX  = player.x + player.width  + SWAP_DROP_OFFSET;
+    const dropY  = player.y + player.height + SWAP_DROP_OFFSET;
+
     if (item.kind === 'weapon') {
       const existing = state.playerStats.equippedWeaponItem;
-      if (existing) state.itemDrops.push(new ItemDrop(dropX, dropY, { ...existing, kind: 'weapon' }));
-      state.playerStats.equipWeapon(item as WeaponItem, state.gold, player);
+      if (existing) {
+        state.itemDrops.push(new ItemDrop(dropX, dropY, { ...existing, kind: 'weapon' }));
+      }
+      state.playerStats.claimWeapon(item as WeaponItem, player);
+
     } else if (item.kind === 'armor') {
-      const ai = item as ArmorItem; const existing = state.playerStats.armorSlots[ai.slot];
-      if (existing) state.itemDrops.push(new ItemDrop(dropX, dropY, { ...existing, kind: 'armor' }));
-      state.playerStats.equipArmor(ai, state.gold, player);
+      const ai       = item as ArmorItem;
+      const existing = state.playerStats.armorSlots[ai.slot];
+      if (existing) {
+        state.itemDrops.push(new ItemDrop(dropX, dropY, { ...existing, kind: 'armor' }));
+      }
+      state.playerStats.claimArmor(ai, player);
+
     } else if (item.kind === 'charm') {
-      state.playerStats.buyCharm(item as any, state.gold, player);
+      // claimCharm returns false if charm slots are full —
+      // Inventory already disables the button, but guard here too.
+      state.playerStats.claimCharm(item as any, player);
     }
+
+    // Remove this drop from the world
     drop.collected = true;
     const idx = state.itemDrops.findIndex((d) => d === drop);
     if (idx !== -1) state.itemDrops.splice(idx, 1);
@@ -619,13 +632,22 @@ export default function GameCanvas() {
   const state        = stateRef.current;
   const threshold    = hordeRef.current.getThreshold(hud.floor, roomRef.current.phase === 'elite');
 
+  // ============================================================
+  // [🧱 BLOCK: Nearby Drops — filtered]
+  // Only pass drops where playerIsNear is true so the Inventory
+  // panel only shows items the player is actually standing next to.
+  // ============================================================
+  const nearbyDrops = state
+    ? state.itemDrops.filter((d) => !d.collected && d.playerIsNear)
+    : [];
+
   return (
     <div style={{ width: "100vw", height: "100vh", overflow: "hidden", background: "#0f172a" }}>
       <canvas ref={canvasRef} style={{ display: "block" }} />
       {!showMenu && <HUD hp={hud.hp} maxHp={MAX_HP} stamina={hud.stamina} maxStamina={MAX_STAMINA} kills={hud.kills} killThreshold={threshold} room={hud.room} floor={hud.floor} gold={gold} bossHp={hud.bossHp} bossMaxHp={hud.bossMaxHp} bossIsEnraged={hud.bossIsEnraged} roomPhase={roomRef.current.phase} hotbar={hud.hotbar} />}
       {!showMenu && !isGameOver && <Minimap state={stateRef.current} isBoss={roomRef.current.phase==='boss'||roomRef.current.phase==='victory'} />}
 
-      {/* ── Shop — now receives playerConsumables ── */}
+      {/* ── Shop ── */}
       {showShop && state && (
         <Shop
           floor={roomRef.current.floor}
@@ -646,7 +668,7 @@ export default function GameCanvas() {
           playerStats={state.playerStats}
           player={state.player}
           gold={gold}
-          nearbyDrops={state.itemDrops}
+          nearbyDrops={nearbyDrops}
           playerConsumables={state.playerConsumables}
           onGoldChange={handleGoldChange}
           onEquipDrop={handleEquipDrop}
