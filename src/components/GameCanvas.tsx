@@ -29,6 +29,8 @@ import { HotbarSlot }        from "@/engine/PlayerConsumables";
 import { ConsumableDef }     from "@/engine/ConsumableRegistry";
 import { ConsumableSystem }  from "@/engine/ConsumableSystem";
 import { ConsumableDrop }    from "@/engine/ConsumableDrop";
+import { Player }            from "@/engine/Player";
+import { ShopNPC }           from "@/engine/ShopNPC";
 import "@/styles/victory.css";
 import "@/styles/dev-panel.css";
 
@@ -51,6 +53,68 @@ const REMAINING_MILESTONES = [
   { at: 3, color: "#f97316" },
   { at: 1, color: "#ef4444" },
 ];
+
+// ============================================================
+// [🧱 BLOCK: NPC Collision Hitbox]
+// Reduced hitbox centered on the 36×48 NPC rect.
+// Offset from npc.x/npc.y to center the smaller box.
+// ============================================================
+const NPC_COL_W      = 28;
+const NPC_COL_H      = 40;
+const NPC_COL_OFF_X  = (36 - NPC_COL_W) / 2;   // 4px
+const NPC_COL_OFF_Y  = (48 - NPC_COL_H) / 2;   // 4px
+
+// ============================================================
+// [🧱 BLOCK: pushPlayerOutOfNPC]
+// AABB push/slide — displaces the player out of the NPC
+// collision box on the axis of least overlap.
+// Only runs when shopNpc is active and rects actually overlap.
+// ============================================================
+function pushPlayerOutOfNPC(player: Player, npc: ShopNPC): void {
+  if (!npc.isActive) return;
+
+  // Reduced collision box for NPC
+  const nx = npc.x + NPC_COL_OFF_X;
+  const ny = npc.y + NPC_COL_OFF_Y;
+  const nw = NPC_COL_W;
+  const nh = NPC_COL_H;
+
+  const px = player.x;
+  const py = player.y;
+  const pw = player.width;
+  const ph = player.height;
+
+  // No overlap — nothing to do
+  if (px + pw <= nx || px >= nx + nw || py + ph <= ny || py >= ny + nh) return;
+
+  // Overlap depths on each axis
+  const overlapLeft  = (px + pw) - nx;       // player right into npc left
+  const overlapRight = (nx + nw) - px;       // player left  into npc right
+  const overlapTop   = (py + ph) - ny;       // player bottom into npc top
+  const overlapBot   = (ny + nh) - py;       // player top   into npc bottom
+
+  const minX = Math.min(overlapLeft, overlapRight);
+  const minY = Math.min(overlapTop,  overlapBot);
+
+  // Push on axis of least penetration
+  if (minX < minY) {
+    if (overlapLeft < overlapRight) {
+      player.x  -= overlapLeft;
+      player.vx  = Math.min(0, player.vx);
+    } else {
+      player.x  += overlapRight;
+      player.vx  = Math.max(0, player.vx);
+    }
+  } else {
+    if (overlapTop < overlapBot) {
+      player.y  -= overlapTop;
+      player.vy  = Math.min(0, player.vy);
+    } else {
+      player.y  += overlapBot;
+      player.vy  = Math.max(0, player.vy);
+    }
+  }
+}
 
 // ============================================================
 // [🧱 BLOCK: HUD State]
@@ -487,8 +551,13 @@ export default function GameCanvas() {
     state.camera.update(player, worldW, worldH);
     render.drawWorld(ctx, state.camera, state.screenW, state.screenH, isBoss);
     player.update(input);
+
+    // ── World boundary clamp ───────────────────────────────
     player.x = Math.max(0, Math.min(worldW - player.width,  player.x));
     player.y = Math.max(0, Math.min(worldH - player.height, player.y));
+
+    // ── ShopNPC solid collision ────────────────────────────
+    if (state.shopNpc) pushPlayerOutOfNPC(player, state.shopNpc);
 
     if (isHorde) {
       const prevKills = state.totalKills; const prevHp = player.hp;

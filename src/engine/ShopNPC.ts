@@ -18,7 +18,7 @@ const INTERACT_RADIUS  = 70;
 // Same fixed-canvas alignment approach as Player.ts.
 // Draw size is larger than hitbox — centered on it.
 // ============================================================
-const DRAW_SIZE  = 128;
+const DRAW_SIZE  = 128;  // px width/height to draw sprites at (scaled up from source)
 const DRAW_OFF_X = (NPC_W - DRAW_SIZE) / 2;   // center horizontally on hitbox
 const DRAW_OFF_Y = (NPC_H - DRAW_SIZE) / 2;   // center vertically on hitbox
 
