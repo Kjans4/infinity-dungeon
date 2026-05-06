@@ -16,12 +16,12 @@ export interface PlayerSpriteSet {
   feetMoving2: HTMLImageElement;
   leftArm:     HTMLImageElement;
   rightArm:    HTMLImageElement;
+  sword:       HTMLImageElement;
   ready:       boolean;
 }
 
 // ============================================================
 // [🧱 BLOCK: Lazy Loader]
-// Created once on first getPlayerSprites() call, then cached.
 // ============================================================
 let _sprites: PlayerSpriteSet | null = null;
 
@@ -41,6 +41,7 @@ export function getPlayerSprites(): PlayerSpriteSet {
   const feetMoving2 = loadImage('/assets/sprites/player/feet_moving2.png');
   const leftArm     = loadImage('/assets/sprites/weapons/left_arm.png');
   const rightArm    = loadImage('/assets/sprites/weapons/right_arm.png');
+  const sword       = loadImage('/assets/sprites/weapons/sword.png');
 
   _sprites = {
     head,
@@ -50,6 +51,7 @@ export function getPlayerSprites(): PlayerSpriteSet {
     feetMoving2,
     leftArm,
     rightArm,
+    sword,
     get ready(): boolean {
       return (
         head.complete        && head.naturalWidth        > 0 &&
@@ -58,7 +60,8 @@ export function getPlayerSprites(): PlayerSpriteSet {
         feetMoving1.complete && feetMoving1.naturalWidth > 0 &&
         feetMoving2.complete && feetMoving2.naturalWidth > 0 &&
         leftArm.complete     && leftArm.naturalWidth     > 0 &&
-        rightArm.complete    && rightArm.naturalWidth    > 0
+        rightArm.complete    && rightArm.naturalWidth    > 0 &&
+        sword.complete       && sword.naturalWidth       > 0
       );
     },
   };
