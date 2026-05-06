@@ -28,34 +28,45 @@ const BLOCK_HIT_IFRAMES = 300;
 
 // ============================================================
 // [🧱 BLOCK: Sprite Layout Constants]
-// All PNG files share the same canvas size — art was exported
-// on a fixed canvas so layers align perfectly when drawn at the
-// same (x, y, w, h). No per-layer offsets needed.
-// Draw size slightly larger than hitbox so the character reads
-// clearly at game scale. Centered on the 32×32 hitbox.
 // ============================================================
 const HITBOX_W   = 32;
 const HITBOX_H   = 32;
-const DRAW_SIZE  = 100;                          // render size in pixels
-const DRAW_OFF_X = (HITBOX_W - DRAW_SIZE) / 2; // -8 — center horizontally
-const DRAW_OFF_Y = (HITBOX_H - DRAW_SIZE) / 2; // -8 — center vertically
+const DRAW_SIZE  = 100;
+const DRAW_OFF_X = (HITBOX_W - DRAW_SIZE) / 2;
+const DRAW_OFF_Y = (HITBOX_H - DRAW_SIZE) / 2;
 
 // ============================================================
 // [🧱 BLOCK: Idle Animation Constants]
-// Breathe: body + head bob vertically on a slow sine
-// Sway:    head drifts horizontally on a slower, offset sine
 // ============================================================
-const BREATHE_AMPLITUDE = 2.0;    // px up/down
-const BREATHE_PERIOD    = 1500;   // ms per full cycle
-const SWAY_AMPLITUDE    = 1.5;    // px left/right (head only)
-const SWAY_PERIOD       = 2500;   // ms per full cycle
-const SWAY_PHASE_OFFSET = 800;    // ms — head sways slightly behind breathe
+const BREATHE_AMPLITUDE = 2.0;
+const BREATHE_PERIOD    = 1500;
+const SWAY_AMPLITUDE    = 1.5;
+const SWAY_PERIOD       = 2500;
+const SWAY_PHASE_OFFSET = 800;
 
 // ============================================================
 // [🧱 BLOCK: Walk Animation Constants]
 // ============================================================
-const WALK_FRAME_MS      = 150;   // ms per foot frame alternation
-const WALK_SPEED_THRESH  = 0.3;   // min speed to count as moving
+const WALK_FRAME_MS      = 150;
+const WALK_SPEED_THRESH  = 0.3;
+
+// ============================================================
+// [🧱 BLOCK: Arm Animation Constants]
+// Idle:   arms breathe vertically with the body (same sine).
+// Walk:   pendulum rotation ±20° around shoulder (top of sprite).
+//         Left and right arms swing opposite phase.
+// Punch:  arm translates forward PUNCH_TRAVEL px in 80ms,
+//         snaps back over 120ms. Alternates L→R→L→R.
+// Charge: right arm pulls back up to CHARGE_PULL_MAX px while
+//         charge is held, releases on attack.
+// ============================================================
+const ARM_WALK_MAX_ANGLE  = 20;         // degrees
+const ARM_WALK_PERIOD     = WALK_FRAME_MS * 2; // full swing cycle matches feet
+const PUNCH_TRAVEL        = 14;         // px forward translate
+const PUNCH_OUT_MS        = 80;         // ms to reach full extension
+const PUNCH_BACK_MS       = 120;        // ms to return to rest
+const PUNCH_TOTAL_MS      = PUNCH_OUT_MS + PUNCH_BACK_MS;
+const CHARGE_PULL_MAX     = 10;         // px backward pull at full charge
 
 // ============================================================
 // [🧱 BLOCK: Combat State Types]
@@ -128,13 +139,22 @@ export class Player {
 
   // ============================================================
   // [🧱 BLOCK: Animation State]
-  // walkTimer    — accumulates ms, flips foot frame at threshold
-  // walkFrame    — 0 = feetMoving1, 1 = feetMoving2
-  // animClock    — global ms clock for idle sine waves
   // ============================================================
-  private walkTimer: number  = 0;
-  private walkFrame: number  = 0;
-  private animClock: number  = 0;
+  private walkTimer:  number = 0;
+  private walkFrame:  number = 0;
+  private animClock:  number = 0;
+
+  // ── Arm animation state ────────────────────────────────────
+  // punchArm:       which arm fires next (alternates)
+  // punchTimer:     0→PUNCH_TOTAL_MS while a punch is in flight
+  // punchingArm:    which arm is currently mid-punch
+  // walkArmAngle:   current pendulum angle in degrees (signed)
+  // walkArmDir:     +1 / -1 drives the pendulum oscillation
+  private punchArm:     'right' | 'left' = 'right';
+  private punchTimer:   number           = 0;
+  private punchingArm:  'right' | 'left' = 'right';
+  private walkArmAngle: number           = 0;
+  private walkArmDir:   number           = 1;
 
   constructor(x: number, y: number) {
     this.x = x;
@@ -280,7 +300,6 @@ export class Player {
         this.walkFrame = this.walkFrame === 0 ? 1 : 0;
       }
     } else {
-      // Reset to idle stance when stopping
       this.walkTimer = 0;
       this.walkFrame = 0;
     }
@@ -288,9 +307,56 @@ export class Player {
     // ── Global animation clock ────────────────────────────────
     this.animClock += 16;
 
+    // ── Arm animation tick ────────────────────────────────────
+    this.updateArmAnimation(isMoving);
+
     this.prevLight = lightDown;
     this.prevHeavy = heavyDown;
     this.prevBlock = blockDown;
+  }
+
+  // ============================================================
+  // [🧱 BLOCK: Arm Animation Tick]
+  // Called every frame from update(). Advances:
+  //   - punchTimer (punch translate lifecycle)
+  //   - walkArmAngle (pendulum swing while moving)
+  // The charge pull offset is computed live in draw() from
+  // chargeTimer/chargeState so it tracks the charge naturally.
+  // ============================================================
+  private updateArmAnimation(isMoving: boolean): void {
+    // ── Punch timer ───────────────────────────────────────────
+    if (this.punchTimer > 0) {
+      this.punchTimer = Math.max(0, this.punchTimer - 16);
+    }
+
+    // ── Walk pendulum ─────────────────────────────────────────
+    if (isMoving) {
+      // Advance angle by a fixed step each frame, reverse at ±MAX
+      this.walkArmAngle += this.walkArmDir * (ARM_WALK_MAX_ANGLE * 2 / (ARM_WALK_PERIOD / 16));
+      if (this.walkArmAngle >=  ARM_WALK_MAX_ANGLE) {
+        this.walkArmAngle =  ARM_WALK_MAX_ANGLE;
+        this.walkArmDir   = -1;
+      } else if (this.walkArmAngle <= -ARM_WALK_MAX_ANGLE) {
+        this.walkArmAngle = -ARM_WALK_MAX_ANGLE;
+        this.walkArmDir   =  1;
+      }
+    } else {
+      // Ease back to 0 when stopped
+      this.walkArmAngle *= 0.82;
+      if (Math.abs(this.walkArmAngle) < 0.5) this.walkArmAngle = 0;
+    }
+  }
+
+  // ============================================================
+  // [🧱 BLOCK: Trigger Punch Animation]
+  // Called by fireNormalAttack / fireChargedAttack so the arm
+  // animates exactly when the hit is registered.
+  // ============================================================
+  private triggerPunchAnimation(): void {
+    this.punchingArm = this.punchArm;
+    this.punchTimer  = PUNCH_TOTAL_MS;
+    // Alternate for next punch
+    this.punchArm = this.punchArm === 'right' ? 'left' : 'right';
   }
 
   // ============================================================
@@ -432,6 +498,7 @@ export class Player {
     const atk = this.equippedWeapon.getAttack(mode);
     if (this.stamina < atk.staminaCost) return;
     this.startWeaponAttack(mode, atk);
+    this.triggerPunchAnimation();
   }
 
   // ============================================================
@@ -458,6 +525,7 @@ export class Player {
       this.vx += this.facing.x * 4;
       this.vy += this.facing.y * 4;
     }
+    this.triggerPunchAnimation();
   }
 
   // ============================================================
@@ -521,9 +589,7 @@ export class Player {
   }
 
   // ============================================================
-  // [🧱 BLOCK: Draw — Idle Animation Helpers]
-  // Returns the current breathe and sway offsets for this frame.
-  // Both are 0 while moving so motion doesn't fight the idle anim.
+  // [🧱 BLOCK: Draw — Idle Offsets]
   // ============================================================
   private getIdleOffsets(isMoving: boolean): { breatheY: number; swayX: number } {
     if (isMoving) return { breatheY: 0, swayX: 0 };
@@ -535,12 +601,129 @@ export class Player {
   }
 
   // ============================================================
+  // [🧱 BLOCK: Draw — Arm Offsets]
+  // Returns the (translateX, translateY, rotateDeg, pivotX, pivotY)
+  // for a given arm based on current animation state.
+  //
+  // Priority order:
+  //   1. Punch in progress — translate forward/back along facing
+  //   2. Charge held      — translate backward along facing
+  //   3. Walking          — pendulum rotation (opposite phases)
+  //   4. Idle             — vertical breathe (same as body)
+  //
+  // pivotX/Y are in sprite-local coords (from the arm image top-left)
+  // for the rotation transform. Shoulder sits at roughly the
+  // vertical center of the upper half of the 100px sprite (~25px
+  // from the top of the draw rect).
+  // ============================================================
+  private getArmOffsets(
+    arm:       'left' | 'right',
+    isMoving:  boolean,
+    breatheY:  number,
+  ): { tx: number; ty: number; rotateDeg: number; pivotX: number; pivotY: number } {
+    const facingX = this.facing.x;
+    const facingY = this.facing.y;
+
+    // Shoulder pivot: top-center of the sprite draw rect.
+    // Draw rect starts at (sx + DRAW_OFF_X, sy + DRAW_OFF_Y).
+    // DRAW_SIZE = 100. Shoulder ~25% from top.
+    const pivotX = DRAW_SIZE / 2;         // 50 — horizontal center
+    const pivotY = DRAW_SIZE * 0.25;      // 25 — shoulder height
+
+    // ── 1. Punch translate ────────────────────────────────────
+    if (this.punchTimer > 0 && this.punchingArm === arm) {
+      const t = this.punchTimer;
+      let travel: number;
+      if (t > PUNCH_BACK_MS) {
+        // Out phase: timer goes PUNCH_TOTAL → PUNCH_BACK, progress 0→1
+        const progress = (t - PUNCH_BACK_MS) / PUNCH_OUT_MS;
+        travel = progress * PUNCH_TRAVEL;
+      } else {
+        // Back phase: timer goes PUNCH_BACK → 0, progress 0→1
+        const progress = t / PUNCH_BACK_MS;
+        travel = progress * PUNCH_TRAVEL;
+      }
+      return {
+        tx:        facingX * travel,
+        ty:        facingY * travel + breatheY,
+        rotateDeg: 0,
+        pivotX,
+        pivotY,
+      };
+    }
+
+    // ── 2. Charge pull-back (right arm only for light+heavy) ──
+    const isCharging = this.chargeState !== 'none';
+    if (isCharging && arm === 'right') {
+      const chargeThreshold = this.chargeState === 'charging_heavy' || this.chargeState === 'charged_heavy'
+        ? CHARGE_HEAVY_THRESHOLD
+        : CHARGE_LIGHT_THRESHOLD;
+      const pullProgress = Math.min(this.chargeTimer / chargeThreshold, 1);
+      const pull = pullProgress * CHARGE_PULL_MAX;
+      return {
+        tx:        -facingX * pull,
+        ty:        -facingY * pull + breatheY,
+        rotateDeg: 0,
+        pivotX,
+        pivotY,
+      };
+    }
+
+    // ── 3. Walk pendulum ──────────────────────────────────────
+    if (isMoving) {
+      // Left and right arms swing opposite phases
+      const angle = arm === 'right' ? this.walkArmAngle : -this.walkArmAngle;
+      return { tx: 0, ty: 0, rotateDeg: angle, pivotX, pivotY };
+    }
+
+    // ── 4. Idle breathe ───────────────────────────────────────
+    return { tx: 0, ty: breatheY, rotateDeg: 0, pivotX, pivotY };
+  }
+
+  // ============================================================
+  // [🧱 BLOCK: Draw — Single Arm Layer]
+  // Applies translate + pivot rotation then draws the arm image.
+  // ctx is already in the facing-flip transform space.
+  // ============================================================
+  private drawArm(
+    ctx:    CanvasRenderingContext2D,
+    img:    HTMLImageElement,
+    baseX:  number,   // sx + DRAW_OFF_X
+    baseY:  number,   // sy + DRAW_OFF_Y
+    opts:   { tx: number; ty: number; rotateDeg: number; pivotX: number; pivotY: number }
+  ): void {
+    const { tx, ty, rotateDeg, pivotX, pivotY } = opts;
+    const drawX = baseX + tx;
+    const drawY = baseY + ty;
+
+    if (rotateDeg === 0) {
+      ctx.drawImage(img, drawX, drawY, DRAW_SIZE, DRAW_SIZE);
+      return;
+    }
+
+    // Rotate around pivot point (shoulder)
+    const rad     = (rotateDeg * Math.PI) / 180;
+    const absPixX = drawX + pivotX;
+    const absPixY = drawY + pivotY;
+
+    ctx.save();
+    ctx.translate(absPixX, absPixY);
+    ctx.rotate(rad);
+    ctx.translate(-absPixX, -absPixY);
+    ctx.drawImage(img, drawX, drawY, DRAW_SIZE, DRAW_SIZE);
+    ctx.restore();
+  }
+
+  // ============================================================
   // [🧱 BLOCK: Draw — Sprite Layers]
-  // All PNGs share the same canvas size so they stack perfectly
-  // at identical coordinates — no per-layer offsets required.
-  // Draw order: feet → body → head (bottom to top).
-  // Flips horizontally when facing left via ctx transform.
-  // Idle breathe applied to body+head; sway applied to head only.
+  // Layer order:
+  //   1. feet
+  //   2. left_arm  (behind body)
+  //   3. body
+  //   4. head
+  //   5. right_arm (in front of body)
+  //
+  // Tint overlay applied after all layers via source-atop.
   // ============================================================
   private drawSpriteLayers(
     ctx:       CanvasRenderingContext2D,
@@ -556,7 +739,6 @@ export class Player {
       ? (this.walkFrame === 0 ? s.feetMoving1 : s.feetMoving2)
       : s.feetIdle;
 
-    // Draw position — centered on hitbox
     const dx = sx + DRAW_OFF_X;
     const dy = sy + DRAW_OFF_Y;
     const dw = DRAW_SIZE;
@@ -573,21 +755,35 @@ export class Player {
       ctx.translate(-centerX, 0);
     }
 
-    // ── Feet — grounded, no breathe ───────────────────────────
+    // ── 1. Feet ───────────────────────────────────────────────
     ctx.drawImage(feetImg, dx, dy, dw, dh);
 
-    // ── Body — breathes vertically ────────────────────────────
+    // ── 2. Left arm (behind body) ─────────────────────────────
+    {
+      const armOpts = this.getArmOffsets('left', isMoving, breatheY);
+      this.drawArm(ctx, s.leftArm, dx, dy, armOpts);
+    }
+
+    // ── 3. Body ───────────────────────────────────────────────
     ctx.drawImage(s.body, dx, dy + breatheY, dw, dh);
 
-    // ── Head — breathes + sways horizontally ──────────────────
+    // ── 4. Head ───────────────────────────────────────────────
     ctx.drawImage(s.head, dx + swayX, dy + breatheY, dw, dh);
 
-    // ── Tint overlay for combat states / hit flash ────────────
+    // ── 5. Right arm (in front of body) ──────────────────────
+    {
+      const armOpts = this.getArmOffsets('right', isMoving, breatheY);
+      this.drawArm(ctx, s.rightArm, dx, dy, armOpts);
+    }
+
+    // ── Tint overlay ──────────────────────────────────────────
     if (tintColor) {
       ctx.globalCompositeOperation = 'source-atop';
-      ctx.drawImage(feetImg, dx,           dy,              dw, dh);
-      ctx.drawImage(s.body,  dx,           dy + breatheY,   dw, dh);
-      ctx.drawImage(s.head,  dx + swayX,   dy + breatheY,   dw, dh);
+      ctx.drawImage(feetImg, dx,           dy,            dw, dh);
+      ctx.drawImage(s.leftArm, dx,         dy,            dw, dh);
+      ctx.drawImage(s.body,  dx,           dy + breatheY, dw, dh);
+      ctx.drawImage(s.head,  dx + swayX,   dy + breatheY, dw, dh);
+      ctx.drawImage(s.rightArm, dx,        dy,            dw, dh);
       ctx.globalAlpha              = 0.55;
       ctx.fillStyle                = tintColor;
       ctx.globalCompositeOperation = 'source-atop';
@@ -601,13 +797,9 @@ export class Player {
 
   // ============================================================
   // [🧱 BLOCK: Draw]
-  // Sprite version — replaces the colored fillRect body.
-  // Falls back to fillRect if sprites haven't loaded yet.
-  // All combat overlays (charge ring, parry ring, block ring,
-  // parry flash, dash afterimage, HP/stamina bars) are preserved.
   // ============================================================
   draw(ctx: CanvasRenderingContext2D, camera: Camera): void {
-    // ── iFrame flicker (not during invisibility) ──────────────
+    // ── iFrame flicker ────────────────────────────────────────
     if (!this.isInvisible &&
         !this.isHit &&
         this.iFrames > 0 &&
@@ -616,7 +808,6 @@ export class Player {
       return;
     }
 
-    // ── Skip full draw when invisible ─────────────────────────
     if (this.isInvisible) return;
 
     const sx = camera.toScreenX(this.x);
@@ -715,8 +906,7 @@ export class Player {
       ctx.stroke();
     }
 
-    // ── Determine tint color for combat states ─────────────────
-    // null = no tint (normal rendering)
+    // ── Tint color ────────────────────────────────────────────
     const tintColor: string | null =
       this.isHit                                              ? '#ffffff'  :
       this.isDashing                                          ? '#38bdf8'  :
@@ -727,11 +917,10 @@ export class Player {
       (this.isChargingLight || this.isChargingHeavy)          ? '#fca5a5'  :
       null;
 
-    // ── Sprite body (or fallback rect) ────────────────────────
+    // ── Sprite body ───────────────────────────────────────────
     if (getPlayerSprites().ready) {
       this.drawSpriteLayers(ctx, sx, sy, isMoving, tintColor);
     } else {
-      // Fallback colored rect while sprites are loading
       ctx.fillStyle = tintColor ?? '#f87171';
       ctx.fillRect(sx, sy, this.width, this.height);
     }

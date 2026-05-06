@@ -14,6 +14,8 @@ export interface PlayerSpriteSet {
   feetIdle:    HTMLImageElement;
   feetMoving1: HTMLImageElement;
   feetMoving2: HTMLImageElement;
+  leftArm:     HTMLImageElement;
+  rightArm:    HTMLImageElement;
   ready:       boolean;
 }
 
@@ -37,6 +39,8 @@ export function getPlayerSprites(): PlayerSpriteSet {
   const feetIdle    = loadImage('/assets/sprites/player/feet_idle.png');
   const feetMoving1 = loadImage('/assets/sprites/player/feet_moving1.png');
   const feetMoving2 = loadImage('/assets/sprites/player/feet_moving2.png');
+  const leftArm     = loadImage('/assets/sprites/weapons/left_arm.png');
+  const rightArm    = loadImage('/assets/sprites/weapons/right_arm.png');
 
   _sprites = {
     head,
@@ -44,13 +48,17 @@ export function getPlayerSprites(): PlayerSpriteSet {
     feetIdle,
     feetMoving1,
     feetMoving2,
+    leftArm,
+    rightArm,
     get ready(): boolean {
       return (
         head.complete        && head.naturalWidth        > 0 &&
         body.complete        && body.naturalWidth        > 0 &&
         feetIdle.complete    && feetIdle.naturalWidth    > 0 &&
         feetMoving1.complete && feetMoving1.naturalWidth > 0 &&
-        feetMoving2.complete && feetMoving2.naturalWidth > 0
+        feetMoving2.complete && feetMoving2.naturalWidth > 0 &&
+        leftArm.complete     && leftArm.naturalWidth     > 0 &&
+        rightArm.complete    && rightArm.naturalWidth    > 0
       );
     },
   };
