@@ -56,19 +56,14 @@ const REMAINING_MILESTONES = [
 
 // ============================================================
 // [🧱 BLOCK: NPC Collision Hitbox]
-// Reduced hitbox centered on the 36×48 NPC rect.
-// Offset from npc.x/npc.y to center the smaller box.
 // ============================================================
 const NPC_COL_W      = 28;
 const NPC_COL_H      = 40;
-const NPC_COL_OFF_X  = (36 - NPC_COL_W) / 2;   // 4px
-const NPC_COL_OFF_Y  = (48 - NPC_COL_H) / 2;   // 4px
+const NPC_COL_OFF_X  = (36 - NPC_COL_W) / 2;
+const NPC_COL_OFF_Y  = (48 - NPC_COL_H) / 2;
 
 // ============================================================
 // [🧱 BLOCK: pushPlayerOutOfNPC]
-// AABB push/slide — displaces the player out of the NPC
-// collision box on the axis of least overlap.
-// Only runs when shopNpc is active and rects actually overlap.
 // ============================================================
 function pushPlayerOutOfNPC(player: Player, npc: ShopNPC): void {
   if (!npc.isActive) return;
@@ -262,7 +257,9 @@ export default function GameCanvas() {
         if (ui.menu || ui.shop || ui.gameOver) return;
         const state = stateRef.current;
         if (!state) return;
-        if (state.door?.playerIsNear)    { handleDoorEnter(); return; }
+        // ── Use ref so we always call the latest version of
+        //    handleDoorEnter even though this closure is registered once
+        if (state.door?.playerIsNear)    { handleDoorEnterRef.current(); return; }
         if (state.shopNpc?.playerIsNear) {
           state.playerStats.generateShopOptions();
           setIsMidRoom(true); setShowShop(true);
@@ -420,6 +417,17 @@ export default function GameCanvas() {
     }
   }, [announce, resetFloorTracking]);
 
+  // ============================================================
+  // [🧱 BLOCK: Door Enter Ref — always current]
+  // Keeps a ref pointing to the latest handleDoorEnter so the
+  // onKeyDown closure (registered once with empty deps) never
+  // calls a stale version after roomRef advances.
+  // ============================================================
+  const handleDoorEnterRef = useRef(handleDoorEnter);
+  useEffect(() => {
+    handleDoorEnterRef.current = handleDoorEnter;
+  }, [handleDoorEnter]);
+
   const handleNpcClose       = useCallback(() => { setShowShop(false); setIsMidRoom(false); }, []);
   const handleInventoryClose = useCallback(() => { setShowInventory(false); }, []);
   const handleVictoryClose   = useCallback(() => { setIsVictory(false); setVictoryMinimized(true); }, []);
@@ -429,10 +437,6 @@ export default function GameCanvas() {
 
   // ============================================================
   // [🧱 BLOCK: Equip Drop]
-  // Uses claim* methods — item drops are free loot, no gold check.
-  // If a slot is already occupied the old item is ejected as a new
-  // drop near the player so it is never silently destroyed.
-  // applyToPlayer() is called inside every claim* method already.
   // ============================================================
   const handleEquipDrop = useCallback((drop: ItemDrop) => {
     const state = stateRef.current; if (!state) return;
@@ -457,12 +461,9 @@ export default function GameCanvas() {
       state.playerStats.claimArmor(ai, player);
 
     } else if (item.kind === 'charm') {
-      // claimCharm returns false if charm slots are full —
-      // Inventory already disables the button, but guard here too.
       state.playerStats.claimCharm(item as any, player);
     }
 
-    // Remove this drop from the world
     drop.collected = true;
     const idx = state.itemDrops.findIndex((d) => d === drop);
     if (idx !== -1) state.itemDrops.splice(idx, 1);
@@ -481,7 +482,7 @@ export default function GameCanvas() {
     announce("DEV: ALL ENEMIES KILLED", "Gate is open", "#f87171");
   }, [announce]);
 
-  const handleDevSkipRoom    = useCallback(() => { handleDoorEnter(); announce("DEV: ROOM SKIPPED", undefined, "#38bdf8"); }, [handleDoorEnter, announce]);
+  const handleDevSkipRoom    = useCallback(() => { handleDoorEnterRef.current(); announce("DEV: ROOM SKIPPED", undefined, "#38bdf8"); }, [announce]);
   const handleDevSkipToElite = useCallback(() => {
     const state = stateRef.current; if (!state) return;
     const rs: RoomState = { floor: roomRef.current.floor, roomInCycle: 3, roomDisplay: 3, phase: 'elite' };
@@ -634,8 +635,6 @@ export default function GameCanvas() {
 
   // ============================================================
   // [🧱 BLOCK: Nearby Drops — filtered]
-  // Only pass drops where playerIsNear is true so the Inventory
-  // panel only shows items the player is actually standing next to.
   // ============================================================
   const nearbyDrops = state
     ? state.itemDrops.filter((d) => !d.collected && d.playerIsNear)
@@ -647,7 +646,6 @@ export default function GameCanvas() {
       {!showMenu && <HUD hp={hud.hp} maxHp={MAX_HP} stamina={hud.stamina} maxStamina={MAX_STAMINA} kills={hud.kills} killThreshold={threshold} room={hud.room} floor={hud.floor} gold={gold} bossHp={hud.bossHp} bossMaxHp={hud.bossMaxHp} bossIsEnraged={hud.bossIsEnraged} roomPhase={roomRef.current.phase} hotbar={hud.hotbar} />}
       {!showMenu && !isGameOver && <Minimap state={stateRef.current} isBoss={roomRef.current.phase==='boss'||roomRef.current.phase==='victory'} />}
 
-      {/* ── Shop ── */}
       {showShop && state && (
         <Shop
           floor={roomRef.current.floor}
