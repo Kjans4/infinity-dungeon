@@ -21,8 +21,6 @@ type PhantomState =
 
 // ============================================================
 // [🧱 BLOCK: Stats]
-// Base HP raised: 300 → 550
-// Base damage raised and floor-scaled via getBossDamageScale
 // ============================================================
 const STATS = {
   baseHp:          550,
@@ -39,15 +37,13 @@ const STATS = {
 
 // ============================================================
 // [🧱 BLOCK: Timing Constants]
-// Faster across the board — Phantom blinks and attacks more.
-// Rage at 60% HP.
 // ============================================================
 const BLINK_MARGIN = 120;
-const FADE_MS      = 350;   // was 500 — snappier blink
-const WARN_MS      = 900;   // was 1200
-const WARN_RAGE    = 550;   // was 750
-const COOL_MS      = 950;   // was 1400
-const COOL_RAGE    = 550;   // was 900
+const FADE_MS      = 350;
+const WARN_MS      = 900;
+const WARN_RAGE    = 550;
+const COOL_MS      = 950;
+const COOL_RAGE    = 550;
 const RAGE_THRESHOLD = 0.60;
 
 // ============================================================
@@ -83,7 +79,7 @@ export class Phantom extends BaseEnemy {
   }
 
   // ============================================================
-  // [🧱 BLOCK: Effective Damage — floor scaled + variant + rage]
+  // [🧱 BLOCK: Effective Damage]
   // ============================================================
   private get rageMult(): number { return this.isEnraged ? 1.25 : 1.0; }
 
@@ -95,7 +91,19 @@ export class Phantom extends BaseEnemy {
   get shootDamage()   { return this.aimedDamageFinal; }
 
   // ============================================================
-  // [🧱 BLOCK: Rage Check — 60% HP]
+  // [🧱 BLOCK: takeDamage Override — intangible guard]
+  // bypassIntangible=true is passed by BossSystem on a successful
+  // parry stagger so damage is never silently dropped mid-blink.
+  // Without the bypass, parrying during the blink window felt
+  // broken — the flash and stagger played but dealt zero damage.
+  // ============================================================
+  takeDamage(amount: number, bypassIntangible = false): void {
+    if (this.isIntangible && !bypassIntangible) return;
+    super.takeDamage(amount);
+  }
+
+  // ============================================================
+  // [🧱 BLOCK: Rage Check]
   // ============================================================
   private checkRage(): void {
     if (!this.isEnraged && this.hp / this.maxHp <= RAGE_THRESHOLD) {
@@ -103,14 +111,6 @@ export class Phantom extends BaseEnemy {
       this.justEnragedThisFrame = true;
       this.color                = STATS.rageColor;
     }
-  }
-
-  // ============================================================
-  // [🧱 BLOCK: Override takeDamage — intangible blocks hits]
-  // ============================================================
-  takeDamage(amount: number): void {
-    if (this.isIntangible) return;
-    super.takeDamage(amount);
   }
 
   // ============================================================
@@ -145,11 +145,10 @@ export class Phantom extends BaseEnemy {
 
   // ============================================================
   // [🧱 BLOCK: Fire Aimed Volley]
-  // Floor 1 now fires 2 projectiles (was 1) — more threatening early.
   // ============================================================
   private fireAimed(ecx: number, ecy: number, pcx: number, pcy: number): void {
     const base  = Math.atan2(pcy - ecy, pcx - ecx);
-    const count = this.floor >= 2 ? 3 : 2;   // floor 1 now fires 2 instead of 1
+    const count = this.floor >= 2 ? 3 : 2;
     const step  = Math.PI / 10;
     const dmg   = this.aimedDamageFinal;
     for (let i = 0; i < count; i++) {
