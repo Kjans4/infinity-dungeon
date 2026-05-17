@@ -1,7 +1,7 @@
 // src/engine/ConsumableSystem.ts
 import { GameState }          from "./GameState";
 import { Player }             from "./Player";
-import { ConsumableDef, getEffectsAtLevel } from "./ConsumableRegistry";
+import { ConsumableDef, getEffectsAtLevel, CONSUMABLE_REGISTRY } from "./ConsumableRegistry";
 import {
   ConsumableProjectile,
   ConsumableExplosion,
@@ -33,25 +33,6 @@ const VOID_PULL_STRENGTH_BOSS_MULT = 0.5;
 const BLINK_IFRAMES      = 400;
 
 const WARD_VISUAL_RADIUS = 38;
-
-// ============================================================
-// [🧱 BLOCK: Level-Aware Stat Helpers]
-// Convenience wrappers that read from the leveled effect array.
-// All callers pass `state` so we can look up the current level.
-// ============================================================
-function getFireballStats(state: GameState): { damage: number; aoeRadius: number } {
-  const def = state.playerConsumables['bag'].get('fireball_scroll')?.def
-    ?? Object.values(require('./ConsumableRegistry').CONSUMABLE_REGISTRY)
-       .find((d: any) => d.id === 'fireball_scroll') as ConsumableDef;
-  // Re-import cleanly via the registry record
-  const regDef = (require('./ConsumableRegistry').CONSUMABLE_REGISTRY as Record<string, ConsumableDef>)['fireball_scroll'];
-  const level  = state.playerConsumables.getLevel('fireball_scroll');
-  const fx     = getEffectsAtLevel(regDef, level);
-  return {
-    damage:    (fx[0] ?? 45) + state.playerStats.atkBonus,
-    aoeRadius: fx[1] ?? 90,
-  };
-}
 
 // ============================================================
 // [🧱 BLOCK: Boss Hit Helpers]
@@ -198,6 +179,7 @@ export class ConsumableSystem {
   // [🧱 BLOCK: Buff Query Helpers — Level-Aware]
   // Used by HordeSystem and BossSystem to read active buffs
   // when computing damage received by the player.
+  // Uses direct static import of CONSUMABLE_REGISTRY — no require().
   // ============================================================
 
   /**
@@ -207,11 +189,8 @@ export class ConsumableSystem {
   static wrathAtkBonus(state: GameState): number {
     if (!state.playerConsumables.isActive('wrath_potion')) return 0;
     const level = state.playerConsumables.getLevel('wrath_potion');
-    // effectsByLevel[level-1][0] = atkBonus
-    const registry = ConsumableSystem._getRegistry(state);
-    const def = registry['wrath_potion'];
-    if (!def) return 25;
-    const fx = getEffectsAtLevel(def, level);
+    const def   = CONSUMABLE_REGISTRY['wrath_potion'];
+    const fx    = getEffectsAtLevel(def, level);
     return fx[0] ?? 25;
   }
 
@@ -224,11 +203,9 @@ export class ConsumableSystem {
    */
   static ironDamageReductionMult(state: GameState): number {
     if (!state.playerConsumables.isActive('iron_potion')) return 1.0;
-    const level = state.playerConsumables.getLevel('iron_potion');
-    const registry = ConsumableSystem._getRegistry(state);
-    const def = registry['iron_potion'];
-    if (!def) return 0.6;
-    const fx = getEffectsAtLevel(def, level);
+    const level     = state.playerConsumables.getLevel('iron_potion');
+    const def       = CONSUMABLE_REGISTRY['iron_potion'];
+    const fx        = getEffectsAtLevel(def, level);
     const reduction = fx[0] ?? 0.4;
     return 1.0 - reduction;
   }
@@ -255,22 +232,6 @@ export class ConsumableSystem {
     slot.wardHits--;
     if (slot.wardHits <= 0) slot.durationMs = 0;
     return true;
-  }
-
-  // ============================================================
-  // [🧱 BLOCK: Registry Cache Helper]
-  // Avoids re-importing the registry each call. Returns the
-  // CONSUMABLE_REGISTRY record typed as a plain object.
-  // ============================================================
-  private static _registryCache: Record<string, ConsumableDef> | null = null;
-
-  private static _getRegistry(_state: GameState): Record<string, ConsumableDef> {
-    if (!ConsumableSystem._registryCache) {
-      // eslint-disable-next-line @typescript-eslint/no-var-requires
-      ConsumableSystem._registryCache =
-        require('./ConsumableRegistry').CONSUMABLE_REGISTRY as Record<string, ConsumableDef>;
-    }
-    return ConsumableSystem._registryCache;
   }
 
   // ============================================================
