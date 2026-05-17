@@ -56,13 +56,6 @@ const TANK_RADIUS_BONUS   = 10;
 
 // ============================================================
 // [🧱 BLOCK: Item Drop Chances]
-// Raised significantly so loot feels rewarding each room.
-//   grunt:   3%  → 20%
-//   shooter: 6%  → 30%
-//   tank:    12% → 20%
-//   dasher:  5%  → 20%
-//   bomber:  8%  → 25%
-// Elite rooms apply a 2× multiplier on top.
 // ============================================================
 const DROP_CHANCE = {
   grunt:   0.20,
@@ -75,7 +68,6 @@ const ELITE_DROP_MULT = 2.0;
 
 // ============================================================
 // [🧱 BLOCK: Consumable Drop Chances]
-// Separate from equipment drops — always rolls independently.
 // ============================================================
 const CONSUMABLE_DROP_CHANCE = {
   grunt:   0.04,
@@ -103,8 +95,6 @@ function goldMultiplierForKills(kills: number, threshold: number): number {
 
 // ============================================================
 // [🧱 BLOCK: Roll Item Drop]
-// Passes floor so the item pool scales with progression.
-// Returns null if nothing rolled or pool is exhausted.
 // ============================================================
 function rollItemDrop(
   state:  GameState,
@@ -124,7 +114,7 @@ function rollItemDrop(
     ownedWeaponId ?? pendingWeaponId,
     [...ownedArmorIds, ...pendingArmorIds],
     1,
-    floor   // ← floor passed so loot tier scales with progression
+    floor
   );
   return pool[0] ?? null;
 }
@@ -453,20 +443,18 @@ export class HordeSystem {
 
     // ── Enemy update + combat resolution ─────────────────────
     state.enemies.forEach((enemy) => {
-      if (!playerIsInvisible) {
-        if (!enemy.isStunned) {
-          enemy.update(player, worldW, worldH);
-        } else {
-          (enemy as any).stunTimer -= 16;
-          if ((enemy as any).stunTimer < 0) (enemy as any).stunTimer = 0;
-          enemy.vx = 0;
-          enemy.vy = 0;
-        }
-      } else {
-        if (enemy.isStunned) {
-          (enemy as any).stunTimer -= 16;
-          if ((enemy as any).stunTimer < 0) (enemy as any).stunTimer = 0;
-        }
+      // ── Tick stun via the proper BaseEnemy method ──────────
+      // tickStun() decrements stunTimer, zero-clamps, zeroes
+      // velocity, and returns true if still stunned.
+      // This replaces the old (enemy as any).stunTimer casts and
+      // keeps all stun logic in a single authoritative place.
+      if (enemy.isStunned) {
+        enemy.tickStun();
+      }
+
+      // Only call update() when not invisible-suppressed AND not stunned
+      if (!playerIsInvisible && !enemy.isStunned) {
+        enemy.update(player, worldW, worldH);
       }
 
       // ── Drain projectiles from Shooters ───────────────────
@@ -661,14 +649,9 @@ export class HordeSystem {
           this.handleVolatileExplosion(state, enemy, player, ps, render);
         }
 
-        // ── Equipment item drop ──────────────────────────────
-        // Spawns an ItemDrop on the ground. The drop persists
-        // indefinitely — player equips it via Inventory (hold I)
-        // while standing near it. No auto-collect on proximity.
-        // floor is passed so the item pool scales correctly.
         const baseChance = DROP_CHANCE[type];
         const chance     = isElite ? baseChance * ELITE_DROP_MULT : baseChance;
-        const dropped    = rollItemDrop(state, chance, rs.floor);  // ← floor added
+        const dropped    = rollItemDrop(state, chance, rs.floor);
         if (dropped) {
           state.itemDrops.push(new ItemDrop(
             enemy.x + enemy.width  / 2,
@@ -677,7 +660,6 @@ export class HordeSystem {
           ));
         }
 
-        // ── Consumable drop — independent roll ────────────────
         const cBaseChance = CONSUMABLE_DROP_CHANCE[type];
         const cChance     = isElite ? cBaseChance * ELITE_CONSUMABLE_MULT : cBaseChance;
         if (Math.random() < cChance) {
@@ -699,14 +681,10 @@ export class HordeSystem {
     }
 
     // ── Item drop tick ────────────────────────────────────────
-    // Drops stay on the ground indefinitely — no auto-collect,
-    // no proximity removal. `playerIsNear` is updated each frame
-    // so Inventory can show the nearby drop card. The ONLY removal
-    // path is GameCanvas.handleEquipDrop setting collected = true.
     state.itemDrops = state.itemDrops.filter((drop) => {
       if (drop.collected) return false;
-      drop.update(player);   // ticks animation + playerIsNear flag
-      return true;           // always keep — never auto-remove on proximity
+      drop.update(player);
+      return true;
     });
 
     // ── Consumable drop auto-pickup ───────────────────────────

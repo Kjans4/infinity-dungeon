@@ -208,8 +208,12 @@ export abstract class BaseEnemy {
 
   // ============================================================
   // [🧱 BLOCK: Tick Stun]
+  // Promoted to PUBLIC so HordeSystem can call it directly
+  // on enemies that are stunned regardless of visibility state,
+  // avoiding the need for unsafe (enemy as any).stunTimer casts.
+  // Returns true if the enemy is still stunned after the tick.
   // ============================================================
-  protected tickStun(): boolean {
+  tickStun(): boolean {
     if (this.stunTimer > 0) {
       this.stunTimer -= 16;
       if (this.stunTimer < 0) this.stunTimer = 0;
