@@ -183,12 +183,6 @@ function BossHPBar({ hp, maxHp, isEnraged, floor }: {
 
 // ============================================================
 // [🧱 BLOCK: Hotbar Slot]
-// Renders a single quickslot with:
-//  - item icon (or empty state)
-//  - stack count badge (×N)
-//  - cooldown sweep overlay (SVG arc)
-//  - duration bar along the bottom edge
-//  - key hint label (1–4)
 // ============================================================
 function HotbarSlotWidget({ slot, slotIndex, bagCount }: {
   slot:       HotbarSlot;
@@ -206,7 +200,6 @@ function HotbarSlotWidget({ slot, slotIndex, bagCount }: {
   const onCooldown  = slot.cooldownMs > 0;
   const noneLeft    = def && bagCount === 0;
 
-  // SVG cooldown sweep (clock wipe)
   const R           = 18;
   const CIRC        = 2 * Math.PI * R;
   const sweepOffset = CIRC * (1 - cdPct);
@@ -215,21 +208,13 @@ function HotbarSlotWidget({ slot, slotIndex, bagCount }: {
 
   return (
     <div className={`hud-hotbar-slot ${isEmpty ? "hud-hotbar-slot--empty" : ""} ${onCooldown ? "hud-hotbar-slot--cooldown" : ""} ${noneLeft ? "hud-hotbar-slot--depleted" : ""}`}>
-
-      {/* Key hint */}
       <span className="hud-hotbar-slot__key">{keyLabel}</span>
-
-      {/* Icon */}
       <span className="hud-hotbar-slot__icon">
         {def ? def.icon : "·"}
       </span>
-
-      {/* Stack count badge */}
       {def && bagCount > 0 && (
         <span className="hud-hotbar-slot__count">×{bagCount}</span>
       )}
-
-      {/* Cooldown SVG sweep overlay */}
       {onCooldown && (
         <svg className="hud-hotbar-slot__cd-svg" viewBox="0 0 44 44">
           <circle
@@ -244,15 +229,11 @@ function HotbarSlotWidget({ slot, slotIndex, bagCount }: {
           />
         </svg>
       )}
-
-      {/* Cooldown seconds remaining */}
       {onCooldown && (
         <span className="hud-hotbar-slot__cd-text">
           {(slot.cooldownMs / 1000).toFixed(1)}
         </span>
       )}
-
-      {/* Duration bar — shown for active buff items */}
       {durPct > 0 && (
         <div className="hud-hotbar-slot__dur-bar">
           <div
@@ -261,15 +242,12 @@ function HotbarSlotWidget({ slot, slotIndex, bagCount }: {
           />
         </div>
       )}
-
     </div>
   );
 }
 
 // ============================================================
 // [🧱 BLOCK: Hotbar Row]
-// Four slots separated by slim dividers, integrated into the
-// HUD banner via an extra Divider + hotbar group.
 // ============================================================
 function HotbarRow({ hotbar, bagCounts }: {
   hotbar:    [HotbarSlot, HotbarSlot, HotbarSlot, HotbarSlot];
@@ -291,6 +269,7 @@ function HotbarRow({ hotbar, bagCounts }: {
 
 // ============================================================
 // [🧱 BLOCK: HUD Root]
+// Layout order: Vitality | Hotbar | Floor/Room | Treasury | Kill Ring
 // ============================================================
 export default function HUD({
   hp, maxHp, stamina, maxStamina,
@@ -306,11 +285,6 @@ export default function HUD({
     hp / maxHp > 0.25 ? "#facc15" :
                         "#ef4444";
 
-  // Derive bag counts for each slot from the hotbar assignedIds.
-  // GameCanvas passes hotbar from playerConsumables.slots — bag
-  // counts are read separately and passed down as a flat array.
-  // We receive them via the hotbar prop shape for simplicity;
-  // GameCanvas computes them before passing.
   const bagCounts = hotbar.map((slot) =>
     slot.assignedId
       ? (slot as any)._bagCount ?? 0
@@ -330,11 +304,16 @@ export default function HUD({
       <div className="hud-root">
         <div className="hud-inner">
 
-          {/* ── HP + Stamina ── */}
+          {/* ── Vitality + Stamina ── */}
           <div className="hud-bars-group">
             <ThinBar value={hp}      max={maxHp}     color={hpColor}  label="Vitality" />
             <ThinBar value={stamina} max={maxStamina} color="#60a5fa"  label="Stamina"  />
           </div>
+
+          <Divider />
+
+          {/* ── Hotbar Slots ── */}
+          <HotbarRow hotbar={hotbar} bagCounts={bagCounts} />
 
           <Divider />
 
@@ -361,7 +340,7 @@ export default function HUD({
 
           <Divider />
 
-          {/* ── Gold ── */}
+          {/* ── Treasury ── */}
           <div className="hud-gold-group">
             <span className="hud-gold-label">Treasury</span>
             <span className="hud-gold-value">{gold}g</span>
@@ -371,11 +350,6 @@ export default function HUD({
 
           {/* ── Kill Ring ── */}
           <KillRing kills={kills} threshold={killThreshold} isElite={isEliteRoom} />
-
-          <Divider />
-
-          {/* ── Hotbar ── */}
-          <HotbarRow hotbar={hotbar} bagCounts={bagCounts} />
 
         </div>
       </div>
