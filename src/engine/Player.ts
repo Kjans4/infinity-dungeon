@@ -192,7 +192,7 @@ export class Player {
   // [🧱 BLOCK: Sword Equipped Check]
   // ============================================================
   private get hasSword(): boolean {
-    return this.equippedWeapon.type === 'sword';
+  return this.equippedWeapon.def.name !== 'Fists' && this.equippedWeapon.type === 'sword';
   }
 
   // ============================================================
