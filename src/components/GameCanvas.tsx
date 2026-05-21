@@ -257,8 +257,6 @@ export default function GameCanvas() {
         if (ui.menu || ui.shop || ui.gameOver) return;
         const state = stateRef.current;
         if (!state) return;
-        // ── Use ref so we always call the latest version of
-        //    handleDoorEnter even though this closure is registered once
         if (state.door?.playerIsNear)    { handleDoorEnterRef.current(); return; }
         if (state.shopNpc?.playerIsNear) {
           state.playerStats.generateShopOptions();
@@ -275,7 +273,6 @@ export default function GameCanvas() {
         iHoldTimer.current = setTimeout(() => { setShowInventory(true); iHoldTimer.current = null; }, INVENTORY_HOLD_MS);
       }
 
-      // ── Hotbar 1–4 ─────────────────────────────────────────
       if (!e.repeat) {
         const slotMap: Record<string, number> = { Digit1: 0, Digit2: 1, Digit3: 2, Digit4: 3 };
         if (e.code in slotMap) {
@@ -419,9 +416,6 @@ export default function GameCanvas() {
 
   // ============================================================
   // [🧱 BLOCK: Door Enter Ref — always current]
-  // Keeps a ref pointing to the latest handleDoorEnter so the
-  // onKeyDown closure (registered once with empty deps) never
-  // calls a stale version after roomRef advances.
   // ============================================================
   const handleDoorEnterRef = useRef(handleDoorEnter);
   useEffect(() => {
@@ -451,7 +445,6 @@ export default function GameCanvas() {
         state.itemDrops.push(new ItemDrop(dropX, dropY, { ...existing, kind: 'weapon' }));
       }
       state.playerStats.claimWeapon(item as WeaponItem, player);
-
     } else if (item.kind === 'armor') {
       const ai       = item as ArmorItem;
       const existing = state.playerStats.armorSlots[ai.slot];
@@ -459,7 +452,6 @@ export default function GameCanvas() {
         state.itemDrops.push(new ItemDrop(dropX, dropY, { ...existing, kind: 'armor' }));
       }
       state.playerStats.claimArmor(ai, player);
-
     } else if (item.kind === 'charm') {
       state.playerStats.claimCharm(item as any, player);
     }
@@ -531,7 +523,7 @@ export default function GameCanvas() {
       const elapsed = Date.now() - deathStartRef.current;
       render.clear(ctx, state.screenW, state.screenH);
       state.camera.update(player, worldW, worldH);
-      render.drawWorld(ctx, state.camera, state.screenW, state.screenH, isBoss);
+      render.drawWorld(ctx, state.camera, state.screenW, state.screenH, isBoss, state.tileMap);
       if (isBoss) bossRef.current.draw(state, ctx, state.camera, player);
       else        hordeRef.current.draw(state, ctx, state.camera, player, worldW);
       if (elapsed < DEATH_FLASH_MS) {
@@ -563,7 +555,7 @@ export default function GameCanvas() {
 
     render.clear(ctx, state.screenW, state.screenH);
     state.camera.update(player, worldW, worldH);
-    render.drawWorld(ctx, state.camera, state.screenW, state.screenH, isBoss);
+    render.drawWorld(ctx, state.camera, state.screenW, state.screenH, isBoss, state.tileMap);
     player.update(input);
 
     // ── World boundary clamp ───────────────────────────────

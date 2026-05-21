@@ -13,11 +13,10 @@ import { ConsumableSystem }   from "./ConsumableSystem";
 import { ShopItem }           from "./items/ItemPool";
 import { Grunt, Shooter, Tank, Projectile, Dasher, Bomber } from "./enemy";
 import { AnyBoss }            from "./enemy/boss/index";
+import { TileMap }            from "./TileMap";
 
 // ============================================================
 // [🧱 BLOCK: Pending Loot Cap]
-// Raised to 12 so boss drops (3–5 items) can never be silently
-// blocked by horde loot accumulated across earlier rooms.
 // ============================================================
 export const PENDING_LOOT_CAP = 12;
 
@@ -90,6 +89,12 @@ export class GameState {
   damageNumbers:    DamageNumber[];
 
   // ============================================================
+  // [🧱 BLOCK: Tile Map]
+  // One TileMap instance — regenerated each room transition.
+  // ============================================================
+  tileMap: TileMap;
+
+  // ============================================================
   // [🧱 BLOCK: Economy + Stats + Consumables]
   // ============================================================
   gold:              number;
@@ -141,6 +146,8 @@ export class GameState {
     this.hitSparks       = [];
     this.damageNumbers   = [];
 
+    this.tileMap           = new TileMap(WORLD_W, WORLD_H);
+
     this.gold              = 0;
     this.playerStats       = new PlayerStats();
     this.playerConsumables = new PlayerConsumables();
@@ -190,14 +197,13 @@ export class GameState {
     this.playerStats       = new PlayerStats();
     this.playerConsumables = new PlayerConsumables();
     this.consumableSystem  = new ConsumableSystem();
+    this.tileMap.regenerate(WORLD_W, WORLD_H);
     this.playerStats.applyToPlayer(this.player);
   }
 
   // ============================================================
   // [🧱 BLOCK: Room Reset]
-  // Bag + hotbar persist. In-flight projectiles cleared.
-  // pendingLoot is cleared so stale horde drops don't fill the
-  // cap and silently block boss item drops on the next floor.
+  // Regenerates tile map for fresh room look.
   // ============================================================
   resetRoom() {
     this.enemies         = [];
@@ -215,8 +221,9 @@ export class GameState {
     this.door            = null;
     this.shopNpc         = null;
     this.boss            = null;
-    this.pendingLoot     = [];   // ← cleared so boss drops are never capped out
+    this.pendingLoot     = [];
     this.consumableSystem.reset();
+    this.tileMap.regenerate(WORLD_W, WORLD_H);
     // playerConsumables intentionally NOT reset — bag/hotbar persist
   }
 

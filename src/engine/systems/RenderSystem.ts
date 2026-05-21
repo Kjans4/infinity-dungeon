@@ -1,11 +1,12 @@
 // src/engine/systems/RenderSystem.ts
 import { Camera, WORLD_W, WORLD_H, BOSS_WORLD_W, BOSS_WORLD_H } from "../Camera";
 import { DamageNumber } from "../Particle";
+import { TileMap } from "../TileMap";
 
 // ============================================================
 // [🧱 BLOCK: RenderSystem]
 // Handles all canvas drawing that isn't tied to a specific
-// entity — world background, grid, boundary walls.
+// entity — world background, tiles, boundary walls.
 // Also owns screen shake state and damage number rendering.
 // ============================================================
 export class RenderSystem {
@@ -20,11 +21,6 @@ export class RenderSystem {
 
   // ============================================================
   // [🧱 BLOCK: Trigger Shake]
-  // Presets:
-  //   micro  → single hit feedback (1–2px, 80ms)
-  //   light  → player takes normal hit
-  //   medium → boss contact / slam
-  //   heavy  → boss charge impact
   // ============================================================
   shake(type: 'micro' | 'light' | 'medium' | 'heavy' = 'light') {
     const presets = {
@@ -35,8 +31,6 @@ export class RenderSystem {
     };
 
     const p = presets[type];
-
-    // Only upgrade — don't downgrade an active shake
     if (p.magnitude > this.shakeMagnitude) {
       this.shakeDuration  = p.duration;
       this.shakeMagnitude = p.magnitude;
@@ -75,22 +69,31 @@ export class RenderSystem {
 
   // ============================================================
   // [🧱 BLOCK: Draw World]
+  // tileMap is optional — if not provided falls back to dark fill.
   // ============================================================
   drawWorld(
-    ctx:    CanvasRenderingContext2D,
-    camera: Camera,
-    w:      number,
-    h:      number,
-    isBoss: boolean
+    ctx:      CanvasRenderingContext2D,
+    camera:   Camera,
+    w:        number,
+    h:        number,
+    isBoss:   boolean,
+    tileMap?: TileMap
   ) {
-    this.drawGrid(ctx, camera, w, h);
+    // 1. Background fill
+    ctx.fillStyle = "#090806";
+    ctx.fillRect(0, 0, w, h);
+
+    // 2. Tile floor — only if tileMap provided
+    if (tileMap) {
+      tileMap.draw(ctx, camera);
+    }
+
+    // 3. World boundary on top
     this.drawBounds(ctx, camera, isBoss);
   }
 
   // ============================================================
   // [🧱 BLOCK: Draw Damage Numbers]
-  // Called once per frame after all entities are drawn.
-  // Updates and draws all active damage numbers, then removes done ones.
   // ============================================================
   drawDamageNumbers(
     ctx:            CanvasRenderingContext2D,
@@ -109,31 +112,7 @@ export class RenderSystem {
   }
 
   // ============================================================
-  // [🧱 BRICK: Scrolling Dot Grid]
-  // ============================================================
-  private drawGrid(
-    ctx:    CanvasRenderingContext2D,
-    camera: Camera,
-    w:      number,
-    h:      number
-  ) {
-    const gridSize = 80;
-    ctx.fillStyle  = "rgba(148, 163, 184, 0.08)";
-
-    const startX = -(camera.x % gridSize);
-    const startY = -(camera.y % gridSize);
-
-    for (let x = startX; x < w; x += gridSize) {
-      for (let y = startY; y < h; y += gridSize) {
-        ctx.beginPath();
-        ctx.arc(x, y, 1.5, 0, Math.PI * 2);
-        ctx.fill();
-      }
-    }
-  }
-
-  // ============================================================
-  // [🧱 BRICK: World Boundary]
+  // [🧱 BLOCK: Draw World Boundary]
   // ============================================================
   private drawBounds(
     ctx:    CanvasRenderingContext2D,
