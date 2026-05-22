@@ -63,25 +63,24 @@ const CHARGE_PULL_MAX    = 10;
 
 // ============================================================
 // [🧱 BLOCK: Sword Arc Constants]
-// Arc sweeps from START_DEG to END_DEG around the grip pivot.
-// Always same rotational direction regardless of facing.
-// Light: ±60°  Heavy: ±80°
-// Grip pivot sits at ~35% from left, 50% from top of the
-// 100px draw rect — center of the guard in the sprite.
 // ============================================================
-const SWORD_PIVOT_X      = DRAW_SIZE * 0.35;  // 35px — guard horizontal
-const SWORD_PIVOT_Y      = DRAW_SIZE * 0.50;  // 50px — guard vertical
+const SWORD_PIVOT_X      = DRAW_SIZE * 0.35;
+const SWORD_PIVOT_Y      = DRAW_SIZE * 0.50;
 
-const SWORD_ARC_LIGHT_START = -60;   // degrees
+const SWORD_ARC_LIGHT_START = -60;
 const SWORD_ARC_LIGHT_END   =  60;
 const SWORD_ARC_HEAVY_START = -80;
 const SWORD_ARC_HEAVY_END   =  80;
 
-// Attack durations used to compute sweep progress
-const SWORD_LIGHT_DURATION        = 300;   // ms — must match Weapon.ts fists light duration
-const SWORD_HEAVY_DURATION        = 450;
-const SWORD_CHARGED_LIGHT_DURATION= Math.round(SWORD_LIGHT_DURATION * 1.4);
-const SWORD_CHARGED_HEAVY_DURATION= Math.round(SWORD_HEAVY_DURATION * 1.4);
+const SWORD_LIGHT_DURATION         = 300;
+const SWORD_HEAVY_DURATION         = 450;
+const SWORD_CHARGED_LIGHT_DURATION = Math.round(SWORD_LIGHT_DURATION * 1.4);
+const SWORD_CHARGED_HEAVY_DURATION = Math.round(SWORD_HEAVY_DURATION * 1.4);
+
+// ============================================================
+// [🧱 BLOCK: State Circle Constants]
+// ============================================================
+const STATE_CIRCLE_RADIUS = 26;
 
 // ============================================================
 // [🧱 BLOCK: Combat State Types]
@@ -127,7 +126,7 @@ export class Player {
   hitFlashTimer:    number  = 0;
   attackType:       'light' | 'heavy' | 'charged_light' | 'charged_heavy' | null = null;
   attackTimer:      number  = 0;
-  attackDuration:   number  = 0;   // total duration of current attack — for sword sweep progress
+  attackDuration:   number  = 0;
   heavyCooldown:    number  = 0;
   iFrames:          number  = 0;
   facing:           { x: number; y: number } = { x: 0, y: 1 };
@@ -140,6 +139,13 @@ export class Player {
   blockState:   BlockState = 'none';
   blockTimer:   number     = 0;
   parrySuccess: boolean    = false;
+
+  // ============================================================
+  // [🧱 BLOCK: Hit Ring State]
+  // Expanding red arc shown briefly when the player takes damage.
+  // ============================================================
+  private hitRingTimer:    number = 0;
+  private readonly HIT_RING_MS = 220;
 
   // ============================================================
   // [🧱 BLOCK: Consumable State Flags]
@@ -160,12 +166,11 @@ export class Player {
   private walkFrame:  number = 0;
   private animClock:  number = 0;
 
-  // Arm animation
-  private punchArm:     'right' | 'left' = 'right';
-  private punchTimer:   number           = 0;
-  private punchingArm:  'right' | 'left' = 'right';
-  private walkArmAngle: number           = 0;
-  private walkArmDir:   number           = 1;
+  private punchArm:    'right' | 'left' = 'right';
+  private punchTimer:  number           = 0;
+  private punchingArm: 'right' | 'left' = 'right';
+  private walkArmAngle: number          = 0;
+  private walkArmDir:   number          = 1;
 
   constructor(x: number, y: number) {
     this.x = x;
@@ -192,30 +197,24 @@ export class Player {
   // [🧱 BLOCK: Sword Equipped Check]
   // ============================================================
   private get hasSword(): boolean {
-  return this.equippedWeapon.def.name !== 'Fists' && this.equippedWeapon.type === 'sword';
+    return this.equippedWeapon.type === 'sword';
   }
 
   // ============================================================
   // [🧱 BLOCK: Sword Sweep Angle]
-  // Returns the current sword rotation in degrees based on
-  // attackTimer progress through the attack duration.
-  // Returns null when not attacking (idle/walk position).
   // ============================================================
   private getSwordSwingAngle(): number | null {
     if (!this.isAttacking || !this.attackType) return null;
 
-    const isHeavy   = this.attackType === 'heavy' || this.attackType === 'charged_heavy';
-    const startDeg  = isHeavy ? SWORD_ARC_HEAVY_START : SWORD_ARC_LIGHT_START;
-    const endDeg    = isHeavy ? SWORD_ARC_HEAVY_END   : SWORD_ARC_LIGHT_END;
+    const isHeavy  = this.attackType === 'heavy' || this.attackType === 'charged_heavy';
+    const startDeg = isHeavy ? SWORD_ARC_HEAVY_START : SWORD_ARC_LIGHT_START;
+    const endDeg   = isHeavy ? SWORD_ARC_HEAVY_END   : SWORD_ARC_LIGHT_END;
 
-    // attackTimer counts DOWN from attackDuration to 0
-    // progress 0 = start of attack, 1 = end
-    const progress  = this.attackDuration > 0
+    const progress = this.attackDuration > 0
       ? 1 - (this.attackTimer / this.attackDuration)
       : 0;
-    const clamped   = Math.max(0, Math.min(1, progress));
+    const clamped  = Math.max(0, Math.min(1, progress));
 
-    // Ease-in-out for a natural arc feel
     const eased = clamped < 0.5
       ? 2 * clamped * clamped
       : 1 - Math.pow(-2 * clamped + 2, 2) / 2;
@@ -258,7 +257,7 @@ export class Player {
       }
     }
 
-    // ── Effective speed cap ───────────────────────────────────
+    // ── Speed multiplier ──────────────────────────────────────
     let speedMult = 1.0;
     if (this.isBlocking || this.isParrying) speedMult = 0.30;
     else if (this.isChargingLight)          speedMult = CHARGE_LIGHT_SPEED_MULT;
@@ -303,7 +302,7 @@ export class Player {
       if (this.dashTimer <= 0) { this.isDashing = false; this.dashTimer = 0; }
     }
 
-    // ── Attack timer tick ─────────────────────────────────────
+    // ── Attack timer ──────────────────────────────────────────
     if (this.isAttacking) {
       this.attackTimer -= 16;
       if (this.attackTimer <= 0) {
@@ -327,13 +326,14 @@ export class Player {
     this.x += this.vx;
     this.y += this.vy;
 
-    // ── Resources ─────────────────────────────────────────────
+    // ── Timers ────────────────────────────────────────────────
     if (this.heavyCooldown > 0) this.heavyCooldown  -= 16;
     if (this.iFrames       > 0) this.iFrames        -= 16;
     if (this.hitFlashTimer > 0) {
       this.hitFlashTimer -= 16;
       if (this.hitFlashTimer <= 0) this.isHit = false;
     }
+    if (this.hitRingTimer  > 0) this.hitRingTimer   -= 16;
 
     if (this.chargeState !== 'none') this.chargeVisual += 16;
     else                              this.chargeVisual  = 0;
@@ -545,12 +545,12 @@ export class Player {
       return;
     }
     this.stamina -= cost;
-    this.isAttacking   = true;
-    this.attackType    = mode === 'light' ? 'charged_light' : 'charged_heavy';
+    this.isAttacking    = true;
+    this.attackType     = mode === 'light' ? 'charged_light' : 'charged_heavy';
     this.attackDuration = mode === 'light'
       ? SWORD_CHARGED_LIGHT_DURATION
       : SWORD_CHARGED_HEAVY_DURATION;
-    this.attackTimer   = this.attackDuration;
+    this.attackTimer = this.attackDuration;
     if (mode === 'heavy') {
       this.heavyCooldown    = atk.cooldown;
       this.isHeavyAttacking = true;
@@ -615,6 +615,7 @@ export class Player {
 
   // ============================================================
   // [🧱 BLOCK: Take Hit]
+  // Also triggers the hit ring visual.
   // ============================================================
   takeHit(amount: number): void {
     if (this.iFrames > 0) return;
@@ -622,6 +623,7 @@ export class Player {
     this.isHit         = true;
     this.hitFlashTimer = amount >= 25 ? 300 : 150;
     this.iFrames       = amount >= 25 ? 800 : 600;
+    this.hitRingTimer  = this.HIT_RING_MS;
   }
 
   // ============================================================
@@ -649,7 +651,7 @@ export class Player {
     const pivotX  = DRAW_SIZE / 2;
     const pivotY  = DRAW_SIZE * 0.25;
 
-    // 1. Punch translate (fists only — sword uses arc instead)
+    // 1. Punch translate (fists only)
     if (!this.hasSword && this.punchTimer > 0 && this.punchingArm === arm) {
       const t = this.punchTimer;
       let travel: number;
@@ -661,7 +663,7 @@ export class Player {
       return { tx: facingX * travel, ty: facingY * travel + breatheY, rotateDeg: 0, pivotX, pivotY };
     }
 
-    // 2. Charge pull-back — right arm (both fists and sword)
+    // 2. Charge pull-back — right arm
     const isCharging = this.chargeState !== 'none';
     if (isCharging && arm === 'right') {
       const chargeThreshold = (this.chargeState === 'charging_heavy' || this.chargeState === 'charged_heavy')
@@ -682,8 +684,7 @@ export class Player {
   }
 
   // ============================================================
-  // [🧱 BLOCK: Draw — Single Arm / Weapon Layer]
-  // Applies translate + pivot rotation then draws the image.
+  // [🧱 BLOCK: Draw — Single Image Layer]
   // ============================================================
   private drawImageLayer(
     ctx:    CanvasRenderingContext2D,
@@ -715,9 +716,6 @@ export class Player {
 
   // ============================================================
   // [🧱 BLOCK: Draw — Sword Layer]
-  // Sword inherits the right arm's idle/walk transforms when not
-  // attacking. During an attack it overrides with the arc sweep.
-  // The arc rotation pivots around the guard point (SWORD_PIVOT_X/Y).
   // ============================================================
   private drawSword(
     ctx:      CanvasRenderingContext2D,
@@ -726,12 +724,10 @@ export class Player {
     armOpts:  { tx: number; ty: number; rotateDeg: number; pivotX: number; pivotY: number },
     breatheY: number,
   ): void {
-    const s = getPlayerSprites();
-
+    const s          = getPlayerSprites();
     const swingAngle = this.getSwordSwingAngle();
 
     if (swingAngle !== null) {
-      // ── Attack arc — override arm transforms, use swing angle ─
       const rad     = (swingAngle * Math.PI) / 180;
       const absPixX = baseX + SWORD_PIVOT_X;
       const absPixY = baseY + breatheY + SWORD_PIVOT_Y;
@@ -743,27 +739,20 @@ export class Player {
       ctx.drawImage(s.sword, baseX, baseY + breatheY, DRAW_SIZE, DRAW_SIZE);
       ctx.restore();
     } else {
-      // ── Idle / walk — follow right arm exactly ────────────────
       this.drawImageLayer(ctx, s.sword, baseX, baseY, armOpts);
     }
   }
 
   // ============================================================
   // [🧱 BLOCK: Draw — Sprite Layers]
-  // Layer order:
-  //   1. feet
-  //   2. left_arm  (behind body)
-  //   3. body
-  //   4. head
-  //   5. right_arm (in front of body)
-  //   6. sword     (on top of right_arm, sword only)
+  // No tinting — all layers drawn clean. State feedback is via
+  // circles drawn behind the sprite in drawStateCircle().
   // ============================================================
   private drawSpriteLayers(
-    ctx:       CanvasRenderingContext2D,
-    sx:        number,
-    sy:        number,
-    isMoving:  boolean,
-    tintColor: string | null
+    ctx:      CanvasRenderingContext2D,
+    sx:       number,
+    sy:       number,
+    isMoving: boolean,
   ): void {
     const s = getPlayerSprites();
     const { breatheY, swayX } = this.getIdleOffsets(isMoving);
@@ -777,7 +766,6 @@ export class Player {
     const dw = DRAW_SIZE;
     const dh = DRAW_SIZE;
 
-    // ── Facing flip ───────────────────────────────────────────
     const facingLeft = this.facing.x < -0.1;
     const centerX    = sx + HITBOX_W / 2;
 
@@ -788,46 +776,124 @@ export class Player {
       ctx.translate(-centerX, 0);
     }
 
-    // ── 1. Feet ───────────────────────────────────────────────
     ctx.drawImage(feetImg, dx, dy, dw, dh);
 
-    // ── 2. Left arm (behind body) ─────────────────────────────
     const leftArmOpts = this.getArmOffsets('left', isMoving, breatheY);
     this.drawImageLayer(ctx, s.leftArm, dx, dy, leftArmOpts);
 
-    // ── 3. Body ───────────────────────────────────────────────
     ctx.drawImage(s.body, dx, dy + breatheY, dw, dh);
-
-    // ── 4. Head ───────────────────────────────────────────────
     ctx.drawImage(s.head, dx + swayX, dy + breatheY, dw, dh);
 
-    // ── 5. Right arm ─────────────────────────────────────────
     const rightArmOpts = this.getArmOffsets('right', isMoving, breatheY);
     this.drawImageLayer(ctx, s.rightArm, dx, dy, rightArmOpts);
 
-    // ── 6. Sword (on top of right arm, sword equipped only) ───
     if (this.hasSword) {
       this.drawSword(ctx, dx, dy, rightArmOpts, breatheY);
     }
 
-    // ── Tint overlay ──────────────────────────────────────────
-    if (tintColor) {
-      ctx.globalCompositeOperation = 'source-atop';
-      ctx.drawImage(feetImg,    dx,         dy,            dw, dh);
-      ctx.drawImage(s.leftArm,  dx,         dy,            dw, dh);
-      ctx.drawImage(s.body,     dx,         dy + breatheY, dw, dh);
-      ctx.drawImage(s.head,     dx + swayX, dy + breatheY, dw, dh);
-      ctx.drawImage(s.rightArm, dx,         dy,            dw, dh);
-      if (this.hasSword) ctx.drawImage(s.sword, dx, dy, dw, dh);
-      ctx.globalAlpha              = 0.55;
-      ctx.fillStyle                = tintColor;
-      ctx.globalCompositeOperation = 'source-atop';
-      ctx.fillRect(dx, dy, dw, dh);
-      ctx.globalAlpha              = 1;
-      ctx.globalCompositeOperation = 'source-over';
+    ctx.restore();
+  }
+
+  // ============================================================
+  // [🧱 BLOCK: Draw — State Circle Behind Sprite]
+  // Solid filled circles drawn BEFORE the sprite so the sprite
+  // always sits on top. No tinting — completely separate layer.
+  //
+  //   hit flash        → expanding red ring
+  //   dashing          → cyan fill
+  //   parrying         → sky-blue fill
+  //   blocking         → slate fill (stamina-gated alpha)
+  //   charging_light   → rose fill (grows with charge progress)
+  //   charged_light    → white fill (pulsing)
+  //   charging_heavy   → amber fill (grows with charge progress)
+  //   charged_heavy    → yellow fill (pulsing)
+  // ============================================================
+  private drawStateCircle(
+    ctx: CanvasRenderingContext2D,
+    cx:  number,
+    cy:  number,
+  ): void {
+    // ── Hit ring — expanding red arc ──────────────────────────
+    if (this.hitRingTimer > 0) {
+      const progress = 1 - this.hitRingTimer / this.HIT_RING_MS;
+      const radius   = STATE_CIRCLE_RADIUS + progress * 20;
+      const alpha    = this.hitRingTimer / this.HIT_RING_MS;
+      ctx.beginPath();
+      ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+      ctx.strokeStyle = `rgba(239,68,68,${alpha})`;
+      ctx.lineWidth   = 3;
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(cx, cy, radius - 4, 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(239,68,68,${alpha * 0.25})`;
+      ctx.fill();
     }
 
-    ctx.restore();
+    // ── Dashing ───────────────────────────────────────────────
+    if (this.isDashing) {
+      const alpha = (this.dashTimer / DASH_DURATION) * 0.65;
+      ctx.beginPath();
+      ctx.arc(cx, cy, STATE_CIRCLE_RADIUS + 4, 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(56,189,248,${alpha})`;
+      ctx.fill();
+    }
+
+    // ── Parrying ──────────────────────────────────────────────
+    if (this.blockState === 'parrying') {
+      const progress = this.blockTimer / PARRY_WINDOW_MS;
+      const alpha    = (1 - progress) * 0.60;
+      ctx.beginPath();
+      ctx.arc(cx, cy, STATE_CIRCLE_RADIUS + 2, 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(125,211,252,${alpha})`;
+      ctx.fill();
+    }
+
+    // ── Blocking ──────────────────────────────────────────────
+    if (this.blockState === 'blocking') {
+      const staminaPct = Math.max(0, this.stamina / this.maxStamina);
+      ctx.beginPath();
+      ctx.arc(cx, cy, STATE_CIRCLE_RADIUS, 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(148,163,184,${staminaPct * 0.55})`;
+      ctx.fill();
+    }
+
+    // ── Charging light ────────────────────────────────────────
+    if (this.chargeState === 'charging_light') {
+      const progress = Math.min(this.chargeTimer / CHARGE_LIGHT_THRESHOLD, 1);
+      const radius   = STATE_CIRCLE_RADIUS * (0.5 + progress * 0.7);
+      ctx.beginPath();
+      ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(252,165,165,${progress * 0.6})`;
+      ctx.fill();
+    }
+
+    // ── Charged light ready ───────────────────────────────────
+    if (this.chargeState === 'charged_light') {
+      const pulse = Math.sin(this.chargeVisual / 80) * 0.2 + 0.7;
+      ctx.beginPath();
+      ctx.arc(cx, cy, STATE_CIRCLE_RADIUS + 6, 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(226,232,240,${pulse * 0.65})`;
+      ctx.fill();
+    }
+
+    // ── Charging heavy ────────────────────────────────────────
+    if (this.chargeState === 'charging_heavy') {
+      const progress = Math.min(this.chargeTimer / CHARGE_HEAVY_THRESHOLD, 1);
+      const radius   = STATE_CIRCLE_RADIUS * (0.5 + progress * 0.7);
+      ctx.beginPath();
+      ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(251,191,36,${progress * 0.6})`;
+      ctx.fill();
+    }
+
+    // ── Charged heavy ready ───────────────────────────────────
+    if (this.chargeState === 'charged_heavy') {
+      const pulse = Math.sin(this.chargeVisual / 60) * 0.2 + 0.7;
+      ctx.beginPath();
+      ctx.arc(cx, cy, STATE_CIRCLE_RADIUS + 6, 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(253,230,138,${pulse * 0.70})`;
+      ctx.fill();
+    }
   }
 
   // ============================================================
@@ -856,15 +922,12 @@ export class Player {
       const progress = this.dashTimer / DASH_DURATION;
       ctx.globalAlpha = 0.25 * progress;
       if (getPlayerSprites().ready) {
-        this.drawSpriteLayers(ctx, sx - this.vx * 2, sy - this.vy * 2, isMoving, '#38bdf8');
-      } else {
-        ctx.fillStyle = '#38bdf8';
-        ctx.fillRect(sx - this.vx * 2, sy - this.vy * 2, this.width, this.height);
+        this.drawSpriteLayers(ctx, sx - this.vx * 2, sy - this.vy * 2, isMoving);
       }
       ctx.globalAlpha = 1;
     }
 
-    // ── Charge glow ring ──────────────────────────────────────
+    // ── Charge outer glow ring (decoration, kept) ─────────────
     if (this.chargeState !== 'none') {
       const isLight  = this.chargeState === 'charging_light' || this.chargeState === 'charged_light';
       const isReady  = this.chargeState === 'charged_light'  || this.chargeState === 'charged_heavy';
@@ -901,7 +964,7 @@ export class Player {
       }
     }
 
-    // ── Block / Parry visual ──────────────────────────────────
+    // ── Parry outer ring (kept) ───────────────────────────────
     if (this.blockState === 'parrying') {
       const progress = this.blockTimer / PARRY_WINDOW_MS;
       const alpha    = 1 - progress;
@@ -911,12 +974,9 @@ export class Player {
       ctx.strokeStyle = `rgba(56,189,248,${alpha * pulse})`;
       ctx.lineWidth   = 3;
       ctx.stroke();
-      ctx.beginPath();
-      ctx.arc(cx, cy, 22, 0, Math.PI * 2);
-      ctx.fillStyle = `rgba(56,189,248,${alpha * 0.18})`;
-      ctx.fill();
     }
 
+    // ── Block outer ring (kept) ───────────────────────────────
     if (this.blockState === 'blocking') {
       const staminaPct = Math.max(0, this.stamina / this.maxStamina);
       const pulse      = Math.sin(Date.now() / 200) * 0.2 + 0.6;
@@ -927,7 +987,7 @@ export class Player {
       ctx.stroke();
     }
 
-    // ── Parry success flash ───────────────────────────────────
+    // ── Parry success flash (kept) ────────────────────────────
     if (this.parrySuccess) {
       ctx.beginPath();
       ctx.arc(cx, cy, 44, 0, Math.PI * 2);
@@ -940,23 +1000,12 @@ export class Player {
       ctx.stroke();
     }
 
-    // ── Tint color ────────────────────────────────────────────
-    const tintColor: string | null =
-      this.isHit                                              ? '#ffffff'  :
-      this.isDashing                                          ? '#38bdf8'  :
-      this.blockState === 'parrying'                          ? '#7dd3fc'  :
-      this.blockState === 'blocking'                          ? '#94a3b8'  :
-      this.chargeState === 'charged_light'                    ? '#e2e8f0'  :
-      this.chargeState === 'charged_heavy'                    ? '#fde68a'  :
-      (this.isChargingLight || this.isChargingHeavy)          ? '#fca5a5'  :
-      null;
+    // ── State circle drawn BEHIND the sprite ──────────────────
+    this.drawStateCircle(ctx, cx, cy);
 
-    // ── Sprite layers ─────────────────────────────────────────
+    // ── Sprite layers — no tinting ────────────────────────────
     if (getPlayerSprites().ready) {
-      this.drawSpriteLayers(ctx, sx, sy, isMoving, tintColor);
-    } else {
-      ctx.fillStyle = tintColor ?? '#f87171';
-      ctx.fillRect(sx, sy, this.width, this.height);
+      this.drawSpriteLayers(ctx, sx, sy, isMoving);
     }
 
     // ── HP bar ────────────────────────────────────────────────
