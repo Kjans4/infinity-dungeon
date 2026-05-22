@@ -4,15 +4,16 @@ import { getWeaponDef } from "./WeaponRegistry";
 
 // ============================================================
 // [🧱 BLOCK: Bare Fists Fallback]
-// Damage nerfed so fists can't one-shot enemies on floor 1.
-// Heavy attack stamina raised to discourage spam.
-//   Light:  6 dmg, 10 stamina — ~11 hits to kill a Grunt
-//   Heavy: 15 dmg, 38 stamina — ~5 hits, nearly drains full bar in 2 swings
+// type is 'fists' — NOT 'sword' — so Player.hasSword returns
+// false when no weapon is equipped, preventing sword sprite
+// layers from rendering with bare fists.
 // ============================================================
 const BARE_FISTS: WeaponDef = {
-  type: 'sword', name: 'Fists', icon: '👊',
+  type: 'fists', // ← was 'sword', caused sword sprite to render on fists
+  name: 'Fists',
+  icon: '👊',
   light: {
-    damage:      6,    // ↓ was 10
+    damage:      6,
     duration:    150,
     staminaCost: 10,
     cooldown:    0,
@@ -21,9 +22,9 @@ const BARE_FISTS: WeaponDef = {
     hitbox:      { kind: 'circle', radius: 15 },
   },
   heavy: {
-    damage:      15,   // ↓ was 25
+    damage:      15,
     duration:    400,
-    staminaCost: 38,   // ↑ was 25
+    staminaCost: 38,
     cooldown:    1200,
     haltsPlayer: true,
     color:       "rgba(251,191,36,0.6)",
@@ -38,7 +39,7 @@ export class Weapon {
   def: WeaponDef;
 
   constructor(type: WeaponType | 'fists' = 'fists') {
-    this.def = type === 'fists' ? BARE_FISTS : getWeaponDef(type);
+    this.def = type === 'fists' ? BARE_FISTS : getWeaponDef(type as WeaponType);
   }
 
   get type(): WeaponType { return this.def.type; }

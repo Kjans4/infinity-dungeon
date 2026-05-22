@@ -3,7 +3,7 @@
 // ============================================================
 // [🧱 BLOCK: Weapon Types]
 // ============================================================
-export type WeaponType = 'sword' | 'axe' | 'spear';
+export type WeaponType = 'sword' | 'axe' | 'spear' | 'fists';
 
 export type HitboxShape =
   | { kind: 'arc';    range: number; arcAngle: number }
