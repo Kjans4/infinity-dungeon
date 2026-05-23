@@ -20,8 +20,6 @@ interface MinimapProps {
 
 // ============================================================
 // [🧱 BLOCK: Minimap Constants]
-// PADDING = 0 so the boundary box and entity positions share
-// the same coordinate space — no more offset misalignment.
 // ============================================================
 const MAP_W   = 160;
 const MAP_H   = 120;
@@ -29,7 +27,6 @@ const PADDING = 0;
 
 // ============================================================
 // [🧱 BLOCK: Legend Items]
-// Split into two rows: first 4 on row 1, last 3 on row 2.
 // ============================================================
 const LEGEND_ROW1 = [
   { color: "#f0c040", label: "You"     },
@@ -67,7 +64,6 @@ export default function Minimap({ state, isBoss }: MinimapProps) {
       const scaleX = MAP_W / worldW;
       const scaleY = MAP_H / worldH;
 
-      // All entities and the boundary use the same toMap — no offset
       const toMap = (wx: number, wy: number) => ({
         x: wx * scaleX,
         y: wy * scaleY,
@@ -77,7 +73,6 @@ export default function Minimap({ state, isBoss }: MinimapProps) {
       ctx.clearRect(0, 0, MAP_W, MAP_H);
 
       // ── Aged parchment background ─────────────────────────
-      // Dark warm brown base — aged leather / dungeon vellum
       const bg = ctx.createRadialGradient(
         MAP_W * 0.5, MAP_H * 0.5, 0,
         MAP_W * 0.5, MAP_H * 0.5, MAP_W * 0.75
@@ -88,7 +83,7 @@ export default function Minimap({ state, isBoss }: MinimapProps) {
       ctx.fillStyle = bg;
       ctx.fillRect(0, 0, MAP_W, MAP_H);
 
-      // ── Dungeon grid — warm ink lines ─────────────────────
+      // ── Dungeon grid ──────────────────────────────────────
       ctx.strokeStyle = "rgba(120, 80, 20, 0.22)";
       ctx.lineWidth   = 0.5;
       const gridStep  = 20;
@@ -107,12 +102,11 @@ export default function Minimap({ state, isBoss }: MinimapProps) {
       ctx.lineWidth   = 1.5;
       ctx.strokeRect(0, 0, MAP_W, MAP_H);
 
-      // Subtle inner inset line for depth
       ctx.strokeStyle = "rgba(0,0,0,0.5)";
       ctx.lineWidth   = 1;
       ctx.strokeRect(1.5, 1.5, MAP_W - 3, MAP_H - 3);
 
-      // ── Edge vignette — darkens corners ───────────────────
+      // ── Edge vignette ─────────────────────────────────────
       const vig = ctx.createRadialGradient(
         MAP_W / 2, MAP_H / 2, MAP_H * 0.2,
         MAP_W / 2, MAP_H / 2, MAP_H * 0.85
@@ -202,12 +196,10 @@ export default function Minimap({ state, isBoss }: MinimapProps) {
         state.player.x + state.player.width  / 2,
         state.player.y + state.player.height / 2
       );
-      // Soft glow halo
       ctx.beginPath();
       ctx.arc(pp.x, pp.y, 6, 0, Math.PI * 2);
       ctx.fillStyle = "rgba(240,192,64,0.18)";
       ctx.fill();
-      // Diamond
       ctx.save();
       ctx.translate(pp.x, pp.y);
       ctx.rotate(Math.PI / 4);
@@ -224,6 +216,25 @@ export default function Minimap({ state, isBoss }: MinimapProps) {
         state.camera.screenW * scaleX,
         state.camera.screenH * scaleY
       );
+
+      // ── Minimap fog overlay ───────────────────────────────
+      // Radial gradient centered on player position — matches
+      // gameplay fog proportionally (~38% of map width radius).
+      // Drawn last so it sits on top of all entities.
+      const fogRadius = MAP_W * 0.38;
+      const fogGrad   = ctx.createRadialGradient(
+        pp.x, pp.y, 0,
+        pp.x, pp.y, fogRadius
+      );
+      fogGrad.addColorStop(0.00, "rgba(0, 0, 0, 0)");
+      fogGrad.addColorStop(0.40, "rgba(0, 0, 0, 0)");
+      fogGrad.addColorStop(0.70, "rgba(15, 15, 15, 0.55)");
+      fogGrad.addColorStop(1.00, isBoss
+        ? "rgba(30, 10, 10, 0.88)"
+        : "rgba(15, 15, 15, 0.88)"
+      );
+      ctx.fillStyle = fogGrad;
+      ctx.fillRect(0, 0, MAP_W, MAP_H);
 
       rafRef.current = requestAnimationFrame(draw);
     };
