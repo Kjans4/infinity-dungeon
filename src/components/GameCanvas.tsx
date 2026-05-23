@@ -511,6 +511,10 @@ export default function GameCanvas() {
     const player = state.player;
     const render = renderRef.current;
 
+    // ── Player screen center — used for fog ───────────────────
+    const playerSX = state.camera.toScreenX(player.x + player.width  / 2);
+    const playerSY = state.camera.toScreenY(player.y + player.height / 2);
+
     // 1. Tick timers
     state.playerConsumables.update(16);
     // 2. Buff effects + projectile hits
@@ -532,6 +536,8 @@ export default function GameCanvas() {
           ctx.fillRect(state.camera.toScreenX(player.x), state.camera.toScreenY(player.y), player.width, player.height);
         }
       }
+      // ── Fog during death sequence ──────────────────────────
+      render.drawFog(ctx, playerSX, playerSY, state.screenW, state.screenH, isBoss);
       if (elapsed >= DEATH_FLASH_MS) {
         const vigProgress = Math.min((elapsed - DEATH_FLASH_MS) / DEATH_VIGNETTE_MS, 1);
         vignetteAlphaRef.current = vigProgress;
@@ -615,7 +621,9 @@ export default function GameCanvas() {
     state.consumableSystem.draw(ctx, state.camera, state, player);
     // 6. Player
     player.draw(ctx, state.camera);
-    // 7. Damage numbers
+    // 7. Fog — drawn after all entities + player, before damage numbers
+    render.drawFog(ctx, playerSX, playerSY, state.screenW, state.screenH, isBoss);
+    // 8. Damage numbers — always on top of fog
     render.drawDamageNumbers(ctx, state.camera, state.damageNumbers);
   });
 
