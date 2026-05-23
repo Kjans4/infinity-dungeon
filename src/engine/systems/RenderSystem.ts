@@ -145,8 +145,8 @@ export class RenderSystem {
     const grad = ctx.createRadialGradient(px, py, 0, px, py, radius * 2.2);
     grad.addColorStop(0.00, "rgba(0, 0, 0, 0)");
     grad.addColorStop(0.35, "rgba(0, 0, 0, 0)");
-    grad.addColorStop(0.65, "rgba(30, 30, 30, 0.55)");
-    grad.addColorStop(1.00, isBoss ? "rgba(40, 10, 10, 0.92)" : "rgba(20, 20, 20, 0.92)");
+    grad.addColorStop(0.65, "rgba(0, 0, 0, 0.55)");
+    grad.addColorStop(1.00, isBoss ? "rgba(0, 0, 0, 0.92)" : "rgba(20, 20, 20, 0.92)");
 
     ctx.save();
     ctx.fillStyle = grad;
