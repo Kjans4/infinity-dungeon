@@ -37,8 +37,18 @@ const BASE_THRESHOLD         = 20;
 const THRESHOLD_PER_FLOOR    = 5;
 const ELITE_THRESHOLD_MULT   = 1.5;
 const ELITE_WAVE_MULT        = 1.5;
-const FARMING_SPAWN_INTERVAL = 3000;
 const GRACE_PERIOD_MS        = 1500;
+
+// ============================================================
+// [🧱 BLOCK: Farming Batch Constants]
+// After kill threshold is met, tanks spawn in capped batches.
+// Batch scaling stacks on top of floor scaling.
+// ============================================================
+const BATCH_SIZE          = 5;
+const MAX_BATCHES         = 10;
+const BATCH_HP_MULT       = 1.3;   // per batch, cumulative
+const BATCH_DAMAGE_MULT   = 1.2;   // per batch, cumulative
+const BATCH_COOLDOWN_MS   = 2000;  // delay after last batch death before next spawns
 
 // ============================================================
 // [🧱 BLOCK: Parry Constants]
@@ -119,9 +129,31 @@ function rollItemDrop(
   return pool[0] ?? null;
 }
 
+// ============================================================
+// [🧱 BLOCK: Farming Batch State]
+// Tracks the tank batch farming system post-threshold.
+// Reset to initial state on every room setup.
+// ============================================================
+interface FarmingBatchState {
+  batchNumber:   number;         // current batch index (1–MAX_BATCHES), 0 = not started
+  aliveInBatch:  number;         // how many batch tanks are still alive
+  cooldownTimer: number;         // ms remaining before next batch spawns
+  batchEnemies:  Set<BaseEnemy>; // references to tanks in the current batch
+}
+
+function makeFreshBatchState(): FarmingBatchState {
+  return {
+    batchNumber:  0,
+    aliveInBatch: 0,
+    cooldownTimer:0,
+    batchEnemies: new Set(),
+  };
+}
+
 export class HordeSystem {
-  private goldSystem   = new GoldSystem();
-  private weaponSystem = new WeaponSystem();
+  private goldSystem    = new GoldSystem();
+  private weaponSystem  = new WeaponSystem();
+  private farmingBatch: FarmingBatchState = makeFreshBatchState();
 
   // ============================================================
   // [🧱 BLOCK: Threshold Helper]
@@ -132,6 +164,114 @@ export class HordeSystem {
   }
 
   get killThreshold(): number { return BASE_THRESHOLD; }
+
+  // ============================================================
+  // [🧱 BLOCK: Spawn Batch Tank]
+  // Creates a Tank with HP and damage scaled by both floor and
+  // batch number. Batch scaling is cumulative: batch N applies
+  // BATCH_HP_MULT^(N-1) on top of the floor-scaled base stats.
+  // ============================================================
+  private spawnBatchTank(
+    worldW: number,
+    worldH: number,
+    floor:  number,
+    batch:  number
+  ): Tank {
+    const margin   = 60;
+    const edge     = Math.floor(Math.random() * 4);
+    let   x: number, y: number;
+    switch (edge) {
+      case 0:  x = Math.random() * worldW; y = margin;              break;
+      case 1:  x = Math.random() * worldW; y = worldH - margin;     break;
+      case 2:  x = margin;                 y = Math.random() * worldH; break;
+      default: x = worldW - margin;        y = Math.random() * worldH; break;
+    }
+
+    const tank = new Tank(x, y, floor);
+
+    // Batch multiplier — cumulative per batch beyond the first
+    const batchMult = Math.pow(BATCH_HP_MULT, batch - 1);
+    const dmgMult   = Math.pow(BATCH_DAMAGE_MULT, batch - 1);
+
+    // Override HP with batch scaling on top of already floor-scaled base
+    tank.hp        = Math.round(tank.maxHp * batchMult);
+    tank.maxHp     = tank.hp;
+
+    // Override damageMult so the tank's meleeDamage getter reflects it
+    tank.damageMult = dmgMult;
+
+    return tank;
+  }
+
+  // ============================================================
+  // [🧱 BLOCK: Spawn Next Batch]
+  // Spawns BATCH_SIZE tanks, registers them in batchEnemies,
+  // and advances the batch counter.
+  // ============================================================
+  private spawnNextBatch(
+    state:  GameState,
+    worldW: number,
+    worldH: number,
+    floor:  number
+  ): void {
+    this.farmingBatch.batchNumber++;
+    this.farmingBatch.aliveInBatch  = BATCH_SIZE;
+    this.farmingBatch.cooldownTimer = 0;
+    this.farmingBatch.batchEnemies  = new Set();
+
+    for (let i = 0; i < BATCH_SIZE; i++) {
+      const tank = this.spawnBatchTank(worldW, worldH, floor, this.farmingBatch.batchNumber);
+      this.farmingBatch.batchEnemies.add(tank);
+      state.enemies.push(tank);
+      state.alive += 1;
+    }
+  }
+
+  // ============================================================
+  // [🧱 BLOCK: Tick Farming Batch]
+  // Called every frame after kill threshold is met.
+  // Counts dead batch tanks, starts cooldown when all are gone,
+  // and triggers next batch when cooldown expires.
+  // ============================================================
+  private tickFarmingBatch(
+    state:  GameState,
+    worldW: number,
+    worldH: number,
+    floor:  number,
+    deltaMs:number
+  ): void {
+    const batch = this.farmingBatch;
+
+    // ── Not started yet — spawn batch 1 immediately ───────────
+    if (batch.batchNumber === 0) {
+      this.spawnNextBatch(state, worldW, worldH, floor);
+      return;
+    }
+
+    // ── Count surviving batch members ─────────────────────────
+    if (batch.aliveInBatch > 0) {
+      let alive = 0;
+      for (const enemy of batch.batchEnemies) {
+        if (!enemy.isDead) alive++;
+      }
+      batch.aliveInBatch = alive;
+
+      // All dead — start cooldown for next batch
+      if (alive === 0 && batch.batchNumber < MAX_BATCHES) {
+        batch.cooldownTimer = BATCH_COOLDOWN_MS;
+      }
+      return;
+    }
+
+    // ── Cooldown ticking ──────────────────────────────────────
+    if (batch.cooldownTimer > 0) {
+      batch.cooldownTimer -= deltaMs;
+      if (batch.cooldownTimer <= 0 && batch.batchNumber < MAX_BATCHES) {
+        this.spawnNextBatch(state, worldW, worldH, floor);
+      }
+    }
+    // batch.batchNumber >= MAX_BATCHES and aliveInBatch === 0 → no more batches
+  }
 
   // ============================================================
   // [🧱 BLOCK: Setup]
@@ -160,6 +300,9 @@ export class HordeSystem {
     state.door.isActive = false;
     state.shopNpc       = new ShopNPC(worldW);
 
+    // ── Reset batch state for this room ───────────────────────
+    this.farmingBatch = makeFreshBatchState();
+
     state.camera.update(state.player, worldW, worldH);
     state.playerStats.applyToPlayer(state.player);
   }
@@ -181,6 +324,7 @@ export class HordeSystem {
     state.kills           = 0;
     state.alive           = 0;
     state.lastSpawn       = 0;
+    this.farmingBatch     = makeFreshBatchState();
   }
 
   // ============================================================
@@ -287,7 +431,6 @@ export class HordeSystem {
   ): boolean {
     if (player.iFrames > 0) return true;
 
-    // Ward Scroll — absorb the hit entirely
     if (ConsumableSystem.wardCanAbsorb(state)) {
       ConsumableSystem.consumeWardHit(state);
       state.particles.push(...spawnBurst(
@@ -298,14 +441,12 @@ export class HordeSystem {
       return true;
     }
 
-    // Iron Potion damage reduction (multiplicative on top of base DR)
     const ironMult = ConsumableSystem.ironDamageReductionMult(state);
     let   dmg      = Math.round(rawDamage * ironMult);
 
     dmg = this.resolveBlock(player, dmg);
     if (dmg > 0) player.takeHit(dmg);
 
-    // Iron Warden reflect — source is null for projectiles
     if (source !== null) {
       const iw5Count = state.playerStats.getEquippedSetCounts()['iron_warden'] ?? 0;
       tryIronWardenReflect(iw5Count, source);
@@ -408,7 +549,6 @@ export class HordeSystem {
     const threshold = this.getThreshold(rs.floor, isElite);
     const thresholdMet = state.kills >= threshold;
 
-    // ── Phantom Potion — is player invisible? ─────────────────
     const playerIsInvisible = ConsumableSystem.isPhantomActive(state);
 
     // ── Door ─────────────────────────────────────────────────
@@ -443,27 +583,27 @@ export class HordeSystem {
 
     // ── Enemy update + combat resolution ─────────────────────
     state.enemies.forEach((enemy) => {
-      // ── Tick stun via the proper BaseEnemy method ──────────
-      // tickStun() decrements stunTimer, zero-clamps, zeroes
-      // velocity, and returns true if still stunned.
-      // This replaces the old (enemy as any).stunTimer casts and
-      // keeps all stun logic in a single authoritative place.
-      if (enemy.isStunned) {
-        enemy.tickStun();
+      if (!playerIsInvisible) {
+        if (!enemy.isStunned) {
+          enemy.update(player, worldW, worldH);
+        } else {
+          (enemy as any).stunTimer -= 16;
+          if ((enemy as any).stunTimer < 0) (enemy as any).stunTimer = 0;
+          enemy.vx = 0;
+          enemy.vy = 0;
+        }
+      } else {
+        if (enemy.isStunned) {
+          (enemy as any).stunTimer -= 16;
+          if ((enemy as any).stunTimer < 0) (enemy as any).stunTimer = 0;
+        }
       }
 
-      // Only call update() when not invisible-suppressed AND not stunned
-      if (!playerIsInvisible && !enemy.isStunned) {
-        enemy.update(player, worldW, worldH);
-      }
-
-      // ── Drain projectiles from Shooters ───────────────────
       if (enemy instanceof Shooter && enemy.pendingProjectiles.length > 0) {
         state.projectiles.push(...enemy.pendingProjectiles);
         enemy.pendingProjectiles = [];
       }
 
-      // ── Bomber explosion detection ────────────────────────
       if (enemy instanceof Bomber) {
         if (enemy.isExploding) {
           this.handleBomberExplosion(state, enemy, player, ps);
@@ -471,7 +611,6 @@ export class HordeSystem {
       }
 
       if (enemy.isDead) return;
-
       if (playerIsInvisible) return;
 
       if (!enemy.isStunned) {
@@ -486,7 +625,6 @@ export class HordeSystem {
         }
       }
 
-      // ── Dasher dash-hit ───────────────────────────────────
       if (enemy instanceof Dasher) {
         if (enemy.isDashHittingPlayer(player) && player.iFrames <= 0) {
           if (player.isParrying) {
@@ -500,7 +638,6 @@ export class HordeSystem {
         return;
       }
 
-      // ── Bomber body contact ───────────────────────────────
       if (enemy instanceof Bomber) {
         if (enemy.isTouchingPlayer(player) && player.iFrames <= 0) {
           const rawDmg = Math.round(enemy.contactDmg * (1 - ps.damageReduction));
@@ -509,7 +646,6 @@ export class HordeSystem {
         return;
       }
 
-      // ── Standard melee contact ────────────────────────────
       if (!enemy.isMeleeHittingPlayer(player)) return;
       if (enemy.isStunned) return;
 
@@ -700,7 +836,7 @@ export class HordeSystem {
       return true;
     });
 
-    // ── Wave spawning ─────────────────────────────────────────
+    // ── Wave spawning (pre-threshold) ─────────────────────────
     const now          = Date.now();
     const graceElapsed = now - state.roomEntryTime;
     const graceDone    = graceElapsed >= GRACE_PERIOD_MS;
@@ -722,14 +858,10 @@ export class HordeSystem {
         state.lastSpawn = now;
       }
     } else {
-      if (now - state.lastSpawn > FARMING_SPAWN_INTERVAL) {
-        const [newEnemy] = isElite
-          ? spawnEliteWave(1, worldW, worldH, rs.floor)
-          : spawnWave(1, worldW, worldH, rs.roomInCycle, rs.floor);
-        state.enemies.push(newEnemy);
-        state.alive    += 1;
-        state.lastSpawn = now;
-      }
+      // ── Post-threshold: tank batch system only ────────────────
+      // 5 tanks per batch, up to 10 batches, each batch stronger
+      // than the last. No other enemies spawn post-threshold.
+      this.tickFarmingBatch(state, worldW, worldH, rs.floor, 16);
     }
 
     // ── Projectiles ───────────────────────────────────────────
