@@ -1,10 +1,14 @@
 /* ============================================================
    GameOverOverlay — src/styles/gameover.css
+   Fantasy RPG aesthetic — matches menu/pause/victory panels
    ============================================================ */
 
+@import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700&family=Cinzel+Decorative:wght@400;700&family=IM+Fell+English:ital@0;1&display=swap');
+
+/* ── Shared font defaults ── */
 .go-backdrop,
 .go-backdrop * {
-  font-family: 'Courier New', monospace;
+  font-family: 'Cinzel', serif;
 }
 
 /* ============================================================
@@ -15,25 +19,40 @@
   inset: 0;
   z-index: 48;
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
   background: rgba(0, 0, 0, 0.88);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
 }
 
 /* ============================================================
-   [🧱 BLOCK: Card]
-   Fades + slides up on mount.
+   [🧱 BLOCK: Card — Stone Panel]
+   Mirrors the pause/menu right panel aesthetic.
    ============================================================ */
 .go-card {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 24px;
+  position: relative;
+  background:
+    repeating-linear-gradient(
+      0deg,
+      rgba(255,255,255,0.007) 0px, rgba(255,255,255,0.007) 1px,
+      transparent 1px, transparent 44px
+    ),
+    repeating-linear-gradient(
+      90deg,
+      rgba(255,255,255,0.007) 0px, rgba(255,255,255,0.007) 1px,
+      transparent 1px, transparent 66px
+    ),
+    linear-gradient(180deg, #1a1208 0%, #110d06 40%, #0e0b06 60%, #1a1208 100%);
+
+  border: 1px solid #2e2008;
+  box-shadow:
+    0 0 0 1px #1e1608,
+    0 24px 60px rgba(0,0,0,0.85),
+    inset 0 1px 0 rgba(140,90,10,0.12);
+
   width: min(480px, 92vw);
-  background: rgba(10, 15, 30, 0.95);
-  border: 1px solid rgba(239, 68, 68, 0.2);
-  border-radius: 12px;
-  padding: 40px 48px;
   opacity: 0;
   transform: translateY(20px);
   transition: opacity 0.5s ease, transform 0.5s ease;
@@ -44,60 +63,139 @@
   transform: translateY(0);
 }
 
+/* ── Corner ornaments ── */
+.go-card::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0;
+  width: 20px; height: 20px;
+  border-top:  2px solid #8B6914;
+  border-left: 2px solid #8B6914;
+  pointer-events: none;
+  z-index: 2;
+}
+.go-card::after {
+  content: '';
+  position: absolute;
+  top: 0; right: 0;
+  width: 20px; height: 20px;
+  border-top:   2px solid #8B6914;
+  border-right: 2px solid #8B6914;
+  pointer-events: none;
+  z-index: 2;
+}
+
+/* ── Inner double-border ── */
+.go-card-inner {
+  position: relative;
+  padding: 32px 40px 28px;
+  border: 1px solid #1e1608;
+  margin: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+/* Bottom corners on inner */
+.go-card-inner::before {
+  content: '';
+  position: absolute;
+  bottom: 0; left: 0;
+  width: 16px; height: 16px;
+  border-bottom: 1px solid #5a4010;
+  border-left:   1px solid #5a4010;
+}
+.go-card-inner::after {
+  content: '';
+  position: absolute;
+  bottom: 0; right: 0;
+  width: 16px; height: 16px;
+  border-bottom: 1px solid #5a4010;
+  border-right:  1px solid #5a4010;
+}
+
 /* ============================================================
-   [🧱 BLOCK: Title]
+   [🧱 BLOCK: Title Block]
    ============================================================ */
 .go-title-block {
   text-align: center;
+  margin-bottom: 4px;
+}
+
+.go-subtitle-location {
+  font-family: 'Cinzel', serif;
+  font-size: 9px;
+  color: #5a4010;
+  letter-spacing: 0.35em;
+  text-transform: uppercase;
+  margin-bottom: 6px;
 }
 
 .go-title {
-  font-size: 56px;
-  font-weight: 900;
+  font-family: 'Cinzel Decorative', serif;
+  font-size: 48px;
+  font-weight: 700;
   color: #ef4444;
   letter-spacing: 0.1em;
-  text-shadow: 0 0 60px #ef4444;
-  margin-bottom: 8px;
-}
-
-.go-subtitle {
-  font-size: 12px;
-  color: #475569;
-  letter-spacing: 0.2em;
-  text-transform: uppercase;
+  text-shadow:
+    0 0 40px rgba(239,68,68,0.5),
+    0 0 80px rgba(239,68,68,0.2);
+  margin-bottom: 0;
+  line-height: 1;
 }
 
 /* ============================================================
-   [🧱 BLOCK: Divider]
+   [🧱 BLOCK: Divider — Gem Rule]
    ============================================================ */
 .go-divider {
-  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 18px 0;
+}
+
+.go-divider::before,
+.go-divider::after {
+  content: '';
+  flex: 1;
   height: 1px;
-  background: rgba(255, 255, 255, 0.06);
+  background: #2e2008;
+}
+
+.go-divider-gem {
+  width: 7px; height: 7px;
+  background: #6a4c10;
+  border: 1px solid #8B6914;
+  transform: rotate(45deg);
+  flex-shrink: 0;
 }
 
 /* ============================================================
-   [🧱 BLOCK: Summary]
+   [🧱 BLOCK: Summary Section]
    ============================================================ */
 .go-summary {
   width: 100%;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 0;
 }
 
 .go-summary__label {
-  font-size: 9px;
-  color: #334155;
-  letter-spacing: 0.25em;
+  font-family: 'Cinzel', serif;
+  font-size: 7px;
+  font-weight: 700;
+  color: #5a4010;
+  letter-spacing: 0.3em;
   text-transform: uppercase;
-  margin-bottom: 4px;
+  margin-bottom: 8px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid #2e2008;
 }
 
 .go-stats {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 0;
 }
 
 /* ============================================================
@@ -108,27 +206,34 @@
   align-items: center;
   gap: 10px;
   padding: 6px 0;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  border-bottom: 1px solid #1e1608;
+}
+
+.go-stat-row:last-child {
+  border-bottom: none;
 }
 
 .go-stat-row__icon {
-  font-size: 14px;
-  width: 20px;
+  font-size: 13px;
+  width: 18px;
   text-align: center;
+  flex-shrink: 0;
 }
 
 .go-stat-row__label {
-  font-size: 10px;
-  color: #64748b;
-  letter-spacing: 0.08em;
+  font-family: 'Cinzel', serif;
+  font-size: 9px;
+  color: #5a4010;
+  letter-spacing: 0.12em;
   flex: 1;
   text-transform: uppercase;
 }
 
 .go-stat-row__value {
+  font-family: 'Cinzel', serif;
   font-size: 11px;
   font-weight: 700;
-  color: #f1f5f9;
+  color: #c0860c;
 }
 
 /* ============================================================
@@ -137,31 +242,40 @@
 .go-buttons {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 8px;
   width: 100%;
 }
 
 .go-btn {
-  font-family: 'Courier New', monospace;
-  font-size: 13px;
+  font-family: 'Cinzel', serif;
+  font-size: 11px;
   font-weight: 700;
-  letter-spacing: 0.2em;
+  letter-spacing: 0.25em;
   text-transform: uppercase;
-  border-radius: 6px;
   cursor: pointer;
-  padding: 13px 0;
   width: 100%;
-  transition: background 0.12s, color 0.12s, border 0.12s;
+  padding: 12px 0;
+  transition: background 0.12s, color 0.12s, border-color 0.12s;
 }
 
+/* Primary — red death accent */
 .go-btn--retry {
-  color: #0f172a;
-  background: #ef4444;
-  border: none;
+  color: #0e0b06;
+  background: linear-gradient(180deg, #c0392b 0%, #8B1a1a 100%);
+  border: 1px solid #ef4444;
+  box-shadow: 0 0 12px rgba(239,68,68,0.15);
+}
+.go-btn--retry:hover {
+  background: linear-gradient(180deg, #ef4444 0%, #c0392b 100%);
 }
 
+/* Secondary — muted quit */
 .go-btn--quit {
-  color: #475569;
+  color: #5a4010;
   background: transparent;
-  border: 1px solid #1e293b;
+  border: 1px solid #2e2008;
+}
+.go-btn--quit:hover {
+  color: #c0860c;
+  border-color: #5a4010;
 }
