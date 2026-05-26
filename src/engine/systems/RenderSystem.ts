@@ -12,6 +12,14 @@ const FOG_FLICKER_SPEED = 0.004; // how fast the flicker oscillates
 const FOG_OUTER_COLOR   = "rgba(5, 8, 20, 0.92)";   // near-black dark blue
 
 // ============================================================
+// [🧱 BLOCK: Low HP Vignette Constants]
+// ============================================================
+const LOW_HP_THRESHOLD  = 0.25;  // fraction of maxHp
+const LOW_HP_PULSE_FREQ = 0.003; // ~1Hz sine wave
+const LOW_HP_MIN_ALPHA  = 0.25;  // dimmest point of pulse
+const LOW_HP_MAX_ALPHA  = 0.55;  // brightest point of pulse
+
+// ============================================================
 // [🧱 BLOCK: RenderSystem]
 // Handles all canvas drawing that isn't tied to a specific
 // entity — world background, tiles, boundary walls, fog.
@@ -32,6 +40,12 @@ export class RenderSystem {
   // flickerTime accumulates each frame for smooth sine noise.
   // ============================================================
   private flickerTime: number = 0;
+
+  // ============================================================
+  // [🧱 BLOCK: Low HP Vignette State]
+  // pulseTime accumulates each frame independently of fog flicker.
+  // ============================================================
+  private lowHpPulseTime: number = 0;
 
   // ============================================================
   // [🧱 BLOCK: Trigger Shake]
@@ -147,6 +161,52 @@ export class RenderSystem {
     grad.addColorStop(0.35, "rgba(0, 0, 0, 0)");
     grad.addColorStop(0.65, "rgba(0, 0, 0, 0.55)");
     grad.addColorStop(1.00, isBoss ? "rgba(0, 0, 0, 0.92)" : "rgba(20, 20, 20, 0.92)");
+
+    ctx.save();
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, w, h);
+    ctx.restore();
+  }
+
+  // ============================================================
+  // [🧱 BLOCK: Draw Low HP Vignette]
+  // Pulsing red radial vignette drawn at screen edges when the
+  // player's HP is at or below LOW_HP_THRESHOLD (25%).
+  // Pulses continuously at ~1Hz using a sine wave.
+  // Call this AFTER drawFog(), BEFORE damage numbers.
+  //
+  // Parameters:
+  //   ctx         — canvas context
+  //   w, h        — canvas dimensions
+  //   hpRatio     — player.hp / player.maxHp (0.0 – 1.0)
+  // ============================================================
+  drawLowHpVignette(
+    ctx:     CanvasRenderingContext2D,
+    w:       number,
+    h:       number,
+    hpRatio: number
+  ): void {
+    if (hpRatio > LOW_HP_THRESHOLD) return;
+
+    this.lowHpPulseTime += LOW_HP_PULSE_FREQ;
+
+    // Sine pulse between MIN and MAX alpha
+    const pulse = Math.sin(this.lowHpPulseTime * Math.PI * 2) * 0.5 + 0.5;
+    const alpha = LOW_HP_MIN_ALPHA + pulse * (LOW_HP_MAX_ALPHA - LOW_HP_MIN_ALPHA);
+
+    // Intensity scales with how low HP is — at 0% HP, full intensity;
+    // at 25% HP, ~60% intensity so the effect fades in as you lose HP
+    const intensityMult = 1.0 - (hpRatio / LOW_HP_THRESHOLD) * 0.4;
+    const finalAlpha    = alpha * intensityMult;
+
+    const cx = w / 2;
+    const cy = h / 2;
+
+    // Radial gradient: transparent center → red edges
+    const grad = ctx.createRadialGradient(cx, cy, h * 0.25, cx, cy, h * 0.85);
+    grad.addColorStop(0.0, "rgba(0, 0, 0, 0)");
+    grad.addColorStop(0.5, `rgba(160, 0, 0, ${finalAlpha * 0.4})`);
+    grad.addColorStop(1.0, `rgba(180, 0, 0, ${finalAlpha})`);
 
     ctx.save();
     ctx.fillStyle = grad;

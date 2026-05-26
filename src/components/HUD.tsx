@@ -1,3 +1,4 @@
+//src/components/HUD.tsx
 "use client";
 
 import React from "react";
@@ -27,10 +28,16 @@ interface HUDProps {
 }
 
 // ============================================================
+// [🧱 BLOCK: Stamina Empty Threshold]
+// Below this value the bar triggers the flash animation.
+// ============================================================
+const STAMINA_EMPTY_THRESHOLD = 5;
+
+// ============================================================
 // [🧱 BLOCK: Thin Bar]
 // ============================================================
-function ThinBar({ value, max, color, label }: {
-  value: number; max: number; color: string; label: string;
+function ThinBar({ value, max, color, label, isEmpty = false }: {
+  value: number; max: number; color: string; label: string; isEmpty?: boolean;
 }) {
   const pct = Math.max(0, Math.min(1, value / max)) * 100;
   return (
@@ -39,10 +46,10 @@ function ThinBar({ value, max, color, label }: {
         <span className="hud-label">{label}</span>
         <span className="hud-value">{Math.round(value)}/{max}</span>
       </div>
-      <div className="hud-bar-track">
+      <div className={`hud-bar-track ${isEmpty ? "hud-bar-track--empty" : ""}`}>
         <div
-          className="hud-bar-fill"
-          style={{ width: `${pct}%`, background: color, boxShadow: `0 0 6px ${color}` }}
+          className={`hud-bar-fill ${isEmpty ? "hud-bar-fill--empty" : ""}`}
+          style={{ width: `${pct}%`, background: isEmpty ? "#475569" : color, boxShadow: isEmpty ? "none" : `0 0 6px ${color}` }}
         />
       </div>
     </div>
@@ -285,6 +292,8 @@ export default function HUD({
     hp / maxHp > 0.25 ? "#facc15" :
                         "#ef4444";
 
+  const staminaEmpty = stamina < STAMINA_EMPTY_THRESHOLD;
+
   const bagCounts = hotbar.map((slot) =>
     slot.assignedId
       ? (slot as any)._bagCount ?? 0
@@ -307,7 +316,13 @@ export default function HUD({
           {/* ── Vitality + Stamina ── */}
           <div className="hud-bars-group">
             <ThinBar value={hp}      max={maxHp}     color={hpColor}  label="Vitality" />
-            <ThinBar value={stamina} max={maxStamina} color="#60a5fa"  label="Stamina"  />
+            <ThinBar
+              value={stamina}
+              max={maxStamina}
+              color="#60a5fa"
+              label="Stamina"
+              isEmpty={staminaEmpty}
+            />
           </div>
 
           <Divider />

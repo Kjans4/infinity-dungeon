@@ -511,7 +511,7 @@ export default function GameCanvas() {
     const player = state.player;
     const render = renderRef.current;
 
-    // ── Player screen center — used for fog ───────────────────
+    // ── Player screen center — used for fog + vignette ────────
     const playerSX = state.camera.toScreenX(player.x + player.width  / 2);
     const playerSY = state.camera.toScreenY(player.y + player.height / 2);
 
@@ -538,6 +538,8 @@ export default function GameCanvas() {
       }
       // ── Fog during death sequence ──────────────────────────
       render.drawFog(ctx, playerSX, playerSY, state.screenW, state.screenH, isBoss);
+      // ── Low HP vignette during death ──────────────────────
+      render.drawLowHpVignette(ctx, state.screenW, state.screenH, player.hp / player.maxHp);
       if (elapsed >= DEATH_FLASH_MS) {
         const vigProgress = Math.min((elapsed - DEATH_FLASH_MS) / DEATH_VIGNETTE_MS, 1);
         vignetteAlphaRef.current = vigProgress;
@@ -621,9 +623,11 @@ export default function GameCanvas() {
     state.consumableSystem.draw(ctx, state.camera, state, player);
     // 6. Player
     player.draw(ctx, state.camera);
-    // 7. Fog — drawn after all entities + player, before damage numbers
+    // 7. Fog — drawn after all entities + player, before vignette + damage numbers
     render.drawFog(ctx, playerSX, playerSY, state.screenW, state.screenH, isBoss);
-    // 8. Damage numbers — always on top of fog
+    // 8. Low HP vignette — drawn on top of fog, below damage numbers
+    render.drawLowHpVignette(ctx, state.screenW, state.screenH, player.hp / player.maxHp);
+    // 9. Damage numbers — always on top of everything
     render.drawDamageNumbers(ctx, state.camera, state.damageNumbers);
   });
 
