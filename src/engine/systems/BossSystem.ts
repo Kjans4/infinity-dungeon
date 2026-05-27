@@ -15,7 +15,7 @@ import { ItemDrop }                    from "../ItemDrop";
 import { ConsumableDrop }              from "../ConsumableDrop";
 import { Door }                        from "../Door";
 import { ShopNPC }                     from "../ShopNPC";
-import { RenderSystem }                from "./RenderSystem";
+import { RenderSystem, FREEZE_PRESETS } from "./RenderSystem";
 import { ConsumableSystem }            from "../ConsumableSystem";
 import { spawnBurst, spawnHitSpark, spawnDamageNumber } from "../Particle";
 import { WeaponSystem }                from "./WeaponSystem";
@@ -34,21 +34,17 @@ const BOSS_GOLD = { min: 80, max: 120 };
 
 // ============================================================
 // [🧱 BLOCK: Boss Drop Constants]
-// MIN_ITEM_DROPS    — guaranteed items every boss kill
-// FLOOR_BONUS_FLOOR — floor threshold to add a 4th item
-// BONUS_DROP_CHANCE — probability of a 5th bonus item
-//
-// Boss items spawn as ItemDrop objects on the ground, spread
-// around the boss's death position. Player walks near them to
-// see them in Inventory (hold I) — consistent with horde drops.
-// No proximity auto-collect; player must explicitly equip.
 // ============================================================
 const MIN_ITEM_DROPS      = 3;
 const FLOOR_BONUS_FLOOR   = 3;
 const BONUS_DROP_CHANCE   = 0.40;
-
-// Spread radius for boss drop placement around death point
 const BOSS_DROP_SPREAD    = 80;
+
+// ============================================================
+// [🧱 BLOCK: Freeze Damage Threshold]
+// Player must take at least this much to trigger freeze.
+// ============================================================
+const FREEZE_PLAYER_HIT_THRESHOLD = 15;
 
 function randInt(min: number, max: number): number {
   return Math.floor(Math.random() * (max - min + 1)) + min;
@@ -56,10 +52,6 @@ function randInt(min: number, max: number): number {
 
 // ============================================================
 // [🧱 BLOCK: Spawn Boss Item Drops]
-// Spawns ItemDrop objects scattered around the boss death point.
-// They sit on the ground — player walks near them to see them in
-// Inventory, then equips explicitly. No pendingLoot bypass.
-// Duplicate prevention checks both owned and already-on-ground.
 // ============================================================
 function spawnBossItemDrops(state: GameState, cx: number, cy: number) {
   const floor      = state.boss ? (state.boss as any).floor ?? 1 : 1;
@@ -68,12 +60,10 @@ function spawnBossItemDrops(state: GameState, cx: number, cy: number) {
   const totalDrops = MIN_ITEM_DROPS + floorBonus + bonusRoll;
 
   for (let i = 0; i < totalDrops; i++) {
-    // Collect what's already owned + already on the ground to avoid dupes
     const ownedCharmIds   = state.playerStats.charms.map((c) => c.id);
     const ownedWeaponId   = state.playerStats.equippedWeaponItem?.id ?? null;
     const ownedArmorIds   = Object.values(state.playerStats.armorSlots)
       .filter(Boolean).map((a) => a!.id);
-    // Also exclude items already sitting as ground drops
     const groundCharmIds  = state.itemDrops.filter((d) => d.item.kind === 'charm').map((d) => d.item.id);
     const groundWeaponId  = state.itemDrops.find((d)  => d.item.kind === 'weapon')?.item.id ?? null;
     const groundArmorIds  = state.itemDrops.filter((d) => d.item.kind === 'armor').map((d) => d.item.id);
@@ -88,7 +78,6 @@ function spawnBossItemDrops(state: GameState, cx: number, cy: number) {
 
     if (!pool[0]) continue;
 
-    // Scatter drops in a circle around the boss death point
     const angle  = (i / totalDrops) * Math.PI * 2;
     const radius = BOSS_DROP_SPREAD * (0.5 + Math.random() * 0.5);
     state.itemDrops.push(new ItemDrop(
@@ -101,8 +90,6 @@ function spawnBossItemDrops(state: GameState, cx: number, cy: number) {
 
 // ============================================================
 // [🧱 BLOCK: Spawn Boss Consumable Drop]
-// Always spawns exactly 1 consumable drop on boss death,
-// placed slightly offset from the boss center.
 // ============================================================
 function spawnBossConsumableDrop(state: GameState, cx: number, cy: number) {
   const def = getRandomConsumableDrop();
@@ -128,9 +115,7 @@ export function getBossName(boss: AnyBoss): string {
 // ============================================================
 // [🧱 BLOCK: Boss Stagger State]
 // ============================================================
-interface BossStagger {
-  timer: number;
-}
+interface BossStagger { timer: number; }
 
 // ============================================================
 // [🧱 BLOCK: BossSystem]
@@ -143,8 +128,6 @@ export class BossSystem {
 
   // ============================================================
   // [🧱 BLOCK: Setup]
-  // Clears consumableDrops and itemDrops so horde-room drops
-  // don't bleed into the boss arena.
   // ============================================================
   setup(state: GameState, rs: RoomState) {
     state.player.x  = BOSS_WORLD_W / 2;
@@ -155,8 +138,8 @@ export class BossSystem {
     state.enemies         = [];
     state.projectiles     = [];
     state.goldDrops       = [];
-    state.itemDrops       = [];           // ← clear horde drops on boss entry
-    state.consumableDrops = [];           // ← clear horde consumable drops
+    state.itemDrops       = [];
+    state.consumableDrops = [];
     state.particles       = [];
     state.hitSparks       = [];
     state.damageNumbers   = [];
@@ -199,10 +182,6 @@ export class BossSystem {
 
   // ============================================================
   // [🧱 BLOCK: Tick Consumable Drops]
-  // Shared helper — updates all consumable drops on the ground,
-  // auto-collects them into the bag when player walks over them,
-  // and spawns a pickup particle burst.
-  // Called both during the fight and in the post-victory phase.
   // ============================================================
   private tickConsumableDrops(state: GameState, player: Player): void {
     state.consumableDrops = state.consumableDrops.filter((drop) => {
@@ -223,10 +202,6 @@ export class BossSystem {
 
   // ============================================================
   // [🧱 BLOCK: Tick Door and Shop Post-Victory]
-  // Item drops (including boss drops) sit on the ground and tick
-  // for proximity detection only — no auto-collect, no removal.
-  // The only removal path is GameCanvas.handleEquipDrop setting
-  // collected = true when the player explicitly equips the item.
   // ============================================================
   private tickDoorAndShop(state: GameState, player: Player): number {
     if (state.door) {
@@ -251,34 +226,32 @@ export class BossSystem {
     });
     state.goldDrops = state.goldDrops.filter((d) => !d.collected);
 
-    // ── Item drops — proximity tick only, NO auto-collect ─────
-    // Boss drops (spawned as ItemDrop objects) and any remaining
-    // ground drops all follow the same rule: they stay on the
-    // ground until the player explicitly equips them via Inventory.
-    // playerIsNear is updated each frame so Inventory can show
-    // the nearby drop card.
     state.itemDrops = state.itemDrops.filter((drop) => {
       if (drop.collected) return false;
-      drop.update(player);   // ticks animation + playerIsNear flag
-      return true;           // always keep — never auto-remove
+      drop.update(player);
+      return true;
     });
 
-    // ── Consumable drops still on ground post-victory ─────────
     this.tickConsumableDrops(state, player);
-
     return goldCollected;
   }
 
   // ============================================================
-  // [🧱 BLOCK: Emit Hit Feedback]
+  // [🧱 BLOCK: Emit Hit Feedback vs Boss]
+  // isFirstHit gates freeze, sparks, and damage numbers.
+  // Boss gets freeze on every attack type (even light) since
+  // it's a single high-stakes target, but only on first contact.
   // ============================================================
   private emitHitFeedback(
     state:      GameState,
     boss:       AnyBoss,
     damage:     number,
     attackType: string | null,
-    render:     RenderSystem
+    render:     RenderSystem,
+    isFirstHit: boolean
   ): void {
+    if (!isFirstHit) return;
+
     const cx = boss.x + boss.width  / 2;
     const cy = boss.y + boss.height / 2;
 
@@ -291,22 +264,32 @@ export class BossSystem {
     state.hitSparks.push(...spawnHitSpark(cx, cy, sparkColor, 5));
     state.damageNumbers.push(spawnDamageNumber(cx, cy - boss.height / 2, damage, attackType));
     render.shake('micro');
+
+    // All hit types freeze on boss — but heavier hits freeze longer
+    if (attackType === 'charged_heavy' || attackType === 'heavy') {
+      render.freezeFrames(FREEZE_PRESETS.heavy);
+    } else if (attackType === 'charged_light') {
+      render.freezeFrames(FREEZE_PRESETS.light);
+    } else {
+      // Light attack on boss: a small 16ms freeze — feels weighty
+      // without breaking rapid combo rhythm
+      render.freezeFrames(16);
+    }
   }
 
   // ============================================================
-  // [🧱 BLOCK: Apply Incoming Damage]
-  // Centralises Ward absorb + Iron Potion reduction + block for
-  // all boss damage sources (projectiles, contact, slam, lunge).
-  // Returns true if the hit was fully absorbed.
+  // [🧱 BLOCK: Apply Incoming Damage to Player]
+  // Triggers freeze when player takes meaningful damage.
+  // Returns true if hit was fully absorbed.
   // ============================================================
   private applyIncomingDamage(
     state:     GameState,
     player:    Player,
-    rawDamage: number
+    rawDamage: number,
+    render:    RenderSystem
   ): boolean {
     if (player.iFrames > 0) return true;
 
-    // Ward Scroll — absorb hit entirely
     if (ConsumableSystem.wardCanAbsorb(state)) {
       ConsumableSystem.consumeWardHit(state);
       state.particles.push(...spawnBurst(
@@ -317,18 +300,22 @@ export class BossSystem {
       return true;
     }
 
-    // Block — absorbs hit and costs stamina
     if (player.isBlocking) {
       const afterBlock = player.applyBlockedHit(rawDamage);
-      if (afterBlock === 0) return false; // absorbed by block
+      if (afterBlock === 0) return false;
       rawDamage = afterBlock;
     }
 
-    // Iron Potion damage reduction (multiplicative)
     const ironMult = ConsumableSystem.ironDamageReductionMult(state);
     const dmg      = Math.round(rawDamage * ironMult);
 
-    if (dmg > 0) player.takeHit(dmg);
+    if (dmg > 0) {
+      player.takeHit(dmg);
+      if (dmg >= FREEZE_PLAYER_HIT_THRESHOLD) {
+        render.freezeFrames(FREEZE_PRESETS.player_hit);
+      }
+    }
+
     return false;
   }
 
@@ -383,7 +370,6 @@ export class BossSystem {
       proj.update();
       if (!proj.isHittingPlayer(player)) return;
 
-      // Parry check first — parry window deflects the projectile
       if (player.isParrying) {
         const parried = player.tryParry();
         if (parried) {
@@ -394,9 +380,8 @@ export class BossSystem {
         }
       }
 
-      // applyIncomingDamage handles iFrames, Ward, Block, Iron internally
       const rawDmg = Math.round(proj.damage * (1 - ps.damageReduction));
-      this.applyIncomingDamage(state, player, rawDmg);
+      this.applyIncomingDamage(state, player, rawDmg, render);
       proj.isDone = true;
     });
     state.projectiles = state.projectiles.filter((p) => !p.isDone);
@@ -416,7 +401,7 @@ export class BossSystem {
         }
       } else {
         const rawDmg = Math.round(boss.contactDamage * (1 - ps.damageReduction));
-        this.applyIncomingDamage(state, player, rawDmg);
+        this.applyIncomingDamage(state, player, rawDmg, render);
         if (boss instanceof Brute || boss instanceof Colossus || boss instanceof Shade) {
           boss.damageCooldown = 800;
         }
@@ -439,7 +424,11 @@ export class BossSystem {
           }
         } else {
           const rawDmg = Math.round(boss.lungeDamage * (1 - ps.damageReduction));
-          this.applyIncomingDamage(state, player, rawDmg);
+          this.applyIncomingDamage(state, player, rawDmg, render);
+          // Lunge always gets the heavier freeze
+          if (rawDmg >= FREEZE_PLAYER_HIT_THRESHOLD) {
+            render.freezeFrames(FREEZE_PRESETS.boss_slam);
+          }
         }
       }
     }
@@ -447,10 +436,14 @@ export class BossSystem {
     // ── Slam / stomp AoE ──────────────────────────────────────
     if (boss.isSlamHittingPlayer(player) && player.iFrames <= 0 && !this.isBossStaggered) {
       const rawDmg = Math.round(boss.slamDamage * (1 - ps.damageReduction));
-      this.applyIncomingDamage(state, player, rawDmg);
+      this.applyIncomingDamage(state, player, rawDmg, render);
+      if (!player.isBlocking) {
+        render.freezeFrames(FREEZE_PRESETS.boss_slam);
+        render.shake('medium');
+      }
     }
 
-    // ── Weapon input + hit vs boss ─────────────────────────────
+    // ── Weapon input + hit vs boss ────────────────────────────
     this.weaponSystem.processInput(player);
 
     if (ps.weaponPassive?.id === 'glaive' && player.isAttacking) {
@@ -459,7 +452,6 @@ export class BossSystem {
 
     tickRiposte(16);
 
-    // ── Wrath Potion ATK bonus stacks additively ───────────────
     const atkBonus = ps.atkBonus + ps.lastStandBonus(player) + ConsumableSystem.wrathAtkBonus(state);
 
     this.resolveWeaponHit(
@@ -486,11 +478,10 @@ export class BossSystem {
     state.totalGoldEarned += goldCollected;
 
     // ── Item drop tick during boss fight ──────────────────────
-    // Proximity tick only — no auto-collect, no removal.
     state.itemDrops = state.itemDrops.filter((drop) => {
       if (drop.collected) return false;
-      drop.update(player);   // ticks animation + playerIsNear flag
-      return true;           // always keep — never auto-remove
+      drop.update(player);
+      return true;
     });
 
     // ── Consumable drops on ground during boss fight ──────────
@@ -498,6 +489,8 @@ export class BossSystem {
 
     // ── Enrage event ──────────────────────────────────────────
     if (boss.justEnragedThisFrame) {
+      render.shake('heavy');
+      render.freezeFrames(FREEZE_PRESETS.heavy);
       return { event: "enraged", goldCollected };
     }
 
@@ -507,7 +500,6 @@ export class BossSystem {
       const bx = boss.x + boss.width  / 2;
       const by = boss.y + boss.height / 2;
 
-      // ── Gold drops ────────────────────────────────────────
       const variantMult = boss.goldMultiplier;
       const baseAmount  = randInt(BOSS_GOLD.min, BOSS_GOLD.max);
       const finalAmount = Math.round(baseAmount * variantMult);
@@ -517,15 +509,9 @@ export class BossSystem {
         state.goldDrops.push(new GoldDrop(bx + ox, by + oy, Math.floor(finalAmount / 5)));
       }
 
-      // ── Item drops — spawned as ground drops, NOT pendingLoot ─
-      // Player walks near them to see them in Inventory (hold I),
-      // then equips explicitly. Consistent with horde room drops.
       spawnBossItemDrops(state, bx, by);
-
-      // ── Guaranteed consumable drop ────────────────────────
       spawnBossConsumableDrop(state, bx, by);
 
-      // ── Death VFX ─────────────────────────────────────────
       state.particles.push(...spawnBurst(bx, by, boss.color, 12, 1.8));
 
       if (ps.hasCharm('executioner')) {
@@ -536,6 +522,9 @@ export class BossSystem {
         state.particles.push(...spawnBurst(bx, by, '#f97316', 16, 2.0));
         render.shake('heavy');
       }
+
+      // Boss death — big dramatic freeze
+      render.freezeFrames(FREEZE_PRESETS.heavy);
 
       this.spawnVictoryDoorAndShop(state);
       state.boss = null;
@@ -548,6 +537,9 @@ export class BossSystem {
 
   // ============================================================
   // [🧱 BLOCK: Resolve Weapon Hit vs Boss]
+  // Uses player.attackHitSet with the boss object as the key.
+  // This ensures each swing hits the boss exactly once, even
+  // during multi-frame heavy/charged attacks.
   // ============================================================
   private resolveWeaponHit(
     player:    Player,
@@ -558,6 +550,9 @@ export class BossSystem {
     render:    RenderSystem
   ): void {
     if (!player.isAttacking || !player.equippedWeapon || !player.attackType) return;
+
+    // ── Per-swing dedup for boss ──────────────────────────────
+    const isFirstHit = !player.attackHitSet.has(boss);
 
     const weapon  = player.equippedWeapon;
     const mode    = player.attackType === 'charged_light' ? 'light' : 'heavy';
@@ -581,12 +576,15 @@ export class BossSystem {
     const by = boss.y   + boss.height   / 2;
 
     if (weapon.hitTest(px, py, facing, mode, bx, by, boss.width, boss.height)) {
+      // Register this swing so subsequent frames don't re-hit
+      if (isFirstHit) player.attackHitSet.add(boss);
+
       if (boss instanceof Colossus) {
         boss.takeDamage(damage, isHeavy);
       } else {
         boss.takeDamage(damage);
       }
-      this.emitHitFeedback(state, boss, damage, player.attackType, render);
+      this.emitHitFeedback(state, boss, damage, player.attackType, render, isFirstHit);
     }
   }
 
@@ -622,19 +620,23 @@ export class BossSystem {
 
     mage.fakes.forEach((fake) => {
       if (fake.isDead) return;
+      // Per-swing dedup for each fake as well
+      const isFirstFakeHit = !player.attackHitSet.has(fake);
       const fx = fake.x + fake.width  / 2;
       const fy = fake.y + fake.height / 2;
       if (weapon.hitTest(px, py, facing, mode, fx, fy, fake.width, fake.height)) {
+        if (isFirstFakeHit) player.attackHitSet.add(fake);
         fake.takeDamage(damage);
-        state.hitSparks.push(...spawnHitSpark(fx, fy, '#99f6e4', 3));
-        render.shake('micro');
+        if (isFirstFakeHit) {
+          state.hitSparks.push(...spawnHitSpark(fx, fy, '#99f6e4', 3));
+          render.shake('micro');
+        }
       }
     });
   }
 
   // ============================================================
   // [🧱 BLOCK: Draw]
-  // consumableDrops drawn after item drops, before particles.
   // ============================================================
   draw(state: GameState, ctx: CanvasRenderingContext2D, camera: Camera, player: Player) {
     if (state.boss && this.isBossStaggered) {

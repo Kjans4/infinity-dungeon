@@ -6,24 +6,41 @@ import { TileMap } from "../TileMap";
 // ============================================================
 // [🧱 BLOCK: Fog Constants]
 // ============================================================
-const FOG_RADIUS_BASE   = 250;   // px — bright zone radius
-const FOG_FLICKER_AMP   = 8;     // px — max radius noise for torch flicker
-const FOG_FLICKER_SPEED = 0.004; // how fast the flicker oscillates
-const FOG_OUTER_COLOR   = "rgba(5, 8, 20, 0.92)";   // near-black dark blue
+const FOG_RADIUS_BASE   = 250;
+const FOG_FLICKER_AMP   = 8;
+const FOG_FLICKER_SPEED = 0.004;
+const FOG_OUTER_COLOR   = "rgba(5, 8, 20, 0.92)";
 
 // ============================================================
 // [🧱 BLOCK: Low HP Vignette Constants]
 // ============================================================
-const LOW_HP_THRESHOLD  = 0.25;  // fraction of maxHp
-const LOW_HP_PULSE_FREQ = 0.003; // ~1Hz sine wave
-const LOW_HP_MIN_ALPHA  = 0.25;  // dimmest point of pulse
-const LOW_HP_MAX_ALPHA  = 0.55;  // brightest point of pulse
+const LOW_HP_THRESHOLD  = 0.25;
+const LOW_HP_PULSE_FREQ = 0.003;
+const LOW_HP_MIN_ALPHA  = 0.25;
+const LOW_HP_MAX_ALPHA  = 0.55;
+
+// ============================================================
+// [🧱 BLOCK: Freeze Frame Presets]
+// Duration in ms. Game loop skips update() calls during freeze
+// but still renders — creates the "hit-stop" illusion.
+//   light      — charged_light hit on enemy
+//   heavy      — heavy / charged_heavy hit on enemy or boss
+//   player_hit — player takes significant damage (≥threshold)
+//   boss_slam  — boss slam / lunge lands on player
+// ============================================================
+export const FREEZE_PRESETS = {
+  light:      32,
+  heavy:      48,
+  player_hit: 32,
+  boss_slam:  48,
+} as const;
 
 // ============================================================
 // [🧱 BLOCK: RenderSystem]
 // Handles all canvas drawing that isn't tied to a specific
 // entity — world background, tiles, boundary walls, fog.
-// Also owns screen shake state and damage number rendering.
+// Also owns screen shake state, freeze frame state,
+// and damage number rendering.
 // ============================================================
 export class RenderSystem {
 
@@ -36,14 +53,34 @@ export class RenderSystem {
   private shakeY:         number = 0;
 
   // ============================================================
+  // [🧱 BLOCK: Freeze Frame State]
+  // _freezeMs > 0 means the game loop should skip update() this
+  // tick. Decremented each tick by tickFreeze().
+  // Only upgrades — a longer freeze is never cut short by a
+  // shorter one.
+  // ============================================================
+  private _freezeMs: number = 0;
+
+  get isFrozen(): boolean { return this._freezeMs > 0; }
+
+  freezeFrames(ms: number): void {
+    if (ms > this._freezeMs) this._freezeMs = ms;
+  }
+
+  tickFreeze(deltaMs: number): boolean {
+    if (this._freezeMs <= 0) return false;
+    this._freezeMs -= deltaMs;
+    if (this._freezeMs < 0) this._freezeMs = 0;
+    return this._freezeMs > 0;
+  }
+
+  // ============================================================
   // [🧱 BLOCK: Fog State]
-  // flickerTime accumulates each frame for smooth sine noise.
   // ============================================================
   private flickerTime: number = 0;
 
   // ============================================================
   // [🧱 BLOCK: Low HP Vignette State]
-  // pulseTime accumulates each frame independently of fog flicker.
   // ============================================================
   private lowHpPulseTime: number = 0;
 
@@ -107,33 +144,21 @@ export class RenderSystem {
     isBoss:   boolean,
     tileMap?: TileMap
   ) {
-    // 1. Background fill
     ctx.fillStyle = "#090806";
     ctx.fillRect(0, 0, w, h);
 
-    // 2. Tile floor — only if tileMap provided
     if (tileMap) {
       tileMap.draw(ctx, camera);
     }
 
-    // 3. World boundary on top
     this.drawBounds(ctx, camera, isBoss);
   }
 
   // ============================================================
   // [🧱 BLOCK: Draw Fog]
   // Full-screen radial gradient overlay centered on the player's
-  // screen position. Transparent at center → dark blue at edges.
-  // Subtle sine-wave flicker simulates a torch or lantern.
-  //
-  // Call this AFTER all entities and the player are drawn,
-  // BEFORE damage numbers (so numbers stay readable on top).
-  //
-  // Parameters:
-  //   ctx      — canvas context
-  //   px, py   — player CENTER in screen coords
-  //   w, h     — canvas dimensions
-  //   isBoss   — slightly tighter, redder fog in boss rooms
+  // screen position. Call AFTER all entities and player are drawn,
+  // BEFORE damage numbers.
   // ============================================================
   drawFog(
     ctx:    CanvasRenderingContext2D,
@@ -145,17 +170,12 @@ export class RenderSystem {
   ): void {
     this.flickerTime += FOG_FLICKER_SPEED;
 
-    // Two overlapping sine waves for organic flicker
     const flicker =
       Math.sin(this.flickerTime * 1.0) * FOG_FLICKER_AMP * 0.6 +
       Math.sin(this.flickerTime * 2.7) * FOG_FLICKER_AMP * 0.4;
 
-    const radius     = FOG_RADIUS_BASE + flicker;
-    const outerColor = isBoss
-      ? "rgba(20, 5, 5, 0.94)"   // red-tinted darkness for boss rooms
-      : FOG_OUTER_COLOR;
+    const radius = FOG_RADIUS_BASE + flicker;
 
-    // Radial gradient: clear → mid-dark → full dark
     const grad = ctx.createRadialGradient(px, py, 0, px, py, radius * 2.2);
     grad.addColorStop(0.00, "rgba(0, 0, 0, 0)");
     grad.addColorStop(0.35, "rgba(0, 0, 0, 0)");
@@ -170,15 +190,8 @@ export class RenderSystem {
 
   // ============================================================
   // [🧱 BLOCK: Draw Low HP Vignette]
-  // Pulsing red radial vignette drawn at screen edges when the
-  // player's HP is at or below LOW_HP_THRESHOLD (25%).
-  // Pulses continuously at ~1Hz using a sine wave.
-  // Call this AFTER drawFog(), BEFORE damage numbers.
-  //
-  // Parameters:
-  //   ctx         — canvas context
-  //   w, h        — canvas dimensions
-  //   hpRatio     — player.hp / player.maxHp (0.0 – 1.0)
+  // Pulsing red radial vignette at screen edges when HP ≤ 25%.
+  // Call AFTER drawFog(), BEFORE damage numbers.
   // ============================================================
   drawLowHpVignette(
     ctx:     CanvasRenderingContext2D,
@@ -190,19 +203,14 @@ export class RenderSystem {
 
     this.lowHpPulseTime += LOW_HP_PULSE_FREQ;
 
-    // Sine pulse between MIN and MAX alpha
-    const pulse = Math.sin(this.lowHpPulseTime * Math.PI * 2) * 0.5 + 0.5;
-    const alpha = LOW_HP_MIN_ALPHA + pulse * (LOW_HP_MAX_ALPHA - LOW_HP_MIN_ALPHA);
-
-    // Intensity scales with how low HP is — at 0% HP, full intensity;
-    // at 25% HP, ~60% intensity so the effect fades in as you lose HP
+    const pulse      = Math.sin(this.lowHpPulseTime * Math.PI * 2) * 0.5 + 0.5;
+    const alpha      = LOW_HP_MIN_ALPHA + pulse * (LOW_HP_MAX_ALPHA - LOW_HP_MIN_ALPHA);
     const intensityMult = 1.0 - (hpRatio / LOW_HP_THRESHOLD) * 0.4;
     const finalAlpha    = alpha * intensityMult;
 
     const cx = w / 2;
     const cy = h / 2;
 
-    // Radial gradient: transparent center → red edges
     const grad = ctx.createRadialGradient(cx, cy, h * 0.25, cx, cy, h * 0.85);
     grad.addColorStop(0.0, "rgba(0, 0, 0, 0)");
     grad.addColorStop(0.5, `rgba(160, 0, 0, ${finalAlpha * 0.4})`);

@@ -5,10 +5,9 @@ import { BaseEnemy }  from "../enemy/BaseEnemy";
 
 // ============================================================
 // [🧱 BLOCK: Charge Multipliers]
-// Applied to base weapon stats for charged releases.
 // ============================================================
 const CHARGED_LIGHT_DMG_MULT    = 2.5;
-const CHARGED_LIGHT_RANGE_MULT  = 1.6;   // arc range / circle radius
+const CHARGED_LIGHT_RANGE_MULT  = 1.6;
 const CHARGED_HEAVY_DMG_MULT    = 2.0;
 const CHARGED_HEAVY_RANGE_MULT  = 1.5;
 
@@ -19,19 +18,13 @@ export class WeaponSystem {
 
   // ============================================================
   // [🧱 BLOCK: Process Input]
-  // With the new charge system, tap attacks are fired directly
-  // from Player's charge state machine.  This method now only
-  // handles the legacy path (processInput kept for compatibility;
-  // it short-circuits because Player handles key edge detection).
   // ============================================================
   processInput(player: Player): void {
     // Charge state machine in Player handles everything.
-    // Nothing needed here — kept for API compatibility.
   }
 
   // ============================================================
   // [🧱 BLOCK: Effective Attack Mode]
-  // Maps attackType (including charged variants) → weapon mode.
   // ============================================================
   private effectiveMode(attackType: string): 'light' | 'heavy' {
     return attackType === 'charged_light' ? 'light' : 'heavy';
@@ -39,7 +32,6 @@ export class WeaponSystem {
 
   // ============================================================
   // [🧱 BLOCK: Damage for Current Attack]
-  // Applies charge multiplier if applicable.
   // ============================================================
   private computeDamage(player: Player, atkBonus: number): number {
     if (!player.equippedWeapon || !player.attackType) return 0;
@@ -52,7 +44,6 @@ export class WeaponSystem {
 
   // ============================================================
   // [🧱 BLOCK: Hit Test (charged-aware)]
-  // Scales the hitbox range/radius when a charged attack fires.
   // ============================================================
   private hitTestCharged(
     player:  Player,
@@ -75,7 +66,6 @@ export class WeaponSystem {
       return weapon.hitTest(px, py, facing, mode, ex, ey, eW, eH);
     }
 
-    // For charged attacks, patch the hitbox shape inline
     const shape = atk.hitbox;
     switch (shape.kind) {
       case 'arc': {
@@ -90,7 +80,6 @@ export class WeaponSystem {
         let   diff        = enemyAngle - facingAngle;
         while (diff >  Math.PI) diff -= Math.PI * 2;
         while (diff < -Math.PI) diff += Math.PI * 2;
-        // Charged light arc is full 180° regardless of weapon arc angle
         const halfAngle = player.attackType === 'charged_light'
           ? Math.PI * 0.75
           : shape.arcAngle / 2;
@@ -119,8 +108,10 @@ export class WeaponSystem {
 
   // ============================================================
   // [🧱 BLOCK: Resolve Hits vs Enemies]
-  // Widened to BaseEnemy[] — only .isDead, .x, .y, .width,
-  // .height, and .takeDamage() are accessed here.
+  // Checks player.attackHitSet — skips any enemy already hit
+  // this swing. Adds newly-hit enemies to the set.
+  // This ensures each enemy is struck exactly once per swing,
+  // regardless of how many frames the attack hitbox is active.
   // ============================================================
   resolveHits(
     player:   Player,
@@ -134,9 +125,13 @@ export class WeaponSystem {
 
     enemies.forEach((enemy) => {
       if (enemy.isDead) return;
+      // ── Per-swing dedup ────────────────────────────────────
+      if (player.attackHitSet.has(enemy)) return;
+
       const ex = enemy.x + enemy.width  / 2;
       const ey = enemy.y + enemy.height / 2;
       if (this.hitTestCharged(player, ex, ey, enemy.width, enemy.height)) {
+        player.attackHitSet.add(enemy);
         enemy.takeDamage(damage);
         hit.push(enemy);
       }
@@ -147,15 +142,16 @@ export class WeaponSystem {
 
   // ============================================================
   // [🧱 BLOCK: Resolve Hits Custom]
-  // Widened to BaseEnemy[] so Dasher and Bomber are accepted.
-  // The onHit callback receives BaseEnemy — callers narrow with
-  // instanceof as needed (HordeSystem does this already).
+  // Same per-swing dedup as resolveHits.
+  // onHit callback receives the enemy and computed damage.
+  // Returns true via isFirstHit flag so callers can gate
+  // feedback (freeze frames, sparks) to the first contact only.
   // ============================================================
   resolveHitsCustom(
     player:   Player,
     enemies:  BaseEnemy[],
     atkBonus: number,
-    onHit:    (enemy: BaseEnemy, amount: number) => void
+    onHit:    (enemy: BaseEnemy, amount: number, isFirstHit: boolean) => void
   ): BaseEnemy[] {
     if (!player.isAttacking || !player.equippedWeapon || !player.attackType) return [];
 
@@ -164,10 +160,16 @@ export class WeaponSystem {
 
     enemies.forEach((enemy) => {
       if (enemy.isDead) return;
+      // ── Per-swing dedup ────────────────────────────────────
+      // isFirstHit = true only the first time this enemy is
+      // struck during the current attack swing.
+      const isFirstHit = !player.attackHitSet.has(enemy);
+
       const ex = enemy.x + enemy.width  / 2;
       const ey = enemy.y + enemy.height / 2;
       if (this.hitTestCharged(player, ex, ey, enemy.width, enemy.height)) {
-        onHit(enemy, damage);
+        if (isFirstHit) player.attackHitSet.add(enemy);
+        onHit(enemy, damage, isFirstHit);
         hit.push(enemy);
       }
     });
@@ -177,7 +179,6 @@ export class WeaponSystem {
 
   // ============================================================
   // [🧱 BLOCK: Draw]
-  // Renders charged attack visuals with scaled hitbox.
   // ============================================================
   draw(
     ctx:    CanvasRenderingContext2D,
@@ -200,9 +201,7 @@ export class WeaponSystem {
       return;
     }
 
-    // ── Draw scaled charged attack visual ─────────────────
     const shape = atk.hitbox;
-    // Brighter color for charged
     const color = player.attackType === 'charged_light'
       ? "rgba(255,255,255,0.85)"
       : "rgba(251,191,36,0.90)";
