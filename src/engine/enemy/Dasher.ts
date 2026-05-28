@@ -9,7 +9,7 @@ import { circleCircle, rectCenter } from "../Collision";
 // [🧱 BLOCK: Constants]
 // HP buffed: 35 → 55 base
 // ============================================================
-const BASE_HP         = 55;    // ↑ was 35
+const BASE_HP         = 55;
 const BASE_SPEED      = 2.5;
 const SIZE            = 22;
 const COLOR           = "#06b6d4";
@@ -79,6 +79,8 @@ export class Dasher extends BaseEnemy {
   // [🧱 BLOCK: Update]
   // ============================================================
   update(player: Player, worldW: number, worldH: number): void {
+    // ── Death animation tick — skip all AI while decaying ─────
+    if (this.isDecaying) { this.tickDeath(); return; }
     if (this.isDead) return;
 
     this.tickHitFlash();
@@ -175,7 +177,7 @@ export class Dasher extends BaseEnemy {
   // [🧱 BLOCK: Dash Hit Check]
   // ============================================================
   isDashHittingPlayer(player: Player): boolean {
-    if (this.dasherState !== 'dashing') return false;
+    if (this.dasherState !== 'dashing' || this.isDecaying) return false;
     if (this.damageCooldown > 0) return false;
     const { x: ecx, y: ecy } = rectCenter(this);
     const { x: pcx, y: pcy } = rectCenter(player);
@@ -186,6 +188,13 @@ export class Dasher extends BaseEnemy {
   // [🧱 BLOCK: Draw]
   // ============================================================
   draw(ctx: CanvasRenderingContext2D, camera: Camera): void {
+    // ── Death animation ───────────────────────────────────────
+    if (this.isDecaying) {
+      const sx = camera.toScreenX(this.x);
+      const sy = camera.toScreenY(this.y);
+      this.drawDeathEffect(ctx, sx, sy);
+      return;
+    }
     if (this.isDead) return;
     if (!camera.isVisible(this.x, this.y, this.width, this.height)) return;
 

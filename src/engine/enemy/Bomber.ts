@@ -9,7 +9,7 @@ import { circleCircle, rectCenter } from "../Collision";
 // [🧱 BLOCK: Constants]
 // HP buffed: 50 → 75 base
 // ============================================================
-const BASE_HP         = 75;    // ↑ was 50
+const BASE_HP         = 75;
 const BASE_SPEED      = 1.0;
 const SIZE            = 30;
 const COLOR           = "#f97316";
@@ -64,8 +64,6 @@ export class Bomber extends BaseEnemy {
   // [🧱 BLOCK: Explosion Radius by Floor]
   // ============================================================
   get explodeRadius(): number {
-    // Volatile variant: explosion radius is NOT doubled since
-    // Bomber already has a large base — keep it readable.
     return this.floor >= 3 ? EXPLODE_RADIUS_FLOOR3 : EXPLODE_RADIUS;
   }
 
@@ -79,20 +77,26 @@ export class Bomber extends BaseEnemy {
 
   // ============================================================
   // [🧱 BLOCK: Trigger Explosion]
+  // Bypasses the decay animation entirely — the explosion VFX
+  // drawn by HordeSystem replaces it. triggerInstantDeath()
+  // sets hp=0 and deathTimer=0 so isDead is true immediately.
   // ============================================================
   triggerExplosion(): void {
     if (this.hasExploded) return;
-    this.hasExploded  = true;
-    this.isExploding  = true;
-    this.isDead       = true;
-    this.bomberState  = 'exploding';
+    this.hasExploded     = true;
+    this.isExploding     = true;
+    this.bomberState     = 'exploding';
     this.explosionRadius = this.explodeRadius;
+    this.triggerInstantDeath();
   }
 
   // ============================================================
   // [🧱 BLOCK: Update]
   // ============================================================
   update(player: Player, worldW: number, worldH: number): void {
+    // Bomber uses instant death — isDecaying will never be true
+    // for a Bomber, but guard just in case.
+    if (this.isDecaying) { this.tickDeath(); return; }
     if (this.isDead && this.bomberState !== 'exploding') return;
     if (this.bomberState === 'exploding') {
       this.isExploding = false;
@@ -176,6 +180,13 @@ export class Bomber extends BaseEnemy {
   // [🧱 BLOCK: Draw]
   // ============================================================
   draw(ctx: CanvasRenderingContext2D, camera: Camera): void {
+    // Bomber uses instant death — show decay only if somehow triggered
+    if (this.isDecaying) {
+      const sx = camera.toScreenX(this.x);
+      const sy = camera.toScreenY(this.y);
+      this.drawDeathEffect(ctx, sx, sy);
+      return;
+    }
     if (this.isDead && this.bomberState !== 'exploding') return;
     if (!camera.isVisible(this.x, this.y, this.width, this.height)) return;
 

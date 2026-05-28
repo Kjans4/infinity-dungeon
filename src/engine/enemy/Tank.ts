@@ -9,7 +9,7 @@ import { circleCircle, knockbackDir, rectCenter } from "../Collision";
 // [🧱 BLOCK: Constants]
 // HP buffed: 120 → 180 base
 // ============================================================
-const BASE_HP         = 180;   // ↑ was 120
+const BASE_HP         = 180;
 const BASE_SPEED      = 0.75;
 const SIZE            = 48;
 const MELEE_RANGE     = 64;
@@ -87,9 +87,8 @@ export class Tank extends BaseEnemy {
   // [🧱 BLOCK: takeDamage Override — shield + armored variant]
   // ============================================================
   takeDamage(amount: number, isHeavy = false): void {
-    if (this.isDead) return;
+    if (this.isDead || this.isDecaying) return;
     let final = amount;
-    // Armored variant reduction stacks additively with shield
     const variantDR = this.damageReduction;
     if (this.isShielded) {
       const reduction = isHeavy
@@ -109,7 +108,7 @@ export class Tank extends BaseEnemy {
     playerY: number,
     isHeavy = false
   ): void {
-    if (this.isDead) return;
+    if (this.isDead || this.isDecaying) return;
     let final = amount;
     const variantDR = this.damageReduction;
     if (this.isShielded && this.isFrontHit(playerX, playerY)) {
@@ -135,7 +134,7 @@ export class Tank extends BaseEnemy {
   // [🧱 BLOCK: isMeleeHittingPlayer]
   // ============================================================
   isMeleeHittingPlayer(player: Player): boolean {
-    if (this.tankState !== "strike" || this.isDead) return false;
+    if (this.tankState !== "strike" || this.isDead || this.isDecaying) return false;
     const { x: cx, y: cy } = rectCenter(this);
     const { x: px, y: py } = rectCenter(player);
     return circleCircle(cx, cy, MELEE_RANGE + 10, px, py, 1);
@@ -156,6 +155,8 @@ export class Tank extends BaseEnemy {
   // [🧱 BLOCK: Update]
   // ============================================================
   update(player: Player, worldW: number, worldH: number): void {
+    // ── Death animation tick — skip all AI while decaying ─────
+    if (this.isDecaying) { this.tickDeath(); return; }
     if (this.isDead) return;
 
     this.tickHitFlash();
@@ -222,6 +223,13 @@ export class Tank extends BaseEnemy {
   // [🧱 BLOCK: Draw]
   // ============================================================
   draw(ctx: CanvasRenderingContext2D, camera: Camera): void {
+    // ── Death animation ───────────────────────────────────────
+    if (this.isDecaying) {
+      const sx = camera.toScreenX(this.x);
+      const sy = camera.toScreenY(this.y);
+      this.drawDeathEffect(ctx, sx, sy);
+      return;
+    }
     if (this.isDead) return;
 
     const sx = camera.toScreenX(this.x);

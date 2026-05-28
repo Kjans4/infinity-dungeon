@@ -12,7 +12,7 @@ import { circleRect, rectCenter }              from "../Collision";
 // ============================================================
 const GRUNT_STATS = {
   speed:         1.4,
-  hp:            100,   // ↑ was 65
+  hp:            100,
   size:          28,
   color:         '#a855f7',
   xpValue:       1,
@@ -22,7 +22,6 @@ const GRUNT_STATS = {
   meleeCooldown: 1500,
   strikeRadius:  28,
   strikeOffset:  45,
-  // Knockback applied on hit
   hitKnockback:  2.5,
 };
 
@@ -61,7 +60,6 @@ export class Grunt extends BaseEnemy {
 
   // ============================================================
   // [🧱 BLOCK: Effective Melee Damage]
-  // Multiplied by damageMult from Berserker variant.
   // ============================================================
   get meleeDamage() {
     return Math.round(GRUNT_STATS.meleeDamage * this.damageMult);
@@ -71,6 +69,8 @@ export class Grunt extends BaseEnemy {
   // [🧱 BLOCK: Update]
   // ============================================================
   update(player: Player, worldW: number, worldH: number) {
+    // ── Death animation tick — skip all AI while decaying ─────
+    if (this.isDecaying) { this.tickDeath(); return; }
     if (this.isDead) return;
 
     this.tickHitFlash();
@@ -171,7 +171,7 @@ export class Grunt extends BaseEnemy {
   // [🧱 BLOCK: Melee Hit Check]
   // ============================================================
   isMeleeHittingPlayer(player: Player): boolean {
-    if (this.attackState !== 'strike') return false;
+    if (this.attackState !== 'strike' || this.isDecaying) return false;
     const { x: ecx, y: ecy } = rectCenter(this);
     const hitX = ecx + this.strikeDir.x * GRUNT_STATS.strikeOffset;
     const hitY = ecy + this.strikeDir.y * GRUNT_STATS.strikeOffset;
@@ -180,7 +180,6 @@ export class Grunt extends BaseEnemy {
 
   // ============================================================
   // [🧱 BLOCK: Apply Hit Knockback to Player]
-  // Small push-back on weapon hit for juice.
   // ============================================================
   applyHitKnockbackToPlayer(player: Player): void {
     const { x: ecx, y: ecy } = rectCenter(this);
@@ -196,6 +195,13 @@ export class Grunt extends BaseEnemy {
   // [🧱 BLOCK: Draw]
   // ============================================================
   draw(ctx: CanvasRenderingContext2D, camera: Camera) {
+    // ── Death animation ───────────────────────────────────────
+    if (this.isDecaying) {
+      const sx = camera.toScreenX(this.x);
+      const sy = camera.toScreenY(this.y);
+      this.drawDeathEffect(ctx, sx, sy);
+      return;
+    }
     if (this.isDead) return;
     if (!camera.isVisible(this.x, this.y, this.width, this.height)) return;
 
@@ -244,7 +250,6 @@ export class Grunt extends BaseEnemy {
       ctx.fill();
     }
 
-    // Variant aura (drawn before body)
     this.drawVariantAura(ctx, sx, sy);
 
     const bodyColor =

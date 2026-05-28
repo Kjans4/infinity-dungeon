@@ -13,7 +13,7 @@ import { rectCenter } from "../Collision";
 // ============================================================
 const SHOOTER_STATS = {
   speed:          1.1,
-  hp:             70,   // ↑ was 45
+  hp:             70,
   size:           24,
   color:          '#f59e0b',
   xpValue:        2,
@@ -111,6 +111,8 @@ export class Shooter extends BaseEnemy {
   // [🧱 BLOCK: Update]
   // ============================================================
   update(player: Player, worldW: number, worldH: number) {
+    // ── Death animation tick — skip all AI while decaying ─────
+    if (this.isDecaying) { this.tickDeath(); return; }
     if (this.isDead) return;
 
     this.tickHitFlash();
@@ -203,7 +205,7 @@ export class Shooter extends BaseEnemy {
   // [🧱 BLOCK: Melee Hit Check]
   // ============================================================
   isMeleeHittingPlayer(player: Player): boolean {
-    if (this.attackState !== 'strike' || this.currentMode !== 'melee') return false;
+    if (this.attackState !== 'strike' || this.currentMode !== 'melee' || this.isDecaying) return false;
     const ecx      = this.x + this.width  / 2;
     const ecy      = this.y + this.height / 2;
     const hitX     = ecx + this.strikeDir.x * 45;
@@ -219,6 +221,13 @@ export class Shooter extends BaseEnemy {
   // [🧱 BLOCK: Draw]
   // ============================================================
   draw(ctx: CanvasRenderingContext2D, camera: Camera) {
+    // ── Death animation ───────────────────────────────────────
+    if (this.isDecaying) {
+      const sx = camera.toScreenX(this.x);
+      const sy = camera.toScreenY(this.y);
+      this.drawDeathEffect(ctx, sx, sy);
+      return;
+    }
     if (this.isDead) return;
     if (!camera.isVisible(this.x, this.y, this.width, this.height)) return;
 
