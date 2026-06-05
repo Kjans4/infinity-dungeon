@@ -142,7 +142,7 @@ export abstract class BaseEnemy {
     this.width    = size;
     this.height   = size;
     this.speed    = speed;
-    this._hp      = hp; // Assigning directly to the backing field safely initialises it
+    this._hp      = hp;
     this.maxHp    = hp;
     this.xpValue  = xpValue;
     this.color    = color;
