@@ -2,8 +2,13 @@
 
 // ============================================================
 // [🧱 BLOCK: Weapon Types]
+// WeaponType — equippable weapons that appear in the registry
+//              and can be purchased from the shop.
+// AnyWeaponType — includes 'fists' for the bare-fists fallback
+//                 used internally by the Weapon class only.
 // ============================================================
-export type WeaponType = 'sword' | 'axe' | 'spear' | 'fists';
+export type WeaponType    = 'sword' | 'axe' | 'spear';
+export type AnyWeaponType = WeaponType | 'fists';
 
 export type HitboxShape =
   | { kind: 'arc';    range: number; arcAngle: number }
@@ -21,7 +26,7 @@ export interface AttackDef {
 }
 
 export interface WeaponDef {
-  type:  WeaponType;
+  type:  AnyWeaponType;
   name:  string;
   icon:  string;
   light: AttackDef;

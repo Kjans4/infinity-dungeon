@@ -1,5 +1,5 @@
 // src/engine/items/Weapon.ts
-import { WeaponDef, WeaponType, AttackDef } from "./types";
+import { WeaponDef, WeaponType, AnyWeaponType, AttackDef } from "./types";
 import { getWeaponDef } from "./WeaponRegistry";
 
 // ============================================================
@@ -9,7 +9,7 @@ import { getWeaponDef } from "./WeaponRegistry";
 // layers from rendering with bare fists.
 // ============================================================
 const BARE_FISTS: WeaponDef = {
-  type: 'fists', // ← was 'sword', caused sword sprite to render on fists
+  type: 'fists',
   name: 'Fists',
   icon: '👊',
   light: {
@@ -38,13 +38,13 @@ const BARE_FISTS: WeaponDef = {
 export class Weapon {
   def: WeaponDef;
 
-  constructor(type: WeaponType | 'fists' = 'fists') {
+  constructor(type: AnyWeaponType = 'fists') {
     this.def = type === 'fists' ? BARE_FISTS : getWeaponDef(type as WeaponType);
   }
 
-  get type(): WeaponType { return this.def.type; }
-  get name(): string     { return this.def.name; }
-  get icon(): string     { return this.def.icon; }
+  get type(): AnyWeaponType { return this.def.type; }
+  get name(): string        { return this.def.name; }
+  get icon(): string        { return this.def.icon; }
 
   getAttack(mode: 'light' | 'heavy'): AttackDef {
     return mode === 'light' ? this.def.light : this.def.heavy;
