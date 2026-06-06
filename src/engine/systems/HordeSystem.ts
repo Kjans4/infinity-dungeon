@@ -37,8 +37,19 @@ const BASE_THRESHOLD         = 20;
 const THRESHOLD_PER_FLOOR    = 5;
 const ELITE_THRESHOLD_MULT   = 1.5;
 const ELITE_WAVE_MULT        = 1.5;
-const FARMING_SPAWN_INTERVAL = 3000;
 const GRACE_PERIOD_MS        = 1500;
+
+// ============================================================
+// [🧱 BLOCK: Farming Batch Constants]
+// After the kill threshold is met, Tanks spawn in batches.
+// Each batch must be fully cleared before the next spawns.
+// HP and damage scale up each batch to reward staying.
+// ============================================================
+const FARMING_BATCH_SIZE       = 5;
+const FARMING_BATCH_DELAY_MS   = 2000;   // delay before batch 1 spawns
+const FARMING_BETWEEN_DELAY_MS = 1500;   // delay between subsequent batches
+const FARMING_HP_MULT_PER_BATCH  = 1.40; // ×1.4 HP each batch
+const FARMING_DMG_MULT_PER_BATCH = 1.20; // ×1.2 damage each batch
 
 // ============================================================
 // [🧱 BLOCK: Parry Constants]
@@ -91,11 +102,44 @@ const FREEZE_HEAVY_DAMAGE_THRESHOLD = 20;
 
 type AnyHordeEnemy = Grunt | Shooter | Tank | Dasher | Bomber;
 
+// ============================================================
+// [🧱 BLOCK: Farming Batch State]
+// Tracks which batch we're on, how many are still alive,
+// and when the next batch is allowed to spawn.
+// ============================================================
+interface FarmingBatchState {
+  batchNumber:  number;   // 1-indexed, increments each batch
+  aliveInBatch: number;   // how many of this batch are still alive
+  nextSpawnAt:  number;   // Date.now() timestamp — don't spawn before this
+  active:       boolean;  // true once farming mode begins
+}
+
 function goldMultiplierForKills(kills: number, threshold: number): number {
   if (kills < threshold) return 1.0;
   const extraKills = kills - threshold;
   const tier       = Math.floor(extraKills / 10);
   return Math.max(0.20, 1.0 - tier * 0.20);
+}
+
+// ============================================================
+// [🧱 BLOCK: Spawn Scaled Tank]
+// Creates a Tank then multiplies its HP and damageMult
+// to match the current batch scaling.
+// batchNumber is 1-indexed; batch 1 = base stats.
+// ============================================================
+function spawnScaledTank(
+  x: number,
+  y: number,
+  floor: number,
+  batchNumber: number
+): Tank {
+  const tank    = new Tank(x, y, floor);
+  const scale   = Math.pow(FARMING_HP_MULT_PER_BATCH,  batchNumber - 1);
+  const dmgScale= Math.pow(FARMING_DMG_MULT_PER_BATCH, batchNumber - 1);
+  tank.hp       = Math.round(tank.hp    * scale);
+  tank.maxHp    = tank.hp;
+  tank.damageMult = tank.damageMult * dmgScale;
+  return tank;
 }
 
 // ============================================================
@@ -124,9 +168,36 @@ function rollItemDrop(
   return pool[0] ?? null;
 }
 
+// ============================================================
+// [🧱 BLOCK: Random Edge Position]
+// ============================================================
+function randomEdgePosition(
+  worldW: number,
+  worldH: number,
+  margin: number = 60
+): { x: number; y: number } {
+  const edge = Math.floor(Math.random() * 4);
+  switch (edge) {
+    case 0: return { x: Math.random() * worldW, y: margin                };
+    case 1: return { x: Math.random() * worldW, y: worldH - margin       };
+    case 2: return { x: margin,                 y: Math.random() * worldH };
+    default:return { x: worldW - margin,        y: Math.random() * worldH };
+  }
+}
+
 export class HordeSystem {
   private goldSystem   = new GoldSystem();
   private weaponSystem = new WeaponSystem();
+
+  // ============================================================
+  // [🧱 BLOCK: Farming State]
+  // ============================================================
+  private farming: FarmingBatchState = {
+    batchNumber:  0,
+    aliveInBatch: 0,
+    nextSpawnAt:  0,
+    active:       false,
+  };
 
   // ============================================================
   // [🧱 BLOCK: Threshold Helper]
@@ -165,6 +236,14 @@ export class HordeSystem {
     state.door.isActive = false;
     state.shopNpc       = new ShopNPC(worldW);
 
+    // Reset farming state for new room
+    this.farming = {
+      batchNumber:  0,
+      aliveInBatch: 0,
+      nextSpawnAt:  0,
+      active:       false,
+    };
+
     state.camera.update(state.player, worldW, worldH);
     state.playerStats.applyToPlayer(state.player);
   }
@@ -186,6 +265,13 @@ export class HordeSystem {
     state.kills           = 0;
     state.alive           = 0;
     state.lastSpawn       = 0;
+
+    this.farming = {
+      batchNumber:  0,
+      aliveInBatch: 0,
+      nextSpawnAt:  0,
+      active:       false,
+    };
   }
 
   // ============================================================
@@ -372,10 +458,6 @@ export class HordeSystem {
 
   // ============================================================
   // [🧱 BLOCK: Emit Hit Feedback]
-  // isFirstHit gates freeze frames, sparks, and damage numbers.
-  // Only fires on the first contact of each swing — subsequent
-  // frames of the same attack on the same enemy are ignored
-  // since the hit set already blocks re-damage anyway.
   // ============================================================
   private emitHitFeedback(
     state:      GameState,
@@ -400,11 +482,83 @@ export class HordeSystem {
     state.damageNumbers.push(spawnDamageNumber(cx, cy - enemy.height / 2, damage, attackType));
     render.shake('micro');
 
-    // Freeze only on heavy/charged hits — light stays fluid
     if (attackType === 'charged_heavy' || attackType === 'heavy') {
       render.freezeFrames(FREEZE_PRESETS.heavy);
     } else if (attackType === 'charged_light') {
       render.freezeFrames(FREEZE_PRESETS.light);
+    }
+  }
+
+  // ============================================================
+  // [🧱 BLOCK: Tick Farming Batches]
+  // Called every frame once the kill threshold is met.
+  // Spawns the next batch only when all enemies from the
+  // previous batch are dead AND the delay has elapsed.
+  // Returns the batch number if a new batch just spawned
+  // (so the caller can announce it), or null otherwise.
+  // ============================================================
+  private tickFarmingBatches(
+    state:  GameState,
+    rs:     RoomState,
+    worldW: number,
+    worldH: number
+  ): number | null {
+    const f   = this.farming;
+    const now = Date.now();
+
+    // Activate farming mode the first time we enter this path
+    if (!f.active) {
+      f.active      = true;
+      f.batchNumber = 0;
+      f.aliveInBatch= 0;
+      f.nextSpawnAt = now + FARMING_BATCH_DELAY_MS;
+      return null;
+    }
+
+    // Count how many farming-batch Tanks are still alive
+    // We track this via aliveInBatch — decrement when enemies die
+    const livingEnemies = state.enemies.filter((e) => !e.isDead).length;
+
+    // If there are still enemies alive from this batch, wait
+    if (f.aliveInBatch > 0 && livingEnemies > 0) {
+      // Sync alive count (enemies could die from volatile etc.)
+      // aliveInBatch shrinks as enemies are removed from state.enemies
+      // We recalculate it from state each frame to stay accurate
+      return null;
+    }
+
+    // Previous batch cleared (or batch 0 waiting for initial delay)
+    if (now < f.nextSpawnAt) return null;
+
+    // Spawn the next batch
+    f.batchNumber  += 1;
+    f.aliveInBatch  = FARMING_BATCH_SIZE;
+    f.nextSpawnAt   = now + FARMING_BETWEEN_DELAY_MS; // set for *after* this batch
+
+    for (let i = 0; i < FARMING_BATCH_SIZE; i++) {
+      const { x, y } = randomEdgePosition(worldW, worldH);
+      const tank      = spawnScaledTank(x, y, rs.floor, f.batchNumber);
+      state.enemies.push(tank);
+    }
+
+    state.alive += FARMING_BATCH_SIZE;
+    return f.batchNumber;
+  }
+
+  // ============================================================
+  // [🧱 BLOCK: Update Farming Alive Count]
+  // Called after the dead-enemy sweep so aliveInBatch stays
+  // in sync when tanks die from any source.
+  // ============================================================
+  private syncFarmingAliveCount(justKilledCount: number): void {
+    if (!this.farming.active || this.farming.aliveInBatch <= 0) return;
+    this.farming.aliveInBatch = Math.max(
+      0,
+      this.farming.aliveInBatch - justKilledCount
+    );
+    // If batch cleared, arm the delay for the next batch
+    if (this.farming.aliveInBatch === 0) {
+      this.farming.nextSpawnAt = Date.now() + FARMING_BETWEEN_DELAY_MS;
     }
   }
 
@@ -418,7 +572,7 @@ export class HordeSystem {
     worldW: number,
     worldH: number,
     render: RenderSystem
-  ): { event: null; goldCollected: number } {
+  ): { event: null; goldCollected: number; farmingBatchSpawned: number | null } {
     const ps        = state.playerStats;
     const isElite   = rs.phase === 'elite';
     const threshold = this.getThreshold(rs.floor, isElite);
@@ -583,7 +737,6 @@ export class HordeSystem {
     const momentumMult = passive?.id === 'momentum' && player.dashTimer > 0 ? 2.0          : 1.0;
     const iaijutsuMult = passive?.id === 'iaijutsu' && player.attackType === 'charged_light' ? 1.4 : 1.0;
 
-    // ── resolveHitsCustom now receives isFirstHit ─────────────
     const hitEnemies = this.weaponSystem.resolveHitsCustom(
       player, state.enemies, atkBonus,
       (enemy: BaseEnemy, amount: number, isFirstHit: boolean) => {
@@ -596,7 +749,6 @@ export class HordeSystem {
           return;
         }
 
-        // Damage — only on first hit of swing (dedup handled in WeaponSystem)
         if (passive?.id === 'precision' && isLight && enemy instanceof Tank) {
           enemy.takeDamage(finalAmt);
         } else if (enemy instanceof Tank) {
@@ -611,7 +763,6 @@ export class HordeSystem {
         }
         passive?.onHit?.(player, enemy, finalAmt, state);
 
-        // Feedback — sparks, numbers, freeze — first hit only
         this.emitHitFeedback(state, enemy, finalAmt, player.attackType, render, isFirstHit);
       }
     );
@@ -636,6 +787,9 @@ export class HordeSystem {
       state.kills      += justKilled;
       state.alive      -= justKilled;
       state.totalKills += justKilled;
+
+      // Sync farming alive count after removing dead enemies
+      this.syncFarmingAliveCount(justKilled);
 
       deadEnemies.forEach((enemy) => {
         const type: keyof typeof DROP_CHANCE =
@@ -726,7 +880,10 @@ export class HordeSystem {
     const graceElapsed = now - state.roomEntryTime;
     const graceDone    = graceElapsed >= GRACE_PERIOD_MS;
 
+    let farmingBatchSpawned: number | null = null;
+
     if (!thresholdMet) {
+      // ── Pre-threshold: normal wave spawning ──────────────────
       const killsLeft = threshold - state.kills;
       if (killsLeft > 0 && state.alive === 0 && graceDone && now - state.lastSpawn > 1000) {
         const baseCount  = Math.min(WAVE_SIZE, killsLeft);
@@ -743,13 +900,18 @@ export class HordeSystem {
         state.lastSpawn = now;
       }
     } else {
-      if (now - state.lastSpawn > FARMING_SPAWN_INTERVAL) {
-        const [newEnemy] = isElite
-          ? spawnEliteWave(1, worldW, worldH, rs.floor)
-          : spawnWave(1, worldW, worldH, rs.roomInCycle, rs.floor);
-        state.enemies.push(newEnemy);
-        state.alive    += 1;
-        state.lastSpawn = now;
+      // ── Post-threshold: batch farming mode ───────────────────
+      // Elite rooms keep the old random spawn since farming isn't
+      // the intended loop there (player should push to boss).
+      if (isElite) {
+        if (now - state.lastSpawn > 3000) {
+          const [newEnemy] = spawnEliteWave(1, worldW, worldH, rs.floor);
+          state.enemies.push(newEnemy);
+          state.alive    += 1;
+          state.lastSpawn = now;
+        }
+      } else {
+        farmingBatchSpawned = this.tickFarmingBatches(state, rs, worldW, worldH);
       }
     }
 
@@ -785,7 +947,7 @@ export class HordeSystem {
     const goldCollected = this.goldSystem.update(state, player);
     state.totalGoldEarned += goldCollected;
 
-    return { event: null, goldCollected };
+    return { event: null, goldCollected, farmingBatchSpawned };
   }
 
   // ============================================================
