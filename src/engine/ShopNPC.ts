@@ -105,14 +105,28 @@ export class ShopNPC {
     const sx = camera.toScreenX(this.x);
     const sy = camera.toScreenY(this.y);
 
-    // ── Safe zone dashed line ──────────────────────────────
-    const lineY = camera.toScreenY(this.safeLineY);
-    ctx.strokeStyle = "rgba(56,189,248,0.08)";
-    ctx.lineWidth   = 1;
-    ctx.setLineDash([6, 8]);
+    // ── Safe zone boundary line ────────────────────────────
+    // Two-pass render: wide faint glow underneath, crisp dash on top.
+    const lineY  = camera.toScreenY(this.safeLineY);
+    const lineX0 = camera.toScreenX(0);
+    const lineX1 = camera.toScreenX(worldW);
+
+    // Pass 1 — soft glow bloom
+    ctx.strokeStyle = "rgba(251,200,36,0.12)";
+    ctx.lineWidth   = 6;
+    ctx.setLineDash([]);
     ctx.beginPath();
-    ctx.moveTo(camera.toScreenX(0),      lineY);
-    ctx.lineTo(camera.toScreenX(worldW), lineY);
+    ctx.moveTo(lineX0, lineY);
+    ctx.lineTo(lineX1, lineY);
+    ctx.stroke();
+
+    // Pass 2 — crisp dashed line
+    ctx.strokeStyle = "rgba(251,200,36,0.45)";
+    ctx.lineWidth   = 1.5;
+    ctx.setLineDash([8, 6]);
+    ctx.beginPath();
+    ctx.moveTo(lineX0, lineY);
+    ctx.lineTo(lineX1, lineY);
     ctx.stroke();
     ctx.setLineDash([]);
 
