@@ -1,548 +1,66 @@
 /* ============================================================
    HUD — src/styles/hud.css
-   Fantasy RPG redesign — scroll/banner style
+   Mobile-first layout matching sketch:
+   - Top-left: minimize + pause buttons
+   - Bottom-left: HP/ST bars + room/floor/kills/gold strip
+   - Bottom-right: diagonal hotbar slots + inventory button
    ============================================================ */
 
 @import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700&family=Cinzel+Decorative:wght@400;700&family=IM+Fell+English:ital@0;1&display=swap');
 
 /* ============================================================
-   [🧱 BLOCK: Root — Scroll Banner]
+   [🧱 BLOCK: Top-Left Controls]
+   Minimize/maximize + pause buttons stacked vertically
    ============================================================ */
-.hud-root {
+.hud-top-controls {
   position: fixed;
-  bottom: 18px;
-  left: 50%;
-  transform: translateX(-50%);
+  top: 12px;
+  left: 12px;
   z-index: 20;
-  pointer-events: none;
-
-  display: flex;
-  flex-direction: row;
-  align-items: center;
-  gap: 0;
-
-  background:
-    repeating-linear-gradient(
-      90deg,
-      rgba(255,255,255,0.008) 0px, rgba(255,255,255,0.008) 1px,
-      transparent 1px, transparent 60px
-    ),
-    repeating-linear-gradient(
-      0deg,
-      rgba(255,255,255,0.008) 0px, rgba(255,255,255,0.008) 1px,
-      transparent 1px, transparent 40px
-    ),
-    linear-gradient(180deg, #1a1208 0%, #0e0b06 50%, #1a1208 100%);
-
-  border-top:    1px solid #5a4010;
-  border-bottom: 1px solid #5a4010;
-  border-left:   none;
-  border-right:  none;
-  box-shadow:
-    0 -1px 0 #2e2008,
-    0  1px 0 #2e2008,
-    0 0 40px rgba(0,0,0,0.8),
-    inset 0 1px 0 rgba(140,90,10,0.15),
-    inset 0 -1px 0 rgba(140,90,10,0.15);
-
-  padding: 0;
-  white-space: nowrap;
-}
-
-/* Left scroll-end cap */
-.hud-root::before {
-  content: '';
-  display: block;
-  width: 32px;
-  min-width: 32px;
-  align-self: stretch;
-  background: linear-gradient(90deg, #0a0804 0%, #1a1208 100%);
-  border-top:    1px solid #5a4010;
-  border-bottom: 1px solid #5a4010;
-  border-left:   2px solid #8B6914;
-  border-radius: 3px 0 0 3px;
-  margin-left: -1px;
-  clip-path: polygon(100% 0%, 100% 100%, 20% 100%, 0% 50%, 20% 0%);
-}
-
-/* Right scroll-end cap */
-.hud-root::after {
-  content: '';
-  display: block;
-  width: 32px;
-  min-width: 32px;
-  align-self: stretch;
-  background: linear-gradient(270deg, #0a0804 0%, #1a1208 100%);
-  border-top:    1px solid #5a4010;
-  border-bottom: 1px solid #5a4010;
-  border-right:  2px solid #8B6914;
-  border-radius: 0 3px 3px 0;
-  margin-right: -1px;
-  clip-path: polygon(0% 0%, 80% 0%, 100% 50%, 80% 100%, 0% 100%);
-}
-
-/* ============================================================
-   [🧱 BLOCK: HUD Inner Wrapper]
-   ============================================================ */
-.hud-inner {
-  display: flex;
-  flex-direction: row;
-  align-items: center;
-  gap: 0;
-  padding: 6px 4px;
-}
-
-/* ============================================================
-   [🧱 BLOCK: Divider — Gem Pillar]
-   ============================================================ */
-.hud-divider {
   display: flex;
   flex-direction: column;
+  gap: 6px;
+  pointer-events: all;
+}
+
+.hud-control-btn {
+  width: 36px;
+  height: 36px;
+  display: flex;
   align-items: center;
   justify-content: center;
-  gap: 3px;
-  padding: 0 10px;
-  align-self: stretch;
-}
-
-.hud-divider::before,
-.hud-divider::after {
-  content: '';
-  flex: 1;
-  width: 1px;
-  background: linear-gradient(to bottom, transparent, #5a4010, transparent);
-}
-
-.hud-divider-gem {
-  width: 6px;
-  height: 6px;
-  background: #8B6914;
-  border: 1px solid #c0860c;
-  transform: rotate(45deg);
-  flex-shrink: 0;
-}
-
-/* ============================================================
-   [🧱 BLOCK: Bars Group — HP & Stamina]
-   ============================================================ */
-.hud-bars-group {
-  display: flex;
-  flex-direction: column;
-  gap: 5px;
-  padding: 4px 12px;
-}
-
-.hud-bar-wrapper {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  min-width: 130px;
-}
-
-.hud-bar-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: baseline;
-}
-
-.hud-label {
-  font-family: 'Cinzel', serif;
-  font-size: 7px;
-  font-weight: 600;
-  color: #8B6914;
-  letter-spacing: 0.2em;
-  text-transform: uppercase;
-}
-
-.hud-value {
-  font-family: 'Cinzel', serif;
-  font-size: 8px;
-  font-weight: 700;
+  background: rgba(14, 11, 6, 0.88);
+  border: 1px solid #5a4010;
+  border-radius: 4px;
+  cursor: pointer;
   color: #c0860c;
-}
-
-.hud-bar-track {
-  width: 100%;
-  height: 6px;
-  background: #0a0804;
-  border: 1px solid #2e2008;
-  overflow: visible;
-  position: relative;
-}
-
-.hud-bar-track::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  background: repeating-linear-gradient(
-    90deg,
-    transparent 0px,
-    transparent 24px,
-    rgba(140,90,10,0.2) 24px,
-    rgba(140,90,10,0.2) 25px
-  );
-  pointer-events: none;
-  z-index: 1;
-}
-
-/* ============================================================
-   [🧱 BLOCK: Stamina Empty State]
-   Applied to the track when stamina < threshold.
-   Flashes the bar border red to signal empty.
-   ============================================================ */
-.hud-bar-track--empty {
-  animation: hud-stamina-empty 0.6s ease-in-out infinite;
-  border-color: #7f1d1d;
-}
-
-@keyframes hud-stamina-empty {
-  0%, 100% {
-    border-color: #7f1d1d;
-    box-shadow: none;
-  }
-  50% {
-    border-color: #ef4444;
-    box-shadow: 0 0 6px rgba(239, 68, 68, 0.7), inset 0 0 4px rgba(239, 68, 68, 0.2);
-  }
-}
-
-/* ── Fill flashes white briefly when empty ── */
-.hud-bar-fill--empty {
-  animation: hud-stamina-fill-flash 0.6s ease-in-out infinite;
-}
-
-@keyframes hud-stamina-fill-flash {
-  0%, 100% { opacity: 0.25; }
-  50%       { opacity: 0.55; background: #ef4444 !important; }
-}
-
-.hud-bar-fill {
-  height: 100%;
-  transition: width 0.15s ease;
-  position: relative;
-}
-
-.hud-bar-fill::after {
-  content: '';
-  position: absolute;
-  top: 0; left: 0; right: 0;
-  height: 40%;
-  background: rgba(255,255,255,0.15);
-}
-
-/* ============================================================
-   [🧱 BLOCK: Room / Floor]
-   ============================================================ */
-.hud-room-group {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 1px;
-  padding: 4px 14px;
-  position: relative;
-}
-
-.hud-floor-label {
-  font-family: 'Cinzel', serif;
-  font-size: 7px;
-  font-weight: 600;
-  color: #5a4010;
-  letter-spacing: 0.25em;
-  text-transform: uppercase;
-}
-
-.hud-room-number {
-  font-family: 'Cinzel Decorative', serif;
-  font-size: 16px;
-  font-weight: 700;
-  line-height: 1;
-  color: #f0c040;
-  text-shadow: 0 0 12px rgba(240,192,64,0.4);
-  letter-spacing: 0.06em;
-  transition: color 0.3s ease;
-}
-
-.hud-room-subtitle {
-  font-family: 'Cinzel', serif;
-  font-size: 7px;
-  font-weight: 600;
-  letter-spacing: 0.22em;
-  text-transform: uppercase;
-  line-height: 1;
-}
-
-.hud-room-subtitle--elite { color: rgba(249, 115, 22, 0.8); }
-.hud-room-subtitle--boss  { color: rgba(239, 68,  68, 0.85); }
-
-/* ============================================================
-   [🧱 BLOCK: Gold]
-   ============================================================ */
-.hud-gold-group {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 1px;
-  padding: 4px 14px;
-}
-
-.hud-gold-label {
-  font-family: 'Cinzel', serif;
-  font-size: 7px;
-  font-weight: 600;
-  color: #5a4010;
-  letter-spacing: 0.25em;
-  text-transform: uppercase;
-}
-
-.hud-gold-value {
-  font-family: 'Cinzel', serif;
   font-size: 14px;
-  font-weight: 700;
-  color: #f0c040;
-  text-shadow: 0 0 10px rgba(240,192,64,0.35);
-}
-
-/* ============================================================
-   [🧱 BLOCK: Kill Ring]
-   ============================================================ */
-.hud-kill-ring-wrapper {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 3px;
-  padding: 4px 12px;
-}
-
-.hud-kill-ring-dial {
-  position: relative;
-  width: 44px;
-  height: 44px;
-}
-
-.hud-kill-ring-dial::before {
-  content: '';
-  position: absolute;
-  inset: -4px;
-  border-radius: 50%;
-  border: 1px solid #2e2008;
-}
-
-.hud-kill-ring-svg {
-  position: absolute;
-  inset: 0;
-  transform: rotate(-90deg);
-}
-
-.hud-kill-ring-count {
-  position: absolute;
-  inset: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.hud-kill-ring-number {
-  font-family: 'Cinzel', serif;
-  font-size: 11px;
-  font-weight: 700;
-}
-
-.hud-kill-ring-label {
-  font-family: 'Cinzel', serif;
-  font-size: 7px;
-  font-weight: 600;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-}
-
-.hud-kill-ring-farming {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 1px;
-}
-
-.hud-kill-ring-bonus {
-  font-family: 'Cinzel', serif;
-  font-size: 7px;
-  letter-spacing: 0.08em;
-}
-
-/* ============================================================
-   [🧱 BLOCK: Hotbar — 4 Quickslots]
-   Sits at the right end of the HUD banner after the kill ring.
-   Each slot is a square tile showing icon, count, cooldown,
-   and an optional duration bar along the bottom edge.
-   ============================================================ */
-.hud-hotbar {
-  display: flex;
-  flex-direction: row;
-  align-items: center;
-  gap: 4px;
-  padding: 4px 10px;
-}
-
-/* ── Single Slot ── */
-.hud-hotbar-slot {
-  position:        relative;
-  width:           44px;
-  height:          44px;
-  background:      #0a0804;
-  border:          1px solid #3a2808;
-  display:         flex;
-  align-items:     center;
-  justify-content: center;
-  overflow:        hidden;
-  flex-shrink:     0;
-  transition:      border-color 0.15s;
-}
-
-.hud-hotbar-slot:not(.hud-hotbar-slot--empty):not(.hud-hotbar-slot--depleted) {
-  border-color: #5a4010;
-}
-
-/* Empty slot — dashed, dim */
-.hud-hotbar-slot--empty {
-  border:       1px dashed #2a1e08;
-  opacity:      0.45;
-}
-
-/* Depleted — item slotted but 0 charges left */
-.hud-hotbar-slot--depleted {
-  border-color: #2a1e08;
-  opacity:      0.5;
-}
-
-/* On cooldown — slot dims slightly */
-.hud-hotbar-slot--cooldown {
-  border-color: #2e2008;
-}
-
-/* ── Key label — top-left corner ── */
-.hud-hotbar-slot__key {
-  position:       absolute;
-  top:            2px;
-  left:           4px;
-  font-family:    'Cinzel', serif;
-  font-size:      7px;
-  font-weight:    700;
-  color:          #5a4010;
-  letter-spacing: 0;
-  line-height:    1;
-  z-index:        3;
-}
-
-/* ── Icon — centred ── */
-.hud-hotbar-slot__icon {
-  font-size:   18px;
-  line-height: 1;
-  z-index:     1;
-  transition:  opacity 0.1s;
-}
-
-.hud-hotbar-slot--cooldown .hud-hotbar-slot__icon {
-  opacity: 0.4;
-}
-
-/* ── Stack count badge — bottom-right ── */
-.hud-hotbar-slot__count {
-  position:    absolute;
-  bottom:      10px;
-  right:       3px;
-  font-family: 'Cinzel', serif;
-  font-size:   7px;
-  font-weight: 700;
-  color:       #c0860c;
-  z-index:     3;
-  line-height: 1;
-}
-
-/* ── Cooldown SVG sweep — full-slot overlay ── */
-.hud-hotbar-slot__cd-svg {
-  position: absolute;
-  inset:    0;
-  width:    100%;
-  height:   100%;
-  z-index:  2;
-  pointer-events: none;
-}
-
-/* ── Cooldown seconds text — centred over sweep ── */
-.hud-hotbar-slot__cd-text {
-  position:    absolute;
-  inset:       0;
-  display:     flex;
-  align-items: center;
-  justify-content: center;
-  font-family: 'Cinzel', serif;
-  font-size:   10px;
-  font-weight: 700;
-  color:       #f0c040;
-  z-index:     4;
-  text-shadow: 0 0 6px rgba(0,0,0,0.9);
-}
-
-/* ── Duration bar — thin strip at very bottom ── */
-.hud-hotbar-slot__dur-bar {
-  position:   absolute;
-  bottom:     0;
-  left:       0;
-  right:      0;
-  height:     4px;
-  background: #0a0804;
-  z-index:    3;
-}
-
-.hud-hotbar-slot__dur-fill {
-  height:     100%;
-  background: #38bdf8;
-  transition: width 0.1s linear;
-  box-shadow: 0 0 4px #38bdf8;
-}
-
-/* ============================================================
-   [🧱 BLOCK: Elite Room Badge]
-   ============================================================ */
-.hud-elite-badge {
-  position: fixed;
-  top: 20px;
-  left: 50%;
-  transform: translateX(-50%);
-  z-index: 20;
-  pointer-events: none;
-
-  font-family: 'Cinzel Decorative', serif;
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.25em;
-  text-transform: uppercase;
-  color: #f97316;
-  text-shadow: 0 0 20px rgba(249,115,22,0.6);
-
-  padding: 8px 24px;
-  background: linear-gradient(180deg, #1a1208 0%, #0e0b06 100%);
-  border: 1px solid #7a3010;
-  border-top: 1px solid #f97316;
+  transition: background 0.12s, border-color 0.12s, color 0.12s;
   box-shadow:
-    0 0 20px rgba(249,115,22,0.12),
-    inset 0 1px 0 rgba(249,115,22,0.15);
-
-  animation: elite-badge-drop 0.35s ease forwards;
+    0 0 0 1px #2e2008,
+    inset 0 1px 0 rgba(140,90,10,0.12);
+  /* larger tap target on mobile */
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
 }
 
-@keyframes elite-badge-drop {
-  from { opacity: 0; transform: translateX(-50%) translateY(-12px); }
-  to   { opacity: 1; transform: translateX(-50%) translateY(0); }
+.hud-control-btn:hover,
+.hud-control-btn:active {
+  background: rgba(30, 22, 8, 0.95);
+  border-color: #c0860c;
+  color: #f0c040;
+}
+
+.hud-control-btn--minimize {
+  font-size: 12px;
 }
 
 /* ============================================================
-   [🧱 BLOCK: Boss HP Bar]
+   [🧱 BLOCK: Boss HP Bar — top-center]
    ============================================================ */
 .hud-boss-bar {
   position: fixed;
-  top: 20px;
+  top: 16px;
   left: 50%;
   transform: translateX(-50%);
   z-index: 20;
@@ -551,9 +69,9 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 6px;
-  padding: 10px 24px 12px;
-  min-width: 360px;
+  gap: 5px;
+  padding: 9px 22px 11px;
+  min-width: 300px;
 
   background:
     repeating-linear-gradient(
@@ -597,7 +115,7 @@
 
 .hud-boss-bar__name {
   font-family: 'Cinzel Decorative', serif;
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 700;
   letter-spacing: 0.2em;
   text-transform: uppercase;
@@ -605,13 +123,13 @@
 
 .hud-boss-bar__hp {
   font-family: 'Cinzel', serif;
-  font-size: 10px;
+  font-size: 9px;
   color: #5a4010;
 }
 
 .hud-boss-bar__track {
   width: 100%;
-  height: 8px;
+  height: 7px;
   background: #0a0804;
   border: 1px solid #2e2008;
   position: relative;
@@ -663,22 +181,517 @@
 }
 
 /* ============================================================
-   [🧱 BLOCK: Mobile overrides — appended by mobile controls pass]
-   On ≤900px the scroll HUD banner is replaced by mc-hud strip.
-   Boss bar and elite badge are also suppressed; mc-hud info
-   row already shows floor / room / kills.
-   These rules are redundant with mobile-controls.css but kept
-   here so hud.css is self-documenting.
+   [🧱 BLOCK: Elite Room Badge — top-center]
    ============================================================ */
-@media (max-width: 900px) {
-  .hud-root {
-    display: none !important;
-  }
-  .hud-boss-bar {
-    /* Replaced by mc-hud info strip */
-    display: none !important;
-  }
-  .hud-elite-badge {
-    display: none !important;
-  }
+.hud-elite-badge {
+  position: fixed;
+  top: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 20;
+  pointer-events: none;
+
+  font-family: 'Cinzel Decorative', serif;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.25em;
+  text-transform: uppercase;
+  color: #f97316;
+  text-shadow: 0 0 20px rgba(249,115,22,0.6);
+
+  padding: 7px 20px;
+  background: linear-gradient(180deg, #1a1208 0%, #0e0b06 100%);
+  border: 1px solid #7a3010;
+  border-top: 1px solid #f97316;
+  box-shadow:
+    0 0 20px rgba(249,115,22,0.12),
+    inset 0 1px 0 rgba(249,115,22,0.15);
+
+  animation: elite-badge-drop 0.35s ease forwards;
+}
+
+@keyframes elite-badge-drop {
+  from { opacity: 0; transform: translateX(-50%) translateY(-12px); }
+  to   { opacity: 1; transform: translateX(-50%) translateY(0); }
+}
+
+/* ============================================================
+   [🧱 BLOCK: Bottom HUD Strip — bottom-left]
+   HP/ST | Room | Floor | Kills | Gold in a compact panel
+   ============================================================ */
+.hud-strip {
+  position: fixed;
+  bottom: 16px;
+  left: 12px;
+  z-index: 20;
+  pointer-events: none;
+
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 0;
+
+  background:
+    repeating-linear-gradient(
+      90deg,
+      rgba(255,255,255,0.008) 0px, rgba(255,255,255,0.008) 1px,
+      transparent 1px, transparent 60px
+    ),
+    repeating-linear-gradient(
+      0deg,
+      rgba(255,255,255,0.008) 0px, rgba(255,255,255,0.008) 1px,
+      transparent 1px, transparent 40px
+    ),
+    linear-gradient(180deg, #1a1208 0%, #0e0b06 50%, #1a1208 100%);
+
+  border: 1px solid #5a4010;
+  box-shadow:
+    0 0 0 1px #2e2008,
+    0 4px 24px rgba(0,0,0,0.8),
+    inset 0 1px 0 rgba(140,90,10,0.15);
+
+  padding: 6px 0;
+}
+
+/* ── Divider gem pillar ── */
+.hud-divider {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  padding: 0 8px;
+  align-self: stretch;
+}
+
+.hud-divider::before,
+.hud-divider::after {
+  content: '';
+  flex: 1;
+  width: 1px;
+  background: linear-gradient(to bottom, transparent, #5a4010, transparent);
+}
+
+.hud-divider-gem {
+  width: 5px;
+  height: 5px;
+  background: #8B6914;
+  border: 1px solid #c0860c;
+  transform: rotate(45deg);
+  flex-shrink: 0;
+}
+
+/* ── Bars group (HP + Stamina) ── */
+.hud-bars-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 2px 10px;
+}
+
+.hud-bar-wrapper {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 100px;
+}
+
+@media (min-width: 480px) {
+  .hud-bar-wrapper { min-width: 120px; }
+}
+
+.hud-bar-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+}
+
+.hud-label {
+  font-family: 'Cinzel', serif;
+  font-size: 6px;
+  font-weight: 600;
+  color: #8B6914;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+}
+
+.hud-value {
+  font-family: 'Cinzel', serif;
+  font-size: 7px;
+  font-weight: 700;
+  color: #c0860c;
+}
+
+.hud-bar-track {
+  width: 100%;
+  height: 5px;
+  background: #0a0804;
+  border: 1px solid #2e2008;
+  overflow: hidden;
+  position: relative;
+}
+
+.hud-bar-track::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(
+    90deg,
+    transparent 0px, transparent 22px,
+    rgba(140,90,10,0.2) 22px, rgba(140,90,10,0.2) 23px
+  );
+  pointer-events: none;
+  z-index: 1;
+}
+
+.hud-bar-fill {
+  height: 100%;
+  transition: width 0.15s ease;
+  position: relative;
+}
+
+.hud-bar-fill::after {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 40%;
+  background: rgba(255,255,255,0.15);
+}
+
+/* ── Room / Floor ── */
+.hud-room-group {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0;
+  padding: 2px 10px;
+}
+
+.hud-floor-label {
+  font-family: 'Cinzel', serif;
+  font-size: 6px;
+  font-weight: 600;
+  color: #5a4010;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+}
+
+.hud-room-number {
+  font-family: 'Cinzel Decorative', serif;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1;
+  color: #f0c040;
+  text-shadow: 0 0 10px rgba(240,192,64,0.4);
+  letter-spacing: 0.05em;
+  transition: color 0.3s ease;
+}
+
+.hud-room-subtitle {
+  font-family: 'Cinzel', serif;
+  font-size: 6px;
+  font-weight: 600;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  line-height: 1;
+}
+
+.hud-room-subtitle--elite { color: rgba(249,115,22,0.8); }
+.hud-room-subtitle--boss  { color: rgba(239, 68, 68, 0.85); }
+
+/* ── Gold ── */
+.hud-gold-group {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0;
+  padding: 2px 10px;
+}
+
+.hud-gold-label {
+  font-family: 'Cinzel', serif;
+  font-size: 6px;
+  font-weight: 600;
+  color: #5a4010;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+}
+
+.hud-gold-value {
+  font-family: 'Cinzel', serif;
+  font-size: 12px;
+  font-weight: 700;
+  color: #f0c040;
+  text-shadow: 0 0 8px rgba(240,192,64,0.3);
+}
+
+/* ── Kill Ring ── */
+.hud-kill-ring-wrapper {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 2px 10px;
+}
+
+.hud-kill-ring-dial {
+  position: relative;
+  width: 38px;
+  height: 38px;
+}
+
+.hud-kill-ring-dial::before {
+  content: '';
+  position: absolute;
+  inset: -3px;
+  border-radius: 50%;
+  border: 1px solid #2e2008;
+}
+
+.hud-kill-ring-svg {
+  position: absolute;
+  inset: 0;
+  transform: rotate(-90deg);
+}
+
+.hud-kill-ring-count {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.hud-kill-ring-number {
+  font-family: 'Cinzel', serif;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.hud-kill-ring-label {
+  font-family: 'Cinzel', serif;
+  font-size: 6px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.hud-kill-ring-farming {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0;
+}
+
+.hud-kill-ring-bonus {
+  font-family: 'Cinzel', serif;
+  font-size: 6px;
+  letter-spacing: 0.08em;
+}
+
+/* ============================================================
+   [🧱 BLOCK: Hotbar — bottom-right diagonal]
+   4 slots arranged diagonally: Slot1 bottom-left → Slot4 top-right
+   ============================================================ */
+.hud-hotbar {
+  position: fixed;
+  bottom: 20px;
+  right: 72px;   /* leaves room for inventory button */
+  z-index: 20;
+  pointer-events: all;
+
+  /* diagonal grid using absolute positions */
+  position: fixed;
+}
+
+.hud-hotbar-grid {
+  position: fixed;
+  bottom: 16px;
+  right: 76px;
+  z-index: 20;
+  pointer-events: none;
+
+  /* 4 slots on a 2-step diagonal */
+  width: 130px;
+  height: 130px;
+}
+
+/* Each slot is absolutely placed on the diagonal */
+.hud-hotbar-slot {
+  position: absolute;
+  width: 44px;
+  height: 44px;
+  background: rgba(10, 8, 4, 0.90);
+  border: 1px solid #3a2808;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  flex-shrink: 0;
+  transition: border-color 0.15s;
+  pointer-events: all;
+}
+
+/* Slot 1 — bottom-left */
+.hud-hotbar-slot:nth-child(1) { bottom: 0;   left: 0;   }
+/* Slot 2 — step up-right */
+.hud-hotbar-slot:nth-child(2) { bottom: 32px; left: 32px; }
+/* Slot 3 */
+.hud-hotbar-slot:nth-child(3) { bottom: 64px; left: 64px; }
+/* Slot 4 — top-right */
+.hud-hotbar-slot:nth-child(4) { bottom: 92px; left: 92px; }
+
+.hud-hotbar-slot:not(.hud-hotbar-slot--empty):not(.hud-hotbar-slot--depleted) {
+  border-color: #5a4010;
+  box-shadow: 0 0 0 1px rgba(90,64,16,0.4);
+}
+
+.hud-hotbar-slot--empty {
+  border: 1px dashed #2a1e08;
+  opacity: 0.5;
+}
+
+.hud-hotbar-slot--depleted {
+  border-color: #2a1e08;
+  opacity: 0.45;
+}
+
+.hud-hotbar-slot--cooldown {
+  border-color: #2e2008;
+}
+
+/* ── Key label ── */
+.hud-hotbar-slot__key {
+  position: absolute;
+  top: 3px;
+  left: 5px;
+  font-family: 'Cinzel', serif;
+  font-size: 6px;
+  font-weight: 700;
+  color: #5a4010;
+  letter-spacing: 0;
+  line-height: 1;
+  z-index: 3;
+}
+
+/* ── Icon ── */
+.hud-hotbar-slot__icon {
+  font-size: 17px;
+  line-height: 1;
+  z-index: 1;
+  transition: opacity 0.1s;
+}
+
+.hud-hotbar-slot--cooldown .hud-hotbar-slot__icon {
+  opacity: 0.4;
+}
+
+/* ── Stack count ── */
+.hud-hotbar-slot__count {
+  position: absolute;
+  bottom: 9px;
+  right: 3px;
+  font-family: 'Cinzel', serif;
+  font-size: 6px;
+  font-weight: 700;
+  color: #c0860c;
+  z-index: 3;
+  line-height: 1;
+}
+
+/* ── Cooldown SVG sweep ── */
+.hud-hotbar-slot__cd-svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 2;
+  pointer-events: none;
+}
+
+/* ── Cooldown text ── */
+.hud-hotbar-slot__cd-text {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: 'Cinzel', serif;
+  font-size: 9px;
+  font-weight: 700;
+  color: #f0c040;
+  z-index: 4;
+  text-shadow: 0 0 6px rgba(0,0,0,0.9);
+}
+
+/* ── Duration bar ── */
+.hud-hotbar-slot__dur-bar {
+  position: absolute;
+  bottom: 0;
+  left: 8%;
+  right: 8%;
+  height: 3px;
+  background: #0a0804;
+  z-index: 3;
+  border-radius: 2px;
+}
+
+.hud-hotbar-slot__dur-fill {
+  height: 100%;
+  background: #38bdf8;
+  transition: width 0.1s linear;
+  box-shadow: 0 0 4px #38bdf8;
+  border-radius: 2px;
+}
+
+/* ============================================================
+   [🧱 BLOCK: Inventory Button — bottom-right corner]
+   ============================================================ */
+.hud-inventory-btn {
+  position: fixed;
+  bottom: 16px;
+  right: 16px;
+  z-index: 20;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: rgba(10, 8, 4, 0.90);
+  border: 1px solid #5a4010;
+  box-shadow:
+    0 0 0 1px #2e2008,
+    0 0 12px rgba(90,64,16,0.3);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #c0860c;
+  font-size: 18px;
+  pointer-events: all;
+  transition: border-color 0.12s, color 0.12s, box-shadow 0.12s;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+
+.hud-inventory-btn:hover,
+.hud-inventory-btn:active {
+  border-color: #f0c040;
+  color: #f0c040;
+  box-shadow:
+    0 0 0 1px #5a4010,
+    0 0 18px rgba(240,192,64,0.3);
+}
+
+.hud-inventory-btn__label {
+  font-family: 'Cinzel', serif;
+  font-size: 6px;
+  color: #5a4010;
+  letter-spacing: 0.1em;
+  position: absolute;
+  bottom: -12px;
+  left: 50%;
+  transform: translateX(-50%);
+  white-space: nowrap;
 }

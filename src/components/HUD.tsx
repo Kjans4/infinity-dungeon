@@ -1,4 +1,3 @@
-//src/components/HUD.tsx
 "use client";
 
 import React from "react";
@@ -25,19 +24,17 @@ interface HUDProps {
   bossIsEnraged: boolean;
   roomPhase:     RoomPhase;
   hotbar:        [HotbarSlot, HotbarSlot, HotbarSlot, HotbarSlot];
+  onPause:       () => void;
+  onInventory:   () => void;
+  isMinimized?:  boolean;
+  onMinimize?:   () => void;
 }
-
-// ============================================================
-// [🧱 BLOCK: Stamina Empty Threshold]
-// Below this value the bar triggers the flash animation.
-// ============================================================
-const STAMINA_EMPTY_THRESHOLD = 5;
 
 // ============================================================
 // [🧱 BLOCK: Thin Bar]
 // ============================================================
-function ThinBar({ value, max, color, label, isEmpty = false }: {
-  value: number; max: number; color: string; label: string; isEmpty?: boolean;
+function ThinBar({ value, max, color, label }: {
+  value: number; max: number; color: string; label: string;
 }) {
   const pct = Math.max(0, Math.min(1, value / max)) * 100;
   return (
@@ -46,10 +43,10 @@ function ThinBar({ value, max, color, label, isEmpty = false }: {
         <span className="hud-label">{label}</span>
         <span className="hud-value">{Math.round(value)}/{max}</span>
       </div>
-      <div className={`hud-bar-track ${isEmpty ? "hud-bar-track--empty" : ""}`}>
+      <div className="hud-bar-track">
         <div
-          className={`hud-bar-fill ${isEmpty ? "hud-bar-fill--empty" : ""}`}
-          style={{ width: `${pct}%`, background: isEmpty ? "#475569" : color, boxShadow: isEmpty ? "none" : `0 0 6px ${color}` }}
+          className="hud-bar-fill"
+          style={{ width: `${pct}%`, background: color, boxShadow: `0 0 5px ${color}` }}
         />
       </div>
     </div>
@@ -75,7 +72,7 @@ function KillRing({ kills, threshold, isElite }: {
 }) {
   const done          = kills >= threshold;
   const pct           = done ? 1 : Math.min(kills / threshold, 1);
-  const radius        = 17;
+  const radius        = 14;
   const circumference = 2 * Math.PI * radius;
   const dashOffset    = circumference * (1 - pct);
 
@@ -97,32 +94,32 @@ function KillRing({ kills, threshold, isElite }: {
     <div className="hud-kill-ring-wrapper">
       <div className="hud-kill-ring-dial">
         <svg
-          style={{ position: "absolute", inset: "-4px", width: "calc(100% + 8px)", height: "calc(100% + 8px)" }}
-          viewBox="0 0 52 52"
+          style={{ position: "absolute", inset: "-3px", width: "calc(100% + 6px)", height: "calc(100% + 6px)" }}
+          viewBox="0 0 44 44"
         >
           {Array.from({ length: 12 }).map((_, i) => {
             const angle  = (i / 12) * Math.PI * 2 - Math.PI / 2;
-            const r1     = 24; const r2 = 22;
-            const x1     = 26 + Math.cos(angle) * r1;
-            const y1     = 26 + Math.sin(angle) * r1;
-            const x2     = 26 + Math.cos(angle) * r2;
-            const y2     = 26 + Math.sin(angle) * r2;
+            const r1 = 20; const r2 = 18;
+            const x1 = 22 + Math.cos(angle) * r1;
+            const y1 = 22 + Math.sin(angle) * r1;
+            const x2 = 22 + Math.cos(angle) * r2;
+            const y2 = 22 + Math.sin(angle) * r2;
             return <line key={i} x1={x1} y1={y1} x2={x2} y2={y2} stroke="#3a2808" strokeWidth="1.5" />;
           })}
         </svg>
-        <svg className="hud-kill-ring-svg" width="44" height="44" viewBox="0 0 44 44">
-          <circle cx="22" cy="22" r={radius} fill="none" stroke="#1a1208" strokeWidth="4" />
-          <circle cx="22" cy="22" r={radius} fill="none" stroke="#2e2008" strokeWidth="4" />
+        <svg className="hud-kill-ring-svg" width="38" height="38" viewBox="0 0 36 36">
+          <circle cx="18" cy="18" r={radius} fill="none" stroke="#1a1208" strokeWidth="3.5" />
+          <circle cx="18" cy="18" r={radius} fill="none" stroke="#2e2008" strokeWidth="3.5" />
           <circle
-            cx="22" cy="22" r={radius} fill="none"
+            cx="18" cy="18" r={radius} fill="none"
             stroke={ringColor}
-            strokeWidth="4"
+            strokeWidth="3.5"
             strokeDasharray={circumference}
             strokeDashoffset={dashOffset}
             strokeLinecap="butt"
             style={{
               transition: "stroke-dashoffset 0.1s linear, stroke 0.3s ease",
-              filter: done ? `drop-shadow(0 0 5px ${ringColor})` : "none",
+              filter: done ? `drop-shadow(0 0 4px ${ringColor})` : "none",
             }}
           />
         </svg>
@@ -137,11 +134,11 @@ function KillRing({ kills, threshold, isElite }: {
 
       {done ? (
         <div className="hud-kill-ring-farming">
-          <span className="hud-kill-ring-label" style={{ color: ringColor, textShadow: `0 0 8px ${ringColor}` }}>
-            GATE OPEN
+          <span className="hud-kill-ring-label" style={{ color: ringColor, textShadow: `0 0 6px ${ringColor}` }}>
+            OPEN
           </span>
           <span className="hud-kill-ring-bonus" style={{ color: ringColor }}>
-            {multiplierPct}% gold
+            {multiplierPct}% g
           </span>
         </div>
       ) : (
@@ -149,7 +146,7 @@ function KillRing({ kills, threshold, isElite }: {
           className="hud-kill-ring-label"
           style={{ color: isElite ? "rgba(249,115,22,0.8)" : "#5a4010" }}
         >
-          {kills} / {threshold}
+          {kills}/{threshold}
         </span>
       )}
     </div>
@@ -189,7 +186,7 @@ function BossHPBar({ hp, maxHp, isEnraged, floor }: {
 }
 
 // ============================================================
-// [🧱 BLOCK: Hotbar Slot]
+// [🧱 BLOCK: Hotbar Slot Widget]
 // ============================================================
 function HotbarSlotWidget({ slot, slotIndex, bagCount }: {
   slot:       HotbarSlot;
@@ -203,12 +200,12 @@ function HotbarSlotWidget({ slot, slotIndex, bagCount }: {
     ? slot.durationMs / def.durationMs
     : 0;
 
-  const isEmpty     = !def;
-  const onCooldown  = slot.cooldownMs > 0;
-  const noneLeft    = def && bagCount === 0;
+  const isEmpty    = !def;
+  const onCooldown = slot.cooldownMs > 0;
+  const noneLeft   = def && bagCount === 0;
 
-  const R           = 18;
-  const CIRC        = 2 * Math.PI * R;
+  const R    = 18;
+  const CIRC = 2 * Math.PI * R;
   const sweepOffset = CIRC * (1 - cdPct);
 
   const keyLabel = String(slotIndex + 1);
@@ -254,35 +251,20 @@ function HotbarSlotWidget({ slot, slotIndex, bagCount }: {
 }
 
 // ============================================================
-// [🧱 BLOCK: Hotbar Row]
-// ============================================================
-function HotbarRow({ hotbar, bagCounts }: {
-  hotbar:    [HotbarSlot, HotbarSlot, HotbarSlot, HotbarSlot];
-  bagCounts: number[];
-}) {
-  return (
-    <div className="hud-hotbar">
-      {hotbar.map((slot, i) => (
-        <HotbarSlotWidget
-          key={i}
-          slot={slot}
-          slotIndex={i}
-          bagCount={bagCounts[i] ?? 0}
-        />
-      ))}
-    </div>
-  );
-}
-
-// ============================================================
 // [🧱 BLOCK: HUD Root]
-// Layout order: Vitality | Hotbar | Floor/Room | Treasury | Kill Ring
+// Layout:
+//   - Top-left: minimize + pause buttons (always visible)
+//   - Top-center: boss bar / elite badge
+//   - Bottom-left: strip (bars | room | floor | gold | kill ring)
+//   - Bottom-right: diagonal hotbar grid + inventory button
 // ============================================================
 export default function HUD({
   hp, maxHp, stamina, maxStamina,
   kills, killThreshold, room, floor, gold,
   bossHp, bossMaxHp, bossIsEnraged, roomPhase,
   hotbar,
+  onPause, onInventory,
+  isMinimized = false, onMinimize,
 }: HUDProps) {
   const isEliteRoom = roomPhase === 'elite';
   const isBossRoom  = roomPhase === 'boss';
@@ -292,8 +274,6 @@ export default function HUD({
     hp / maxHp > 0.25 ? "#facc15" :
                         "#ef4444";
 
-  const staminaEmpty = stamina < STAMINA_EMPTY_THRESHOLD;
-
   const bagCounts = hotbar.map((slot) =>
     slot.assignedId
       ? (slot as any)._bagCount ?? 0
@@ -302,72 +282,107 @@ export default function HUD({
 
   return (
     <>
+      {/* ── Top-left controls: minimize + pause ── */}
+      <div className="hud-top-controls">
+        {onMinimize && (
+          <button
+            className="hud-control-btn hud-control-btn--minimize"
+            onClick={onMinimize}
+            title={isMinimized ? "Maximize HUD" : "Minimize HUD"}
+            aria-label={isMinimized ? "Maximize HUD" : "Minimize HUD"}
+          >
+            {isMinimized ? "⤢" : "⤡"}
+          </button>
+        )}
+        <button
+          className="hud-control-btn"
+          onClick={onPause}
+          title="Pause (ESC)"
+          aria-label="Pause game"
+        >
+          ▶
+        </button>
+      </div>
+
+      {/* ── Top-center: boss bar / elite badge ── */}
       {bossHp > 0 && (
         <BossHPBar hp={bossHp} maxHp={bossMaxHp} isEnraged={bossIsEnraged} floor={floor} />
       )}
-
       {isEliteRoom && bossHp === 0 && (
         <div className="hud-elite-badge">⚡ Elite Sanctum</div>
       )}
 
-      <div className="hud-root">
-        <div className="hud-inner">
-
-          {/* ── Vitality + Stamina ── */}
+      {/* ── Bottom-left: HUD strip ── */}
+      {!isMinimized && (
+        <div className="hud-strip">
+          {/* Bars */}
           <div className="hud-bars-group">
-            <ThinBar value={hp}      max={maxHp}     color={hpColor}  label="Vitality" />
-            <ThinBar
-              value={stamina}
-              max={maxStamina}
-              color="#60a5fa"
-              label="Stamina"
-              isEmpty={staminaEmpty}
-            />
+            <ThinBar value={hp}      max={maxHp}     color={hpColor}  label="HP" />
+            <ThinBar value={stamina} max={maxStamina} color="#60a5fa"  label="ST" />
           </div>
 
           <Divider />
 
-          {/* ── Hotbar Slots ── */}
-          <HotbarRow hotbar={hotbar} bagCounts={bagCounts} />
-
-          <Divider />
-
-          {/* ── Floor / Room ── */}
+          {/* Room */}
           <div className="hud-room-group">
             <span className="hud-floor-label">Floor {floor}</span>
             <span
               className="hud-room-number"
               style={
-                isEliteRoom ? { color: "#f97316", textShadow: "0 0 12px rgba(249,115,22,0.5)" } :
-                isBossRoom  ? { color: "#ef4444", textShadow: "0 0 12px rgba(239,68,68,0.5)"  } :
+                isEliteRoom ? { color: "#f97316", textShadow: "0 0 10px rgba(249,115,22,0.5)" } :
+                isBossRoom  ? { color: "#ef4444", textShadow: "0 0 10px rgba(239,68,68,0.5)"  } :
                 undefined
               }
             >
               {isEliteRoom ? "⚡ " : isBossRoom ? "💀 " : ""}Room {room}
             </span>
             {isEliteRoom && (
-              <span className="hud-room-subtitle hud-room-subtitle--elite">Elite Room</span>
+              <span className="hud-room-subtitle hud-room-subtitle--elite">Elite</span>
             )}
             {isBossRoom && (
-              <span className="hud-room-subtitle hud-room-subtitle--boss">Boss Room</span>
+              <span className="hud-room-subtitle hud-room-subtitle--boss">Boss</span>
             )}
           </div>
 
           <Divider />
 
-          {/* ── Treasury ── */}
+          {/* Gold */}
           <div className="hud-gold-group">
-            <span className="hud-gold-label">Treasury</span>
+            <span className="hud-gold-label">Gold</span>
             <span className="hud-gold-value">{gold}g</span>
           </div>
 
           <Divider />
 
-          {/* ── Kill Ring ── */}
+          {/* Kill Ring */}
           <KillRing kills={kills} threshold={killThreshold} isElite={isEliteRoom} />
-
         </div>
-      </div>
+      )}
+
+      {/* ── Bottom-right: diagonal hotbar ── */}
+      {!isMinimized && (
+        <div className="hud-hotbar-grid">
+          {hotbar.map((slot, i) => (
+            <HotbarSlotWidget
+              key={i}
+              slot={slot}
+              slotIndex={i}
+              bagCount={bagCounts[i] ?? 0}
+            />
+          ))}
+        </div>
+      )}
+
+      {/* ── Bottom-right corner: inventory button ── */}
+      <button
+        className="hud-inventory-btn"
+        onClick={onInventory}
+        title="Inventory (I)"
+        aria-label="Open inventory"
+      >
+        🎒
+        <span className="hud-inventory-btn__label">[I]</span>
+      </button>
     </>
   );
 }
