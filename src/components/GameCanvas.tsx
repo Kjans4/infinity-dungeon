@@ -2,6 +2,7 @@
 
 import React, { useRef, useEffect, useState, useCallback } from "react";
 import { InputHandler }  from "@/engine/Input";
+import { MobileInput }   from "@/engine/MobileInput";
 import { GameState, saveRunRecord } from "@/engine/GameState";
 import { HordeSystem }   from "@/engine/systems/HordeSystem";
 import { BossSystem, getBossName } from "@/engine/systems/BossSystem";
@@ -16,6 +17,7 @@ import Menu                  from "@/components/Menu";
 import Shop                  from "@/components/Shop";
 import Minimap               from "@/components/Minimap";
 import Inventory             from "@/components/Inventory";
+import MobileControls        from "@/components/MobileControls";
 import GameOverOverlay        from "@/components/overlays/GameOverOverlay";
 import VictoryOverlay        from "@/components/overlays/VictoryOverlay";
 import PauseOverlay          from "@/components/overlays/PauseOverlay";
@@ -169,6 +171,7 @@ export default function GameCanvas() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const stateRef  = useRef<GameState | null>(null);
   const inputRef  = useRef<InputHandler | null>(null);
+  const mobileInputRef = useRef<MobileInput | null>(null);
   const hordeRef  = useRef(new HordeSystem());
   const bossRef   = useRef(new BossSystem());
   const renderRef = useRef(new RenderSystem());
@@ -233,6 +236,17 @@ export default function GameCanvas() {
   }, [announce]);
 
   // ============================================================
+  // [🧱 BLOCK: Mobile Slot Activate]
+  // Called by MobileControls hotbar tap.
+  // ============================================================
+  const handleMobileSlotActivate = useCallback((slotIndex: number) => {
+    const state = stateRef.current;
+    if (!state) return;
+    const activated = state.playerConsumables.activateSlot(slotIndex);
+    if (activated) applyConsumableEffect(activated, slotIndex);
+  }, [applyConsumableEffect]);
+
+  // ============================================================
   // [🧱 BLOCK: Setup Effect]
   // ============================================================
   useEffect(() => {
@@ -240,8 +254,9 @@ export default function GameCanvas() {
     canvas.width  = window.innerWidth;
     canvas.height = window.innerHeight;
 
-    stateRef.current = new GameState(window.innerWidth, window.innerHeight);
-    inputRef.current = new InputHandler();
+    stateRef.current     = new GameState(window.innerWidth, window.innerHeight);
+    inputRef.current     = new InputHandler();
+    mobileInputRef.current = new MobileInput(inputRef.current);
 
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.code === "F1") { e.preventDefault(); if (IS_DEV) setDevPanelOpen((p) => !p); return; }
@@ -330,6 +345,7 @@ export default function GameCanvas() {
       window.removeEventListener("keydown", onKeyDown);
       window.removeEventListener("keyup",   onKeyUp);
       if (iHoldTimer.current) clearTimeout(iHoldTimer.current);
+      mobileInputRef.current?.resetAll();
     };
   }, []);
 
@@ -511,7 +527,6 @@ export default function GameCanvas() {
     const player = state.player;
     const render = renderRef.current;
 
-    // ── Player screen center — used for fog + vignette ────────
     const playerSX = state.camera.toScreenX(player.x + player.width  / 2);
     const playerSY = state.camera.toScreenY(player.y + player.height / 2);
 
@@ -536,9 +551,7 @@ export default function GameCanvas() {
           ctx.fillRect(state.camera.toScreenX(player.x), state.camera.toScreenY(player.y), player.width, player.height);
         }
       }
-      // ── Fog during death sequence ──────────────────────────
       render.drawFog(ctx, playerSX, playerSY, state.screenW, state.screenH, isBoss);
-      // ── Low HP vignette during death ──────────────────────
       render.drawLowHpVignette(ctx, state.screenW, state.screenH, player.hp / player.maxHp);
       if (elapsed >= DEATH_FLASH_MS) {
         const vigProgress = Math.min((elapsed - DEATH_FLASH_MS) / DEATH_VIGNETTE_MS, 1);
@@ -566,11 +579,9 @@ export default function GameCanvas() {
     render.drawWorld(ctx, state.camera, state.screenW, state.screenH, isBoss, state.tileMap);
     player.update(input);
 
-    // ── World boundary clamp ───────────────────────────────
     player.x = Math.max(0, Math.min(worldW - player.width,  player.x));
     player.y = Math.max(0, Math.min(worldH - player.height, player.y));
 
-    // ── ShopNPC solid collision ────────────────────────────
     if (state.shopNpc) pushPlayerOutOfNPC(player, state.shopNpc);
 
     if (isHorde) {
@@ -623,11 +634,11 @@ export default function GameCanvas() {
     state.consumableSystem.draw(ctx, state.camera, state, player);
     // 6. Player
     player.draw(ctx, state.camera);
-    // 7. Fog — drawn after all entities + player, before vignette + damage numbers
+    // 7. Fog
     render.drawFog(ctx, playerSX, playerSY, state.screenW, state.screenH, isBoss);
-    // 8. Low HP vignette — drawn on top of fog, below damage numbers
+    // 8. Low HP vignette
     render.drawLowHpVignette(ctx, state.screenW, state.screenH, player.hp / player.maxHp);
-    // 9. Damage numbers — always on top of everything
+    // 9. Damage numbers
     render.drawDamageNumbers(ctx, state.camera, state.damageNumbers);
   });
 
@@ -644,11 +655,58 @@ export default function GameCanvas() {
     ? state.itemDrops.filter((d) => !d.collected && d.playerIsNear)
     : [];
 
+  // ============================================================
+  // [🧱 BLOCK: Mobile bag counts for hotbar]
+  // ============================================================
+  const mobileBagCounts = hud.hotbar.map((slot) =>
+    slot.assignedId && state
+      ? state.playerConsumables.bagCount(slot.assignedId)
+      : 0
+  );
+
+  // Whether mobile controls should render their HUD
+  const mobileControlsVisible = !showMenu && !isGameOver && !showShop && !showInventory && !isPaused;
+
   return (
     <div style={{ width: "100vw", height: "100vh", overflow: "hidden", background: "#0f172a" }}>
       <canvas ref={canvasRef} style={{ display: "block" }} />
-      {!showMenu && <HUD hp={hud.hp} maxHp={MAX_HP} stamina={hud.stamina} maxStamina={MAX_STAMINA} kills={hud.kills} killThreshold={threshold} room={hud.room} floor={hud.floor} gold={gold} bossHp={hud.bossHp} bossMaxHp={hud.bossMaxHp} bossIsEnraged={hud.bossIsEnraged} roomPhase={roomRef.current.phase} hotbar={hud.hotbar} />}
-      {!showMenu && !isGameOver && <Minimap state={stateRef.current} isBoss={roomRef.current.phase==='boss'||roomRef.current.phase==='victory'} />}
+
+      {/* Desktop HUD — hidden on mobile via CSS */}
+      {!showMenu && (
+        <HUD
+          hp={hud.hp} maxHp={MAX_HP}
+          stamina={hud.stamina} maxStamina={MAX_STAMINA}
+          kills={hud.kills} killThreshold={threshold}
+          room={hud.room} floor={hud.floor} gold={gold}
+          bossHp={hud.bossHp} bossMaxHp={hud.bossMaxHp}
+          bossIsEnraged={hud.bossIsEnraged}
+          roomPhase={roomRef.current.phase}
+          hotbar={hud.hotbar}
+        />
+      )}
+
+      {!showMenu && !isGameOver && (
+        <Minimap
+          state={stateRef.current}
+          isBoss={roomRef.current.phase === 'boss' || roomRef.current.phase === 'victory'}
+        />
+      )}
+
+      {/* ── Mobile Controls (joystick + buttons + mobile HUD) ── */}
+      {mobileInputRef.current && (
+        <MobileControls
+          mobileInput={mobileInputRef.current}
+          visible={mobileControlsVisible}
+          hp={hud.hp}          maxHp={MAX_HP}
+          stamina={hud.stamina} maxStamina={MAX_STAMINA}
+          gold={gold}
+          floor={hud.floor}    room={hud.room}
+          kills={hud.kills}    killThreshold={threshold}
+          hotbar={hud.hotbar}
+          bagCounts={mobileBagCounts}
+          onSlotActivate={handleMobileSlotActivate}
+        />
+      )}
 
       {showShop && state && (
         <Shop
@@ -677,14 +735,53 @@ export default function GameCanvas() {
           onClose={handleInventoryClose}
         />
       )}
-      {isVictory && state && <VictoryOverlay floor={hud.floor} kills={victoryStats.kills} goldEarned={victoryStats.gold} totalKills={state.totalKills} totalGoldEarned={state.totalGoldEarned} runStartTime={state.runStartTime} playerStats={state.playerStats} onClose={handleVictoryClose} onQuit={handleQuitToMenu} />}
-      {victoryMinimized && <button className="victory-badge" onClick={handleVictoryRestore}><span className="victory-badge__gem" /><span className="victory-badge__label">Floor Clear</span></button>}
-      {showTransition && <FloorTransition targetFloor={transitionFloor} onComplete={handleTransitionComplete} />}
-      {isGameOver && !showMenu && state && <GameOverOverlay floor={hud.floor} room={hud.room} totalKills={state.totalKills} totalGoldEarned={state.totalGoldEarned} runStartTime={state.runStartTime} playerStats={state.playerStats} onRetry={handleRaidAgain} onQuit={handleQuitToMenu} />}
-      {isPaused && !showMenu && !isGameOver && state && <PauseOverlay floor={hud.floor} room={hud.room} hp={hud.hp} maxHp={MAX_HP} gold={gold} playerStats={state.playerStats} onResume={() => setIsPaused(false)} onQuit={() => { setIsPaused(false); handleQuitToMenu(); }} />}
+      {isVictory && state && (
+        <VictoryOverlay
+          floor={hud.floor} kills={victoryStats.kills} goldEarned={victoryStats.gold}
+          totalKills={state.totalKills} totalGoldEarned={state.totalGoldEarned}
+          runStartTime={state.runStartTime} playerStats={state.playerStats}
+          onClose={handleVictoryClose} onQuit={handleQuitToMenu}
+        />
+      )}
+      {victoryMinimized && (
+        <button className="victory-badge" onClick={handleVictoryRestore}>
+          <span className="victory-badge__gem" />
+          <span className="victory-badge__label">Floor Clear</span>
+        </button>
+      )}
+      {showTransition && (
+        <FloorTransition targetFloor={transitionFloor} onComplete={handleTransitionComplete} />
+      )}
+      {isGameOver && !showMenu && state && (
+        <GameOverOverlay
+          floor={hud.floor} room={hud.room}
+          totalKills={state.totalKills} totalGoldEarned={state.totalGoldEarned}
+          runStartTime={state.runStartTime} playerStats={state.playerStats}
+          onRetry={handleRaidAgain} onQuit={handleQuitToMenu}
+        />
+      )}
+      {isPaused && !showMenu && !isGameOver && state && (
+        <PauseOverlay
+          floor={hud.floor} room={hud.room} hp={hud.hp} maxHp={MAX_HP}
+          gold={gold} playerStats={state.playerStats}
+          onResume={() => setIsPaused(false)}
+          onQuit={() => { setIsPaused(false); handleQuitToMenu(); }}
+        />
+      )}
       {showMenu && <Menu onStart={handleStart} />}
-      <WaveClearAnnouncement show={announcement.show} message={announcement.message} subtext={announcement.subtext} color={announcement.color} />
-      {IS_DEV && <DevPanel isOpen={devPanelOpen} onToggle={() => setDevPanelOpen((p) => !p)} gameActive={gameActive} isBossPhase={isBossPhase} isElitePhase={isElitePhase} onKillAll={handleDevKillAll} onSkipRoom={handleDevSkipRoom} onSkipToElite={handleDevSkipToElite} onSkipToBoss={handleDevSkipToBoss} onAddGold={handleDevAddGold} />}
+      <WaveClearAnnouncement
+        show={announcement.show} message={announcement.message}
+        subtext={announcement.subtext} color={announcement.color}
+      />
+      {IS_DEV && (
+        <DevPanel
+          isOpen={devPanelOpen} onToggle={() => setDevPanelOpen((p) => !p)}
+          gameActive={gameActive} isBossPhase={isBossPhase} isElitePhase={isElitePhase}
+          onKillAll={handleDevKillAll} onSkipRoom={handleDevSkipRoom}
+          onSkipToElite={handleDevSkipToElite} onSkipToBoss={handleDevSkipToBoss}
+          onAddGold={handleDevAddGold}
+        />
+      )}
     </div>
   );
 }

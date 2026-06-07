@@ -661,3 +661,24 @@
   text-transform: uppercase;
   align-self: flex-end;
 }
+
+/* ============================================================
+   [🧱 BLOCK: Mobile overrides — appended by mobile controls pass]
+   On ≤900px the scroll HUD banner is replaced by mc-hud strip.
+   Boss bar and elite badge are also suppressed; mc-hud info
+   row already shows floor / room / kills.
+   These rules are redundant with mobile-controls.css but kept
+   here so hud.css is self-documenting.
+   ============================================================ */
+@media (max-width: 900px) {
+  .hud-root {
+    display: none !important;
+  }
+  .hud-boss-bar {
+    /* Replaced by mc-hud info strip */
+    display: none !important;
+  }
+  .hud-elite-badge {
+    display: none !important;
+  }
+}

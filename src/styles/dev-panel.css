@@ -145,3 +145,19 @@
   opacity: 0.25;
   cursor: not-allowed;
 }
+
+/* ============================================================
+   [🧱 BLOCK: Mobile — shift dev toggle right]
+   mc-fullscreen occupies top:14px left:14px (40px wide).
+   On ≤900px move the dev toggle to left:62px so they don't
+   physically overlap. Panel follows because it anchors left:12px
+   but appears below the toggle regardless.
+   ============================================================ */
+@media (max-width: 900px) {
+  .dev-toggle {
+    left: 62px;
+  }
+  .dev-panel {
+    left: 62px;
+  }
+}

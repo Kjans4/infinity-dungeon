@@ -353,3 +353,15 @@
   text-transform: uppercase;
   color: #4ade80;
 }
+
+/* ============================================================
+   [🧱 BLOCK: Mobile — victory badge reposition]
+   Desktop: top:208px assumes full minimap height (~192px).
+   Mobile: minimap legend is hidden so frame is ~140px tall;
+   drop badge to top:155px to stay snug below it.
+   ============================================================ */
+@media (max-width: 900px) {
+  .victory-badge {
+    top: 155px;
+  }
+}

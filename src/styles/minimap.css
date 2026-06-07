@@ -125,3 +125,26 @@
   letter-spacing: 0.05em;
   text-transform: uppercase;
 }
+
+/* ============================================================
+   [🧱 BLOCK: Mobile — compact minimap]
+   On ≤900px shrink the map canvas area and tighten padding.
+   The minimap stays top-right which is correct for both
+   portrait and landscape mobile orientations.
+   Legend is hidden to save vertical space.
+   ============================================================ */
+@media (max-width: 900px) {
+  .minimap-frame {
+    padding: 4px 4px 3px;
+    gap: 3px;
+  }
+  .minimap-legend {
+    display: none;
+  }
+  .minimap-title-bar {
+    padding-bottom: 2px;
+  }
+  .minimap-label {
+    font-size: 7px;
+  }
+}
