@@ -112,6 +112,7 @@ export class WeaponSystem {
   // this swing. Adds newly-hit enemies to the set.
   // This ensures each enemy is struck exactly once per swing,
   // regardless of how many frames the attack hitbox is active.
+  // Guard ensures attackHitSet is always a valid Set instance.
   // ============================================================
   resolveHits(
     player:   Player,
@@ -119,6 +120,9 @@ export class WeaponSystem {
     atkBonus: number
   ): BaseEnemy[] {
     if (!player.isAttacking || !player.equippedWeapon || !player.attackType) return [];
+
+    // Safety guard — protects against stale Player refs / hot-reload edge cases.
+    if (!player.attackHitSet) player.attackHitSet = new Set();
 
     const damage = this.computeDamage(player, atkBonus);
     const hit: BaseEnemy[] = [];
@@ -146,6 +150,7 @@ export class WeaponSystem {
   // onHit callback receives the enemy and computed damage.
   // Returns true via isFirstHit flag so callers can gate
   // feedback (freeze frames, sparks) to the first contact only.
+  // Guard ensures attackHitSet is always a valid Set instance.
   // ============================================================
   resolveHitsCustom(
     player:   Player,
@@ -154,6 +159,9 @@ export class WeaponSystem {
     onHit:    (enemy: BaseEnemy, amount: number, isFirstHit: boolean) => void
   ): BaseEnemy[] {
     if (!player.isAttacking || !player.equippedWeapon || !player.attackType) return [];
+
+    // Safety guard — protects against stale Player refs / hot-reload edge cases.
+    if (!player.attackHitSet) player.attackHitSet = new Set();
 
     const damage = this.computeDamage(player, atkBonus);
     const hit: BaseEnemy[] = [];

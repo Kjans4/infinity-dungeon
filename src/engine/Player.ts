@@ -151,6 +151,7 @@ export class Player {
   // ============================================================
   isInvisible: boolean = false;
 
+  attackHitSet!: Set<unknown>;
   equippedWeapon: Weapon;
   lastInput:      InputHandler | null = null;
 
@@ -174,6 +175,7 @@ export class Player {
   constructor(x: number, y: number) {
     this.x = x;
     this.y = y;
+    this.attackHitSet = new Set();
     this.equippedWeapon = new Weapon('fists');
   }
 
