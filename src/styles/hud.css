@@ -1,22 +1,24 @@
 /* ============================================================
    HUD — src/styles/hud.css
-   Mobile-first layout matching sketch:
+   Mobile-first layout:
    - Top-left: minimize + pause buttons
-   - Bottom-left: HP/ST bars + room/floor/kills/gold strip
-   - Bottom-right: diagonal hotbar slots + inventory button
+   - Bottom-left: strip (bars | room | floor | gold | kill ring)
+   - Desktop only: inline hotbar appended to strip
+   - Mobile only: diagonal hotbar grid (tappable)
+   - Bottom-right corner: inventory button
    ============================================================ */
 
 @import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700&family=Cinzel+Decorative:wght@400;700&family=IM+Fell+English:ital@0;1&display=swap');
 
 /* ============================================================
    [🧱 BLOCK: Top-Left Controls]
-   Minimize/maximize + pause buttons stacked vertically
+   Minimize + pause buttons stacked vertically
    ============================================================ */
 .hud-top-controls {
   position: fixed;
   top: 12px;
   left: 12px;
-  z-index: 20;
+  z-index: 25;
   display: flex;
   flex-direction: column;
   gap: 6px;
@@ -24,8 +26,8 @@
 }
 
 .hud-control-btn {
-  width: 36px;
-  height: 36px;
+  width: 38px;
+  height: 38px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -36,10 +38,7 @@
   color: #c0860c;
   font-size: 14px;
   transition: background 0.12s, border-color 0.12s, color 0.12s;
-  box-shadow:
-    0 0 0 1px #2e2008,
-    inset 0 1px 0 rgba(140,90,10,0.12);
-  /* larger tap target on mobile */
+  box-shadow: 0 0 0 1px #2e2008, inset 0 1px 0 rgba(140,90,10,0.12);
   -webkit-tap-highlight-color: transparent;
   touch-action: manipulation;
 }
@@ -49,10 +48,6 @@
   background: rgba(30, 22, 8, 0.95);
   border-color: #c0860c;
   color: #f0c040;
-}
-
-.hud-control-btn--minimize {
-  font-size: 12px;
 }
 
 /* ============================================================
@@ -65,28 +60,20 @@
   transform: translateX(-50%);
   z-index: 20;
   pointer-events: none;
-
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 5px;
   padding: 9px 22px 11px;
   min-width: 300px;
-
   background:
-    repeating-linear-gradient(
-      90deg,
+    repeating-linear-gradient(90deg,
       rgba(255,255,255,0.006) 0px, rgba(255,255,255,0.006) 1px,
-      transparent 1px, transparent 48px
-    ),
+      transparent 1px, transparent 48px),
     linear-gradient(180deg, #1a1208 0%, #0e0b06 60%, #1a1208 100%);
-
   border: 1px solid #5a4010;
   border-top: 1px solid #8B6914;
-  box-shadow:
-    0 0 30px rgba(0,0,0,0.7),
-    inset 0 1px 0 rgba(140,90,10,0.2);
-
+  box-shadow: 0 0 30px rgba(0,0,0,0.7), inset 0 1px 0 rgba(140,90,10,0.2);
   animation: boss-bar-drop 0.35s ease forwards;
 }
 
@@ -140,11 +127,9 @@
   content: '';
   position: absolute;
   inset: 0;
-  background: repeating-linear-gradient(
-    90deg,
+  background: repeating-linear-gradient(90deg,
     transparent 0px, transparent 35px,
-    rgba(140,90,10,0.18) 35px, rgba(140,90,10,0.18) 36px
-  );
+    rgba(140,90,10,0.18) 35px, rgba(140,90,10,0.18) 36px);
   z-index: 1;
   pointer-events: none;
 }
@@ -190,7 +175,6 @@
   transform: translateX(-50%);
   z-index: 20;
   pointer-events: none;
-
   font-family: 'Cinzel Decorative', serif;
   font-size: 10px;
   font-weight: 700;
@@ -198,15 +182,11 @@
   text-transform: uppercase;
   color: #f97316;
   text-shadow: 0 0 20px rgba(249,115,22,0.6);
-
   padding: 7px 20px;
   background: linear-gradient(180deg, #1a1208 0%, #0e0b06 100%);
   border: 1px solid #7a3010;
   border-top: 1px solid #f97316;
-  box-shadow:
-    0 0 20px rgba(249,115,22,0.12),
-    inset 0 1px 0 rgba(249,115,22,0.15);
-
+  box-shadow: 0 0 20px rgba(249,115,22,0.12), inset 0 1px 0 rgba(249,115,22,0.15);
   animation: elite-badge-drop 0.35s ease forwards;
 }
 
@@ -217,7 +197,8 @@
 
 /* ============================================================
    [🧱 BLOCK: Bottom HUD Strip — bottom-left]
-   HP/ST | Room | Floor | Kills | Gold in a compact panel
+   Horizontal scroll-banner containing bars, room, gold, kills.
+   Desktop: also contains the inline hotbar row at the right end.
    ============================================================ */
 .hud-strip {
   position: fixed;
@@ -225,35 +206,29 @@
   left: 12px;
   z-index: 20;
   pointer-events: none;
-
   display: flex;
   flex-direction: row;
   align-items: center;
   gap: 0;
-
   background:
-    repeating-linear-gradient(
-      90deg,
+    repeating-linear-gradient(90deg,
       rgba(255,255,255,0.008) 0px, rgba(255,255,255,0.008) 1px,
-      transparent 1px, transparent 60px
-    ),
-    repeating-linear-gradient(
-      0deg,
+      transparent 1px, transparent 60px),
+    repeating-linear-gradient(0deg,
       rgba(255,255,255,0.008) 0px, rgba(255,255,255,0.008) 1px,
-      transparent 1px, transparent 40px
-    ),
+      transparent 1px, transparent 40px),
     linear-gradient(180deg, #1a1208 0%, #0e0b06 50%, #1a1208 100%);
-
   border: 1px solid #5a4010;
   box-shadow:
     0 0 0 1px #2e2008,
     0 4px 24px rgba(0,0,0,0.8),
     inset 0 1px 0 rgba(140,90,10,0.15);
-
   padding: 6px 0;
 }
 
-/* ── Divider gem pillar ── */
+/* ============================================================
+   [🧱 BLOCK: Divider gem pillar]
+   ============================================================ */
 .hud-divider {
   display: flex;
   flex-direction: column;
@@ -281,7 +256,9 @@
   flex-shrink: 0;
 }
 
-/* ── Bars group (HP + Stamina) ── */
+/* ============================================================
+   [🧱 BLOCK: Bars group (HP + Stamina)]
+   ============================================================ */
 .hud-bars-group {
   display: flex;
   flex-direction: column;
@@ -335,11 +312,9 @@
   content: '';
   position: absolute;
   inset: 0;
-  background: repeating-linear-gradient(
-    90deg,
+  background: repeating-linear-gradient(90deg,
     transparent 0px, transparent 22px,
-    rgba(140,90,10,0.2) 22px, rgba(140,90,10,0.2) 23px
-  );
+    rgba(140,90,10,0.2) 22px, rgba(140,90,10,0.2) 23px);
   pointer-events: none;
   z-index: 1;
 }
@@ -358,7 +333,9 @@
   background: rgba(255,255,255,0.15);
 }
 
-/* ── Room / Floor ── */
+/* ============================================================
+   [🧱 BLOCK: Room / Floor]
+   ============================================================ */
 .hud-room-group {
   display: flex;
   flex-direction: column;
@@ -398,9 +375,11 @@
 }
 
 .hud-room-subtitle--elite { color: rgba(249,115,22,0.8); }
-.hud-room-subtitle--boss  { color: rgba(239, 68, 68, 0.85); }
+.hud-room-subtitle--boss  { color: rgba(239,68,68,0.85); }
 
-/* ── Gold ── */
+/* ============================================================
+   [🧱 BLOCK: Gold]
+   ============================================================ */
 .hud-gold-group {
   display: flex;
   flex-direction: column;
@@ -427,7 +406,9 @@
   text-shadow: 0 0 8px rgba(240,192,64,0.3);
 }
 
-/* ── Kill Ring ── */
+/* ============================================================
+   [🧱 BLOCK: Kill Ring]
+   ============================================================ */
 .hud-kill-ring-wrapper {
   display: flex;
   flex-direction: column;
@@ -492,57 +473,73 @@
 }
 
 /* ============================================================
-   [🧱 BLOCK: Hotbar — bottom-right diagonal]
-   4 slots arranged diagonally: Slot1 bottom-left → Slot4 top-right
+   [🧱 BLOCK: Desktop Inline Hotbar Row]
+   Appended inside the strip after the kill ring divider.
+   Square slots in a horizontal row, pointer-events: none
+   (keyboard only on desktop).
    ============================================================ */
-.hud-hotbar {
-  position: fixed;
-  bottom: 20px;
-  right: 72px;   /* leaves room for inventory button */
-  z-index: 20;
-  pointer-events: all;
-
-  /* diagonal grid using absolute positions */
-  position: fixed;
+.hud-hotbar-row {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  pointer-events: none;
 }
 
+/* ============================================================
+   [🧱 BLOCK: Mobile Diagonal Hotbar Grid]
+   4 slots positioned absolutely on a diagonal.
+   Slots are circles, tappable.
+   Sits bottom-right, leaving room for inventory btn and
+   the action D-pad (rendered by MobileControls).
+   ============================================================ */
 .hud-hotbar-grid {
   position: fixed;
-  bottom: 16px;
-  right: 76px;
+  /* Sits above action D-pad area — D-pad is 148px wide at right:76px
+     so hotbar sits left of that */
+  bottom: 180px;
+  right: 230px;
   z-index: 20;
+  /* Fixed container large enough for diagonal */
+  width: 150px;
+  height: 150px;
   pointer-events: none;
-
-  /* 4 slots on a 2-step diagonal */
-  width: 130px;
-  height: 130px;
 }
 
-/* Each slot is absolutely placed on the diagonal */
+/* ============================================================
+   [🧱 BLOCK: Hotbar Slot — shared base]
+   Desktop: square. Mobile (--mobile): circle, larger tap target.
+   ============================================================ */
 .hud-hotbar-slot {
-  position: absolute;
+  position: relative;
   width: 44px;
   height: 44px;
   background: rgba(10, 8, 4, 0.90);
   border: 1px solid #3a2808;
-  border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
   overflow: hidden;
   flex-shrink: 0;
   transition: border-color 0.15s;
-  pointer-events: all;
 }
 
-/* Slot 1 — bottom-left */
-.hud-hotbar-slot:nth-child(1) { bottom: 0;   left: 0;   }
-/* Slot 2 — step up-right */
-.hud-hotbar-slot:nth-child(2) { bottom: 32px; left: 32px; }
-/* Slot 3 */
-.hud-hotbar-slot:nth-child(3) { bottom: 64px; left: 64px; }
-/* Slot 4 — top-right */
-.hud-hotbar-slot:nth-child(4) { bottom: 92px; left: 92px; }
+/* Mobile variant — circular, absolutely positioned on diagonal */
+.hud-hotbar-slot--mobile {
+  border-radius: 50%;
+  position: absolute;
+  pointer-events: all;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+  cursor: pointer;
+}
+
+/* Diagonal positions: slot 1 bottom-left → slot 4 top-right */
+.hud-hotbar-slot--mobile:nth-child(1) { bottom: 0;    left: 0;    }
+.hud-hotbar-slot--mobile:nth-child(2) { bottom: 36px; left: 36px; }
+.hud-hotbar-slot--mobile:nth-child(3) { bottom: 72px; left: 72px; }
+.hud-hotbar-slot--mobile:nth-child(4) { bottom: 108px; left: 108px; }
 
 .hud-hotbar-slot:not(.hud-hotbar-slot--empty):not(.hud-hotbar-slot--depleted) {
   border-color: #5a4010;
@@ -563,6 +560,12 @@
   border-color: #2e2008;
 }
 
+/* Active press feedback on mobile */
+.hud-hotbar-slot--mobile:active {
+  background: rgba(30, 22, 8, 0.95);
+  border-color: #c0860c;
+}
+
 /* ── Key label ── */
 .hud-hotbar-slot__key {
   position: absolute;
@@ -572,7 +575,6 @@
   font-size: 6px;
   font-weight: 700;
   color: #5a4010;
-  letter-spacing: 0;
   line-height: 1;
   z-index: 3;
 }
@@ -592,8 +594,8 @@
 /* ── Stack count ── */
 .hud-hotbar-slot__count {
   position: absolute;
-  bottom: 9px;
-  right: 3px;
+  bottom: 4px;
+  right: 4px;
   font-family: 'Cinzel', serif;
   font-size: 6px;
   font-weight: 700;
@@ -655,33 +657,30 @@
   bottom: 16px;
   right: 16px;
   z-index: 20;
-  width: 44px;
-  height: 44px;
+  width: 50px;
+  height: 50px;
   border-radius: 50%;
   background: rgba(10, 8, 4, 0.90);
   border: 1px solid #5a4010;
-  box-shadow:
-    0 0 0 1px #2e2008,
-    0 0 12px rgba(90,64,16,0.3);
+  box-shadow: 0 0 0 1px #2e2008, 0 0 12px rgba(90,64,16,0.3);
   cursor: pointer;
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
   color: #c0860c;
-  font-size: 18px;
+  font-size: 20px;
   pointer-events: all;
-  transition: border-color 0.12s, color 0.12s, box-shadow 0.12s;
+  transition: border-color 0.12s, box-shadow 0.12s;
   -webkit-tap-highlight-color: transparent;
   touch-action: manipulation;
+  gap: 1px;
 }
 
 .hud-inventory-btn:hover,
 .hud-inventory-btn:active {
   border-color: #f0c040;
-  color: #f0c040;
-  box-shadow:
-    0 0 0 1px #5a4010,
-    0 0 18px rgba(240,192,64,0.3);
+  box-shadow: 0 0 0 1px #5a4010, 0 0 18px rgba(240,192,64,0.3);
 }
 
 .hud-inventory-btn__label {
@@ -689,9 +688,5 @@
   font-size: 6px;
   color: #5a4010;
   letter-spacing: 0.1em;
-  position: absolute;
-  bottom: -12px;
-  left: 50%;
-  transform: translateX(-50%);
-  white-space: nowrap;
+  line-height: 1;
 }
