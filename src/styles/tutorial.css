@@ -1,0 +1,651 @@
+/* ============================================================
+   Tutorial Modal — src/styles/tutorial.css
+   Fantasy RPG tome aesthetic — matches menu/shop panel style
+   ============================================================ */
+
+@import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700&family=Cinzel+Decorative:wght@400;700&family=IM+Fell+English:ital@0;1&display=swap');
+
+.tutorial-backdrop,
+.tutorial-backdrop * {
+  font-family: 'Cinzel', serif;
+  box-sizing: border-box;
+}
+
+/* ============================================================
+   [🧱 BLOCK: Backdrop]
+   ============================================================ */
+.tutorial-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.92);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  padding: 20px;
+}
+
+/* ============================================================
+   [🧱 BLOCK: Panel — Stone Tome]
+   ============================================================ */
+.tutorial-panel {
+  position: relative;
+  width: min(1100px, 96vw);
+  height: min(820px, 92vh);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+
+  background:
+    repeating-linear-gradient(
+      0deg,
+      rgba(255,255,255,0.006) 0px, rgba(255,255,255,0.006) 1px,
+      transparent 1px, transparent 44px
+    ),
+    repeating-linear-gradient(
+      90deg,
+      rgba(255,255,255,0.006) 0px, rgba(255,255,255,0.006) 1px,
+      transparent 1px, transparent 66px
+    ),
+    linear-gradient(180deg, #1a1208 0%, #110d06 40%, #0e0b06 60%, #1a1208 100%);
+
+  border: 1px solid #3a2808;
+  box-shadow:
+    0 0 0 1px #1e1608,
+    0 32px 80px rgba(0,0,0,0.9),
+    inset 0 1px 0 rgba(140,90,10,0.12);
+
+  opacity: 0;
+  transform: translateY(16px) scale(0.98);
+  transition: opacity 0.35s ease, transform 0.35s ease;
+}
+
+.tutorial-panel--visible {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+}
+
+/* Corner ornaments */
+.tutorial-panel::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0;
+  width: 22px; height: 22px;
+  border-top:  2px solid #8B6914;
+  border-left: 2px solid #8B6914;
+  pointer-events: none;
+  z-index: 2;
+}
+.tutorial-panel::after {
+  content: '';
+  position: absolute;
+  top: 0; right: 0;
+  width: 22px; height: 22px;
+  border-top:   2px solid #8B6914;
+  border-right: 2px solid #8B6914;
+  pointer-events: none;
+  z-index: 2;
+}
+
+/* ============================================================
+   [🧱 BLOCK: Inner border]
+   ============================================================ */
+.tutorial-inner {
+  position: relative;
+  margin: 6px;
+  border: 1px solid #1e1608;
+  display: flex;
+  flex-direction: column;
+  height: calc(100% - 12px);
+  overflow: hidden;
+}
+
+/* Bottom corner ornaments on inner */
+.tutorial-inner::before {
+  content: '';
+  position: absolute;
+  bottom: 0; left: 0;
+  width: 16px; height: 16px;
+  border-bottom: 1px solid #5a4010;
+  border-left:   1px solid #5a4010;
+  pointer-events: none;
+  z-index: 2;
+}
+.tutorial-inner::after {
+  content: '';
+  position: absolute;
+  bottom: 0; right: 0;
+  width: 16px; height: 16px;
+  border-bottom: 1px solid #5a4010;
+  border-right:  1px solid #5a4010;
+  pointer-events: none;
+  z-index: 2;
+}
+
+/* ============================================================
+   [🧱 BLOCK: Header]
+   ============================================================ */
+.tutorial-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 18px 24px 14px;
+  border-bottom: 1px solid #2e2008;
+  flex-shrink: 0;
+}
+
+.tutorial-header__title-block {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.tutorial-header__eyebrow {
+  font-size: 8px;
+  color: #5a4010;
+  letter-spacing: 0.3em;
+  text-transform: uppercase;
+}
+
+.tutorial-header__title {
+  font-family: 'Cinzel Decorative', serif;
+  font-size: 20px;
+  font-weight: 700;
+  color: #f0c040;
+  letter-spacing: 0.1em;
+  text-shadow: 0 0 20px rgba(240,192,64,0.25);
+}
+
+.tutorial-close-btn {
+  font-family: 'Cinzel', serif;
+  font-size: 14px;
+  font-weight: 700;
+  color: #5a4010;
+  background: transparent;
+  border: 1px solid #2e2008;
+  width: 34px;
+  height: 34px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: color 0.12s, border-color 0.12s;
+  flex-shrink: 0;
+}
+.tutorial-close-btn:hover {
+  color: #f0c040;
+  border-color: #8B6914;
+}
+
+/* ============================================================
+   [🧱 BLOCK: Tab Nav]
+   ============================================================ */
+.tutorial-tabs {
+  display: flex;
+  gap: 0;
+  border-bottom: 1px solid #2e2008;
+  flex-shrink: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.tutorial-tabs::-webkit-scrollbar { display: none; }
+
+.tutorial-tab {
+  font-family: 'Cinzel', serif;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: #4a3010;
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  padding: 10px 18px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: color 0.12s, border-color 0.12s;
+  flex-shrink: 0;
+}
+
+.tutorial-tab:hover {
+  color: #8B6914;
+}
+
+.tutorial-tab--active {
+  color: #f0c040;
+  border-bottom-color: #f0c040;
+}
+
+/* ============================================================
+   [🧱 BLOCK: Content Scrollable Area]
+   ============================================================ */
+.tutorial-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 24px 28px 28px;
+  scrollbar-width: thin;
+  scrollbar-color: #3a2808 #0a0804;
+}
+.tutorial-content::-webkit-scrollbar { width: 5px; }
+.tutorial-content::-webkit-scrollbar-track { background: #0a0804; }
+.tutorial-content::-webkit-scrollbar-thumb { background: #3a2808; border-radius: 2px; }
+
+/* ============================================================
+   [🧱 BLOCK: Section — Two-Column Grid]
+   ============================================================ */
+.tutorial-section {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  animation: tut-fade-in 0.2s ease forwards;
+}
+
+@keyframes tut-fade-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.tutorial-section--single {
+  grid-template-columns: 1fr;
+}
+
+.tutorial-section--triple {
+  grid-template-columns: 1fr 1fr 1fr;
+}
+
+/* ============================================================
+   [🧱 BLOCK: Card]
+   ============================================================ */
+.tutorial-card {
+  background: rgba(0,0,0,0.35);
+  border: 1px solid #2a1e08;
+  border-top: 1px solid #3a2808;
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.tutorial-card__heading {
+  font-size: 8px;
+  font-weight: 700;
+  color: #c0860c;
+  letter-spacing: 0.3em;
+  text-transform: uppercase;
+  padding-bottom: 7px;
+  border-bottom: 1px solid #2e2008;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.tutorial-card__heading-icon {
+  font-size: 12px;
+}
+
+/* ============================================================
+   [🧱 BLOCK: Key-Value Rows]
+   ============================================================ */
+.tutorial-kv {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.tutorial-kv__row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 4px 0;
+  border-bottom: 1px solid #1a1208;
+}
+.tutorial-kv__row:last-child { border-bottom: none; }
+
+.tutorial-kv__key {
+  font-family: 'Cinzel', serif;
+  font-size: 9px;
+  font-weight: 700;
+  color: #f0c040;
+  background: #0a0804;
+  border: 1px solid #3a2808;
+  padding: 2px 7px;
+  white-space: nowrap;
+  flex-shrink: 0;
+  letter-spacing: 0.08em;
+  min-width: 60px;
+  text-align: center;
+}
+
+.tutorial-kv__key--wide {
+  min-width: 90px;
+}
+
+.tutorial-kv__val {
+  font-family: 'IM Fell English', serif;
+  font-style: italic;
+  font-size: 10px;
+  color: #8B6914;
+  flex: 1;
+  line-height: 1.45;
+  padding-top: 2px;
+}
+
+/* ============================================================
+   [🧱 BLOCK: Tag Rows — for enemies, consumables, etc.]
+   ============================================================ */
+.tutorial-tag-list {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.tutorial-tag-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 4px 0;
+  border-bottom: 1px solid #1a1208;
+}
+.tutorial-tag-row:last-child { border-bottom: none; }
+
+.tutorial-tag-row__icon {
+  font-size: 14px;
+  width: 22px;
+  text-align: center;
+  flex-shrink: 0;
+  padding-top: 1px;
+}
+
+.tutorial-tag-row__info {
+  flex: 1;
+  min-width: 0;
+}
+
+.tutorial-tag-row__name {
+  font-size: 9px;
+  font-weight: 700;
+  color: #d4af37;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  margin-bottom: 2px;
+}
+
+.tutorial-tag-row__desc {
+  font-family: 'IM Fell English', serif;
+  font-style: italic;
+  font-size: 9px;
+  color: #7a6020;
+  line-height: 1.4;
+}
+
+.tutorial-tag-row__badge {
+  font-size: 7px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  padding: 2px 6px;
+  border: 1px solid;
+  flex-shrink: 0;
+  align-self: flex-start;
+  margin-top: 2px;
+}
+
+/* ============================================================
+   [🧱 BLOCK: Stat Pill Grid — attribute display]
+   ============================================================ */
+.tutorial-stat-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+
+.tutorial-stat-pill {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(255,255,255,0.02);
+  border: 1px solid #1e1608;
+  padding: 6px 8px;
+}
+
+.tutorial-stat-pill__icon { font-size: 13px; flex-shrink: 0; }
+
+.tutorial-stat-pill__info { flex: 1; min-width: 0; }
+
+.tutorial-stat-pill__label {
+  font-size: 8px;
+  font-weight: 700;
+  color: #8B6914;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.tutorial-stat-pill__value {
+  font-family: 'IM Fell English', serif;
+  font-style: italic;
+  font-size: 9px;
+  color: #5a4010;
+  margin-top: 1px;
+}
+
+/* ============================================================
+   [🧱 BLOCK: Set Bonus Block]
+   ============================================================ */
+.tutorial-set {
+  border: 1px solid #2a1e08;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.tutorial-set__name {
+  font-size: 9px;
+  font-weight: 700;
+  color: #d4af37;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  margin-bottom: 3px;
+  border-bottom: 1px solid #2a1e08;
+  padding-bottom: 5px;
+}
+
+.tutorial-set__tier {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+}
+
+.tutorial-set__tier-badge {
+  font-size: 7px;
+  font-weight: 700;
+  color: #8B6914;
+  border: 1px solid #3a2808;
+  padding: 1px 5px;
+  flex-shrink: 0;
+  letter-spacing: 0.1em;
+}
+
+.tutorial-set__tier-badge--active {
+  color: #f0c040;
+  border-color: #8B6914;
+}
+
+.tutorial-set__tier-desc {
+  font-family: 'IM Fell English', serif;
+  font-style: italic;
+  font-size: 9px;
+  color: #6a5020;
+  line-height: 1.35;
+}
+
+/* ============================================================
+   [🧱 BLOCK: Tips Section]
+   ============================================================ */
+.tutorial-tips {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.tutorial-tip {
+  display: flex;
+  gap: 12px;
+  padding: 10px 12px;
+  background: rgba(0,0,0,0.3);
+  border: 1px solid #2a1e08;
+  border-left: 2px solid #8B6914;
+}
+
+.tutorial-tip__num {
+  font-family: 'Cinzel Decorative', serif;
+  font-size: 16px;
+  font-weight: 700;
+  color: #3a2808;
+  flex-shrink: 0;
+  line-height: 1.2;
+  min-width: 20px;
+}
+
+.tutorial-tip__text {
+  font-family: 'IM Fell English', serif;
+  font-style: italic;
+  font-size: 11px;
+  color: #8B6914;
+  line-height: 1.5;
+}
+
+.tutorial-tip__text strong {
+  font-style: normal;
+  font-weight: 700;
+  color: #c0860c;
+  font-family: 'Cinzel', serif;
+  font-size: 9px;
+  letter-spacing: 0.06em;
+}
+
+/* ============================================================
+   [🧱 BLOCK: Room Flow Visual]
+   ============================================================ */
+.tutorial-room-flow {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  margin-bottom: 4px;
+}
+
+.tutorial-room-node {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  flex: 1;
+}
+
+.tutorial-room-node__box {
+  width: 100%;
+  padding: 8px 4px;
+  text-align: center;
+  border: 1px solid #2a1e08;
+  background: rgba(0,0,0,0.3);
+}
+
+.tutorial-room-node__num {
+  font-family: 'Cinzel Decorative', serif;
+  font-size: 14px;
+  font-weight: 700;
+  color: #8B6914;
+  line-height: 1;
+}
+
+.tutorial-room-node__label {
+  font-size: 7px;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: #5a4010;
+  margin-top: 3px;
+}
+
+.tutorial-room-node__box--boss {
+  border-color: #7a1a1a;
+  background: rgba(120,0,0,0.12);
+}
+
+.tutorial-room-node__box--elite {
+  border-color: #7a3010;
+  background: rgba(120,60,0,0.1);
+}
+
+.tutorial-room-node__box--boss .tutorial-room-node__num { color: #ef4444; }
+.tutorial-room-node__box--elite .tutorial-room-node__num { color: #f97316; }
+
+.tutorial-room-arrow {
+  font-size: 10px;
+  color: #3a2808;
+  padding: 0 2px;
+  flex-shrink: 0;
+}
+
+/* ============================================================
+   [🧱 BLOCK: Divider — Gem Rule]
+   ============================================================ */
+.tutorial-divider {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 4px 0 8px;
+}
+.tutorial-divider::before,
+.tutorial-divider::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: #2e2008;
+}
+.tutorial-divider-gem {
+  width: 6px; height: 6px;
+  background: #6a4c10;
+  border: 1px solid #8B6914;
+  transform: rotate(45deg);
+  flex-shrink: 0;
+}
+
+/* ============================================================
+   [🧱 BLOCK: Footer Nav]
+   ============================================================ */
+.tutorial-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 24px;
+  border-top: 1px solid #2e2008;
+  flex-shrink: 0;
+}
+
+.tutorial-footer__hint {
+  font-family: 'IM Fell English', serif;
+  font-style: italic;
+  font-size: 9px;
+  color: #2e2008;
+  letter-spacing: 0.1em;
+}
+
+.tutorial-footer__close {
+  font-family: 'Cinzel', serif;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.25em;
+  text-transform: uppercase;
+  color: #0e0b06;
+  background: linear-gradient(180deg, #c0860c 0%, #8B6914 100%);
+  border: 1px solid #f0c040;
+  padding: 9px 28px;
+  cursor: pointer;
+  transition: background 0.12s;
+  box-shadow: 0 0 12px rgba(240,192,64,0.15);
+}
+.tutorial-footer__close:hover {
+  background: linear-gradient(180deg, #f0c040 0%, #c0860c 100%);
+}

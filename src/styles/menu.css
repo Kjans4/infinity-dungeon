@@ -37,25 +37,19 @@
   background-size:     cover;
   background-position: center center;
   background-repeat:   no-repeat;
-  /* Slight desaturate + darken so gold UI pops */
   filter:              brightness(0.45) saturate(0.7);
 }
 
 /* ============================================================
    [🧱 BLOCK: Dark Fog Vignette]
-   Heavy on all four sides — fades to near-black at edges
    ============================================================ */
 .menu-fog {
   position: absolute;
   inset:    0;
   background:
-    /* Left fog */
     linear-gradient(to right,  rgba(4, 3, 2, 0.97) 0%, transparent 38%),
-    /* Right fog */
     linear-gradient(to left,   rgba(4, 3, 2, 0.97) 0%, transparent 38%),
-    /* Top fog */
     linear-gradient(to bottom, rgba(4, 3, 2, 0.92) 0%, transparent 30%),
-    /* Bottom fog */
     linear-gradient(to top,    rgba(4, 3, 2, 0.97) 0%, transparent 35%);
   pointer-events: none;
 }
@@ -75,7 +69,6 @@
 
 /* ============================================================
    [🧱 BLOCK: Title Nameplate]
-   Gothic frame wraps the title content
    ============================================================ */
 .menu-title-wrap {
   position: relative;
@@ -144,13 +137,11 @@
   width:          100%;
 }
 
-/* ── Button wrapper — holds frame SVG + button ── */
 .menu-btn-wrap {
   position: relative;
   width:    300px;
 }
 
-/* ── Base button ── */
 .menu-btn {
   display:        block;
   width:          100%;
@@ -190,6 +181,28 @@
   transform: translateY(1px);
 }
 
+/* ── HOW TO PLAY ── */
+.menu-btn--howtoplay {
+  font-size:      13px;
+  color:          #8B6914;
+  background:     rgba(10, 8, 4, 0.65);
+  border:         1px solid rgba(139, 105, 20, 0.35);
+  padding:        11px 0;
+  transition:     color 0.12s, border-color 0.12s, background 0.12s, transform 0.1s;
+}
+
+.menu-btn--howtoplay:hover {
+  color:          #f0c040;
+  background:     rgba(14, 11, 6, 0.85);
+  border-color:   rgba(240, 192, 64, 0.5);
+  transform:      translateY(-1px);
+  box-shadow:     0 0 16px rgba(240, 192, 64, 0.08);
+}
+
+.menu-btn--howtoplay:active {
+  transform: translateY(1px);
+}
+
 /* ── SETTINGS ── */
 .menu-btn--settings {
   font-size:   13px;
@@ -209,7 +222,6 @@
   gap:            10px;
 }
 
-/* ── Best run card ── */
 .menu-history__best {
   background:  rgba(12, 9, 3, 0.75);
   border:      1px solid rgba(240, 192, 64, 0.18);
@@ -265,7 +277,6 @@
   flex-shrink: 0;
 }
 
-/* ── Recent runs list ── */
 .menu-history__label {
   font-size:      7px;
   font-weight:    700;
