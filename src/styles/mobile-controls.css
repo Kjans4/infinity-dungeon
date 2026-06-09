@@ -1,13 +1,15 @@
 /* ============================================================
    MobileControls — src/styles/mobile-controls.css
-   Virtual joystick + action D-pad for touch devices
+   Virtual joystick + action D-pad + slots + inventory
+   Layout matches wireframe: joystick bottom-left,
+   right cluster (slots + D-pad + inventory) bottom-right,
+   top-left has fullscreen + pause buttons.
    ============================================================ */
 
 /* ============================================================
    [🧱 BLOCK: Root Wrapper]
-   Covers full screen, pointer-events none by default so the
-   canvas underneath stays interactive. Each child re-enables
-   pointer-events where needed.
+   Full-screen overlay, pointer-events none by default.
+   Children re-enable pointer-events where needed.
    ============================================================ */
 .mc-root {
   position: fixed;
@@ -20,16 +22,54 @@
 }
 
 /* ============================================================
+   [🧱 BLOCK: Top-Left Controls]
+   Stacked fullscreen + pause buttons, matching screenshot.
+   ============================================================ */
+.mc-top-left {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  pointer-events: all;
+  z-index: 21;
+}
+
+.mc-top-btn {
+  width: 44px;
+  height: 44px;
+  border-radius: 6px;
+  background: rgba(10, 8, 4, 0.75);
+  border: 1.5px solid rgba(90, 64, 16, 0.7);
+  color: rgba(192, 134, 12, 0.85);
+  font-size: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  pointer-events: all;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  box-shadow: 0 0 0 1px rgba(0,0,0,0.5);
+  transition: background 0.1s, border-color 0.1s;
+}
+
+.mc-top-btn:active {
+  background: rgba(90, 64, 16, 0.5);
+  border-color: rgba(240, 192, 64, 0.7);
+}
+
+/* ============================================================
    [🧱 BLOCK: Joystick — bottom-left]
-   Outer ring (base) + inner knob (thumb).
-   Base is always visible; knob tracks finger within radius.
+   Raised high enough to clear the HUD strip.
    ============================================================ */
 .mc-joystick-base {
   position: absolute;
-  bottom: 24px;
+  bottom: 100px;
   left: 20px;
-  width: 110px;
-  height: 110px;
+  width: 118px;
+  height: 118px;
   border-radius: 50%;
   background: rgba(10, 8, 4, 0.55);
   border: 2px solid rgba(90, 64, 16, 0.7);
@@ -40,32 +80,32 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  /* Crosshair guides */
-  overflow: visible;
   touch-action: none;
+  z-index: 20;
 }
 
-/* Decorative tick marks on the base ring */
 .mc-joystick-base::before {
   content: '';
   position: absolute;
   inset: 6px;
   border-radius: 50%;
   border: 1px solid rgba(90, 64, 16, 0.3);
+  pointer-events: none;
 }
 
 .mc-joystick-base::after {
   content: '';
   position: absolute;
-  inset: 16px;
+  inset: 18px;
   border-radius: 50%;
   border: 1px dashed rgba(90, 64, 16, 0.2);
+  pointer-events: none;
 }
 
 .mc-joystick-knob {
   position: absolute;
-  width: 44px;
-  height: 44px;
+  width: 46px;
+  height: 46px;
   border-radius: 50%;
   background: radial-gradient(circle at 35% 35%,
     rgba(192, 134, 12, 0.9),
@@ -75,10 +115,8 @@
   box-shadow:
     0 0 12px rgba(140, 90, 10, 0.4),
     inset 0 1px 0 rgba(255, 255, 255, 0.15);
-  /* Position driven by JS via style.transform */
   transform: translate(0px, 0px);
   pointer-events: none;
-  transition: background 0.1s;
   will-change: transform;
 }
 
@@ -94,24 +132,91 @@
 }
 
 /* ============================================================
-   [🧱 BLOCK: Action Buttons — bottom-right D-pad]
-   4 diamond-shaped buttons in a cross / D-pad layout.
-   Mapping: Light (J) top, Heavy (K) right, Dash (C) bottom, Block (L) left
+   [🧱 BLOCK: Right Cluster]
+   Contains: slot arc (top), action D-pad (middle),
+   inventory button (bottom-right of cluster).
+   Anchored bottom-right, raised above HUD strip.
+   ============================================================ */
+.mc-right-cluster {
+  position: absolute;
+  bottom: 90px;
+  right: 16px;
+  width: 200px;
+  height: 260px;
+  pointer-events: none;
+  z-index: 20;
+}
+
+/* ============================================================
+   [🧱 BLOCK: Slot Buttons — diagonal arc]
+   4 circles arranged bottom-left to top-right arc,
+   sitting above the action D-pad. Per wireframe.
+   ============================================================ */
+.mc-slots {
+  position: absolute;
+  bottom: 148px;
+  left: 0;
+  width: 160px;
+  height: 120px;
+  pointer-events: none;
+}
+
+.mc-slot-btn {
+  position: absolute;
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  background: rgba(10, 8, 4, 0.72);
+  border: 1.5px solid rgba(90, 64, 16, 0.65);
+  box-shadow:
+    0 0 0 1px rgba(0,0,0,0.5),
+    inset 0 1px 0 rgba(140, 90, 10, 0.1);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: all;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  transition: background 0.08s, border-color 0.08s;
+}
+
+.mc-slot-btn:active {
+  background: rgba(90, 64, 16, 0.45);
+  border-color: rgba(240, 192, 64, 0.7);
+  box-shadow: 0 0 12px rgba(240, 192, 64, 0.35);
+}
+
+.mc-slot-btn__label {
+  font-family: 'Cinzel', serif;
+  font-size: 11px;
+  font-weight: 700;
+  color: rgba(192, 134, 12, 0.85);
+  pointer-events: none;
+}
+
+/* Diagonal arc: slot 1 bottom-left → slot 4 top-right */
+.mc-slot-btn:nth-child(1) { bottom: 0;   left: 10px;  }
+.mc-slot-btn:nth-child(2) { bottom: 32px; left: 44px; }
+.mc-slot-btn:nth-child(3) { bottom: 64px; left: 80px; }
+.mc-slot-btn:nth-child(4) { bottom: 90px; left: 114px; }
+
+/* ============================================================
+   [🧱 BLOCK: Action D-pad]
+   Diamond cross — 4 rotated squares.
    ============================================================ */
 .mc-actions {
   position: absolute;
-  bottom: 24px;
-  right: 76px; /* leave room for inventory button */
+  bottom: 0;
+  right: 40px;
   width: 148px;
   height: 148px;
   pointer-events: none;
 }
 
-/* Each button is a rotated square (diamond) */
 .mc-btn {
   position: absolute;
-  width: 50px;
-  height: 50px;
+  width: 52px;
+  height: 52px;
   border-radius: 8px;
   transform: rotate(45deg);
   background: rgba(10, 8, 4, 0.75);
@@ -129,7 +234,6 @@
   -webkit-tap-highlight-color: transparent;
 }
 
-/* Un-rotate the label inside so text is upright */
 .mc-btn__label {
   transform: rotate(-45deg);
   font-family: 'Cinzel', serif;
@@ -155,78 +259,79 @@
   letter-spacing: 0.1em;
 }
 
-/* ── Button positions in the D-pad cross ── */
-/* Top — Light attack */
-.mc-btn--light {
-  top: 0;
-  left: 50%;
-  transform: translateX(-50%) rotate(45deg);
-}
+/* D-pad positions */
+.mc-btn--light { top: 0;    left: 50%; transform: translateX(-50%) rotate(45deg); }
+.mc-btn--heavy { top: 50%;  right: 0;  transform: translateY(-50%) rotate(45deg); }
+.mc-btn--dash  { bottom: 0; left: 50%; transform: translateX(-50%) rotate(45deg); }
+.mc-btn--block { top: 50%;  left: 0;   transform: translateY(-50%) rotate(45deg); }
 
-/* Right — Heavy attack */
-.mc-btn--heavy {
-  top: 50%;
-  right: 0;
-  transform: translateY(-50%) rotate(45deg);
-}
-
-/* Bottom — Dash */
-.mc-btn--dash {
-  bottom: 0;
-  left: 50%;
-  transform: translateX(-50%) rotate(45deg);
-}
-
-/* Left — Block/Parry */
-.mc-btn--block {
-  top: 50%;
-  left: 0;
-  transform: translateY(-50%) rotate(45deg);
-}
-
-/* ── Active / pressed states ── */
+/* Active states */
 .mc-btn--light.mc-btn--active {
   background: rgba(226, 232, 240, 0.25);
   border-color: rgba(226, 232, 240, 0.8);
-  box-shadow:
-    0 0 16px rgba(226, 232, 240, 0.4),
-    inset 0 0 8px rgba(226, 232, 240, 0.15);
+  box-shadow: 0 0 16px rgba(226, 232, 240, 0.4), inset 0 0 8px rgba(226, 232, 240, 0.15);
 }
-
 .mc-btn--heavy.mc-btn--active {
   background: rgba(251, 191, 36, 0.25);
   border-color: rgba(251, 191, 36, 0.8);
-  box-shadow:
-    0 0 16px rgba(251, 191, 36, 0.4),
-    inset 0 0 8px rgba(251, 191, 36, 0.15);
+  box-shadow: 0 0 16px rgba(251, 191, 36, 0.4), inset 0 0 8px rgba(251, 191, 36, 0.15);
 }
-
 .mc-btn--dash.mc-btn--active {
   background: rgba(56, 189, 248, 0.25);
   border-color: rgba(56, 189, 248, 0.8);
-  box-shadow:
-    0 0 16px rgba(56, 189, 248, 0.4),
-    inset 0 0 8px rgba(56, 189, 248, 0.15);
+  box-shadow: 0 0 16px rgba(56, 189, 248, 0.4), inset 0 0 8px rgba(56, 189, 248, 0.15);
 }
-
 .mc-btn--block.mc-btn--active {
   background: rgba(148, 163, 184, 0.25);
   border-color: rgba(148, 163, 184, 0.8);
-  box-shadow:
-    0 0 16px rgba(148, 163, 184, 0.4),
-    inset 0 0 8px rgba(148, 163, 184, 0.15);
+  box-shadow: 0 0 16px rgba(148, 163, 184, 0.4), inset 0 0 8px rgba(148, 163, 184, 0.15);
 }
 
-/* Label colors when active */
 .mc-btn--light.mc-btn--active .mc-btn__label { color: #e2e8f0; }
 .mc-btn--heavy.mc-btn--active .mc-btn__label { color: #fbbf24; }
 .mc-btn--dash.mc-btn--active  .mc-btn__label { color: #38bdf8; }
 .mc-btn--block.mc-btn--active .mc-btn__label { color: #94a3b8; }
 
 /* ============================================================
-   [🧱 BLOCK: Desktop Action Indicators]
-   Shown on PC — visual glow only when key is held.
-   Positioned same as mobile D-pad but pointer-events: none.
+   [🧱 BLOCK: Inventory Button]
+   Single circle, bottom-right of the cluster.
+   ============================================================ */
+.mc-inventory-btn {
+  position: absolute;
+  bottom: 0;
+  right: 0;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: rgba(10, 8, 4, 0.75);
+  border: 1.5px solid rgba(90, 64, 16, 0.65);
+  box-shadow:
+    0 0 0 1px rgba(0,0,0,0.5),
+    inset 0 1px 0 rgba(140, 90, 10, 0.1);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: all;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  transition: background 0.08s, border-color 0.08s;
+  z-index: 21;
+}
+
+.mc-inventory-btn:active {
+  background: rgba(90, 64, 16, 0.45);
+  border-color: rgba(240, 192, 64, 0.7);
+  box-shadow: 0 0 14px rgba(240, 192, 64, 0.35);
+}
+
+.mc-inventory-btn__icon {
+  font-size: 20px;
+  pointer-events: none;
+}
+
+/* ============================================================
+   [🧱 BLOCK: Desktop Glow Indicators]
+   Key-held indicators for PC — no touch events.
    ============================================================ */
 .mc-desktop-indicators {
   position: fixed;
@@ -253,11 +358,10 @@
   transition: background 0.06s, border-color 0.06s, box-shadow 0.06s;
 }
 
-/* Same positions */
-.mc-desktop-btn--light { top: 0;   left: 50%;  transform: translateX(-50%) rotate(45deg); }
-.mc-desktop-btn--heavy { top: 50%; right: 0;   transform: translateY(-50%) rotate(45deg); }
+.mc-desktop-btn--light { top: 0;    left: 50%; transform: translateX(-50%) rotate(45deg); }
+.mc-desktop-btn--heavy { top: 50%;  right: 0;  transform: translateY(-50%) rotate(45deg); }
 .mc-desktop-btn--dash  { bottom: 0; left: 50%; transform: translateX(-50%) rotate(45deg); }
-.mc-desktop-btn--block { top: 50%; left: 0;    transform: translateY(-50%) rotate(45deg); }
+.mc-desktop-btn--block { top: 50%;  left: 0;   transform: translateY(-50%) rotate(45deg); }
 
 .mc-desktop-btn__label {
   transform: rotate(-45deg);
@@ -269,6 +373,7 @@
   flex-direction: column;
   align-items: center;
   gap: 1px;
+  pointer-events: none;
 }
 
 .mc-desktop-btn__key {
@@ -276,7 +381,6 @@
   color: rgba(90, 64, 16, 0.5);
 }
 
-/* Glow states for desktop key-held */
 .mc-desktop-btn--light.mc-btn--active {
   background: rgba(226, 232, 240, 0.2);
   border-color: rgba(226, 232, 240, 0.7);
@@ -302,3 +406,27 @@
 .mc-desktop-btn--heavy.mc-btn--active .mc-desktop-btn__label { color: #fbbf24; }
 .mc-desktop-btn--dash.mc-btn--active  .mc-desktop-btn__label { color: #38bdf8; }
 .mc-desktop-btn--block.mc-btn--active .mc-desktop-btn__label { color: #94a3b8; }
+
+/* ============================================================
+   [🧱 BLOCK: Mobile HUD override]
+   On touch devices, suppress the desktop center-banner HUD
+   and show a compact strip at the very bottom instead.
+   This prevents the banner from overlapping the controls.
+   ============================================================ */
+@media (pointer: coarse) and (hover: none) {
+  /* Hide the desktop horizontal banner */
+  .hud-root {
+    display: none !important;
+  }
+
+  /* Hide desktop minimap — MobileControls renders its own */
+  .minimap-root {
+    display: none !important;
+  }
+
+  /* Hide dev-toggle on mobile */
+  .dev-toggle,
+  .dev-panel {
+    display: none !important;
+  }
+}

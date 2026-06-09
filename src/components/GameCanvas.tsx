@@ -23,11 +23,13 @@ import PauseOverlay          from "@/components/overlays/PauseOverlay";
 import WaveClearAnnouncement from "@/components/overlays/WaveClearAnnouncement";
 import FloorTransition       from "@/components/overlays/FloorTransition";
 import { spawnBurst }        from "@/engine/Particle";
+import { ShopItem }          from "@/engine/items/ItemPool";
 import { ItemDrop }          from "@/engine/ItemDrop";
 import { WeaponItem, ArmorItem } from "@/engine/items/types";
 import { HotbarSlot }        from "@/engine/PlayerConsumables";
 import { ConsumableDef }     from "@/engine/ConsumableRegistry";
 import { ConsumableSystem }  from "@/engine/ConsumableSystem";
+import { ConsumableDrop }    from "@/engine/ConsumableDrop";
 import { Player }            from "@/engine/Player";
 import { ShopNPC }           from "@/engine/ShopNPC";
 import "@/styles/victory.css";
@@ -55,42 +57,50 @@ const REMAINING_MILESTONES = [
 
 // ============================================================
 // [🧱 BLOCK: Mobile Detection]
-// Detected once at mount — doesn't change during session.
+// Detected once at mount — coarse pointer + no hover = touch device.
 // ============================================================
 function detectMobile(): boolean {
   if (typeof window === "undefined") return false;
-  return "ontouchstart" in window || navigator.maxTouchPoints > 0;
+  return window.matchMedia("(pointer: coarse) and (hover: none)").matches;
 }
 
 // ============================================================
 // [🧱 BLOCK: NPC Collision Hitbox]
 // ============================================================
-const NPC_COL_W     = 28;
-const NPC_COL_H     = 40;
-const NPC_COL_OFF_X = (36 - NPC_COL_W) / 2;
-const NPC_COL_OFF_Y = (48 - NPC_COL_H) / 2;
+const NPC_COL_W      = 28;
+const NPC_COL_H      = 40;
+const NPC_COL_OFF_X  = (36 - NPC_COL_W) / 2;
+const NPC_COL_OFF_Y  = (48 - NPC_COL_H) / 2;
 
+// ============================================================
+// [🧱 BLOCK: pushPlayerOutOfNPC]
+// ============================================================
 function pushPlayerOutOfNPC(player: Player, npc: ShopNPC): void {
   if (!npc.isActive) return;
+
   const nx = npc.x + NPC_COL_OFF_X;
   const ny = npc.y + NPC_COL_OFF_Y;
   const nw = NPC_COL_W;
   const nh = NPC_COL_H;
+
   const px = player.x; const py = player.y;
   const pw = player.width; const ph = player.height;
+
   if (px + pw <= nx || px >= nx + nw || py + ph <= ny || py >= ny + nh) return;
+
   const overlapLeft  = (px + pw) - nx;
   const overlapRight = (nx + nw) - px;
   const overlapTop   = (py + ph) - ny;
   const overlapBot   = (ny + nh) - py;
   const minX = Math.min(overlapLeft, overlapRight);
-  const minY = Math.min(overlapTop, overlapBot);
+  const minY = Math.min(overlapTop,  overlapBot);
+
   if (minX < minY) {
     if (overlapLeft < overlapRight) { player.x -= overlapLeft;  player.vx = Math.min(0, player.vx); }
     else                            { player.x += overlapRight; player.vx = Math.max(0, player.vx); }
   } else {
-    if (overlapTop < overlapBot) { player.y -= overlapTop; player.vy = Math.min(0, player.vy); }
-    else                         { player.y += overlapBot; player.vy = Math.max(0, player.vy); }
+    if (overlapTop < overlapBot)    { player.y -= overlapTop;   player.vy = Math.min(0, player.vy); }
+    else                            { player.y += overlapBot;   player.vy = Math.max(0, player.vy); }
   }
 }
 
@@ -171,13 +181,13 @@ export default function GameCanvas() {
   const floorGoldRef              = useRef(0);
 
   // ============================================================
-  // [🧱 BLOCK: Mobile + Active Keys State]
-  // isMobile detected once. activeKeys polled each animation
-  // frame for desktop glow indicators in MobileControls.
+  // [🧱 BLOCK: Mobile Detection State]
   // ============================================================
-  const [isMobile]      = useState<boolean>(() => detectMobile());
-  const [activeKeys,    setActiveKeys]    = useState<Set<string>>(new Set());
-  const activeKeysTimer = useRef<ReturnType<typeof setInterval> | null>(null);
+  const [isMobile, setIsMobile] = useState(false);
+
+  useEffect(() => {
+    setIsMobile(detectMobile());
+  }, []);
 
   // ============================================================
   // [🧱 BLOCK: UI State]
@@ -195,10 +205,9 @@ export default function GameCanvas() {
   const [victoryStats,     setVictoryStats]      = useState({ kills: 0, gold: 0 });
   const [announcement,     setAnnouncement]      = useState<{ show: boolean; message: string; subtext?: string; color?: string }>({ show: false, message: "" });
   const announcementRef   = useRef(false);
-  const [devPanelOpen,    setDevPanelOpen]       = useState(false);
-  const [showTransition,  setShowTransition]     = useState(false);
-  const [transitionFloor, setTransitionFloor]    = useState(2);
-  const [hudMinimized,    setHudMinimized]        = useState(false);
+  const [devPanelOpen,    setDevPanelOpen]    = useState(false);
+  const [showTransition,  setShowTransition]  = useState(false);
+  const [transitionFloor, setTransitionFloor] = useState(2);
   const pendingContinueRef = useRef<(() => void) | null>(null);
 
   useEffect(() => {
@@ -227,17 +236,36 @@ export default function GameCanvas() {
   }, [announce]);
 
   // ============================================================
-  // [🧱 BLOCK: Mobile Slot Activation]
-  // Called by HUD hotbar tap on mobile.
+  // [🧱 BLOCK: Mobile Slot Activate]
+  // Called by MobileControls when a slot circle is tapped.
   // ============================================================
-  const handleActivateSlot = useCallback((slotIndex: number) => {
-    const state = stateRef.current;
-    if (!state) return;
+  const handleMobileSlotActivate = useCallback((slotIndex: number) => {
     const ui = uiActiveRef.current;
     if (ui.menu || ui.shop || ui.gameOver) return;
+    const state = stateRef.current;
+    if (!state) return;
     const activated = state.playerConsumables.activateSlot(slotIndex);
     if (activated) applyConsumableEffect(activated, slotIndex);
   }, [applyConsumableEffect]);
+
+  // ============================================================
+  // [🧱 BLOCK: Mobile Pause Handler]
+  // ============================================================
+  const handleMobilePause = useCallback(() => {
+    const ui = uiActiveRef.current;
+    if (ui.menu || ui.gameOver) return;
+    if (ui.inventory) { setShowInventory(false); return; }
+    setIsPaused(p => !p);
+  }, []);
+
+  // ============================================================
+  // [🧱 BLOCK: Mobile Inventory Handler]
+  // ============================================================
+  const handleMobileInventory = useCallback(() => {
+    const ui = uiActiveRef.current;
+    if (ui.menu || ui.shop || ui.gameOver) return;
+    setShowInventory(p => !p);
+  }, []);
 
   // ============================================================
   // [🧱 BLOCK: Setup Effect]
@@ -249,24 +277,6 @@ export default function GameCanvas() {
 
     stateRef.current = new GameState(window.innerWidth, window.innerHeight);
     inputRef.current = new InputHandler();
-
-    // ── Desktop active-key polling for glow indicators ────────
-    if (!isMobile) {
-      activeKeysTimer.current = setInterval(() => {
-        const inp = inputRef.current;
-        if (!inp) return;
-        const watched = ["KeyJ", "KeyK", "KeyC", "KeyL"];
-        const next = new Set<string>();
-        watched.forEach((k) => { if (inp.isPressed(k)) next.add(k); });
-        setActiveKeys((prev) => {
-          // Only update if changed to avoid re-renders
-          for (const k of watched) {
-            if (prev.has(k) !== next.has(k)) return next;
-          }
-          return prev;
-        });
-      }, 32); // ~30fps polling is enough for visual feedback
-    }
 
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.code === "F1") { e.preventDefault(); if (IS_DEV) setDevPanelOpen((p) => !p); return; }
@@ -326,14 +336,14 @@ export default function GameCanvas() {
     window.addEventListener("resize", onResize);
 
     const hudSync = setInterval(() => {
-      const s = stateRef.current;
-      const r = roomRef.current;
+      const s = stateRef.current; const r = roomRef.current;
       if (!s) return;
       const boss = s.boss;
       const hotbarSnap = s.playerConsumables.slots.map((slot) => ({
         ...slot,
         _bagCount: slot.assignedId ? s.playerConsumables.bagCount(slot.assignedId) : 0,
       })) as unknown as BlankHotbar;
+
       setHud({
         hp:            Math.max(0, s.player.hp),
         stamina:       Math.round(s.player.stamina),
@@ -350,13 +360,12 @@ export default function GameCanvas() {
 
     return () => {
       clearInterval(hudSync);
-      if (activeKeysTimer.current) clearInterval(activeKeysTimer.current);
       window.removeEventListener("resize",  onResize);
       window.removeEventListener("keydown", onKeyDown);
       window.removeEventListener("keyup",   onKeyUp);
       if (iHoldTimer.current) clearTimeout(iHoldTimer.current);
     };
-  }, [isMobile]);
+  }, []);
 
   const resetFloorTracking = useCallback(() => { floorKillsRef.current = 0; floorGoldRef.current = 0; }, []);
 
@@ -375,7 +384,6 @@ export default function GameCanvas() {
     setIsGameOver(false);    setIsVictory(false);   setVictoryMinimized(false);
     setShowShop(false);      setIsPaused(false);    setIsMidRoom(false);
     setShowInventory(false); setShowMenu(showMenuAfter); setShowTransition(false);
-    setHudMinimized(false);
     lastAnnouncedRemainingRef.current = null;
     isDyingRef.current = false; vignetteAlphaRef.current = 0;
   }, []);
@@ -455,21 +463,24 @@ export default function GameCanvas() {
   // ============================================================
   const handleEquipDrop = useCallback((drop: ItemDrop) => {
     const state = stateRef.current; if (!state) return;
-    const item = drop.item; const player = state.player;
-    const dropX = player.x + player.width  + SWAP_DROP_OFFSET;
-    const dropY = player.y + player.height + SWAP_DROP_OFFSET;
+    const item   = drop.item;
+    const player = state.player;
+    const dropX  = player.x + player.width  + SWAP_DROP_OFFSET;
+    const dropY  = player.y + player.height + SWAP_DROP_OFFSET;
+
     if (item.kind === 'weapon') {
       const existing = state.playerStats.equippedWeaponItem;
       if (existing) state.itemDrops.push(new ItemDrop(dropX, dropY, { ...existing, kind: 'weapon' }));
       state.playerStats.claimWeapon(item as WeaponItem, player);
     } else if (item.kind === 'armor') {
-      const ai = item as ArmorItem;
+      const ai       = item as ArmorItem;
       const existing = state.playerStats.armorSlots[ai.slot];
       if (existing) state.itemDrops.push(new ItemDrop(dropX, dropY, { ...existing, kind: 'armor' }));
       state.playerStats.claimArmor(ai, player);
     } else if (item.kind === 'charm') {
       state.playerStats.claimCharm(item as any, player);
     }
+
     drop.collected = true;
     const idx = state.itemDrops.findIndex((d) => d === drop);
     if (idx !== -1) state.itemDrops.splice(idx, 1);
@@ -528,11 +539,14 @@ export default function GameCanvas() {
     const playerSX = state.camera.toScreenX(player.x + player.width  / 2);
     const playerSY = state.camera.toScreenY(player.y + player.height / 2);
 
+    // 1. Tick consumable timers
     state.playerConsumables.update(16);
+    // 2. Buff effects + projectile hits
     state.consumableSystem.update(state, player, 16);
+    // 3. Sync invisibility
     player.isInvisible = ConsumableSystem.isPhantomActive(state);
 
-    // ── Death sequence ────────────────────────────────────────
+    // ── Death sequence ─────────────────────────────────────
     if (isDyingRef.current) {
       const elapsed = Date.now() - deathStartRef.current;
       render.clear(ctx, state.screenW, state.screenH);
@@ -547,6 +561,7 @@ export default function GameCanvas() {
         }
       }
       render.drawFog(ctx, playerSX, playerSY, state.screenW, state.screenH, isBoss);
+      render.drawLowHpVignette(ctx, state.screenW, state.screenH, player.hp / player.maxHp);
       if (elapsed >= DEATH_FLASH_MS) {
         const vigProgress = Math.min((elapsed - DEATH_FLASH_MS) / DEATH_VIGNETTE_MS, 1);
         vignetteAlphaRef.current = vigProgress;
@@ -585,7 +600,7 @@ export default function GameCanvas() {
       if (goldCollected > 0) { state.gold += goldCollected; floorGoldRef.current += goldCollected; }
       const newKills = state.totalKills - prevKills;
       if (newKills > 0) floorKillsRef.current += newKills;
-      const isElite = rs.phase === 'elite';
+      const isElite   = rs.phase === 'elite';
       const threshold = hordeRef.current.getThreshold(rs.floor, isElite);
       const remaining = threshold - state.kills;
       if (remaining > 0 && !announcementRef.current) {
@@ -624,9 +639,15 @@ export default function GameCanvas() {
       bossRef.current.draw(state, ctx, state.camera, player);
     }
 
+    // 5. Consumable VFX
     state.consumableSystem.draw(ctx, state.camera, state, player);
+    // 6. Player
     player.draw(ctx, state.camera);
+    // 7. Fog
     render.drawFog(ctx, playerSX, playerSY, state.screenW, state.screenH, isBoss);
+    // 8. Low HP vignette
+    render.drawLowHpVignette(ctx, state.screenW, state.screenH, player.hp / player.maxHp);
+    // 9. Damage numbers
     render.drawDamageNumbers(ctx, state.camera, state.damageNumbers);
   });
 
@@ -635,13 +656,16 @@ export default function GameCanvas() {
   const isElitePhase = roomRef.current.phase === 'elite';
   const state        = stateRef.current;
   const threshold    = hordeRef.current.getThreshold(hud.floor, roomRef.current.phase === 'elite');
-  const nearbyDrops  = state ? state.itemDrops.filter((d) => !d.collected && d.playerIsNear) : [];
+
+  const nearbyDrops = state
+    ? state.itemDrops.filter((d) => !d.collected && d.playerIsNear)
+    : [];
 
   return (
     <div style={{ width: "100vw", height: "100vh", overflow: "hidden", background: "#0f172a" }}>
       <canvas ref={canvasRef} style={{ display: "block" }} />
 
-      {/* ── HUD ── */}
+      {/* ── HUD — passes isMobile so it renders the right variant ── */}
       {!showMenu && (
         <HUD
           hp={hud.hp} maxHp={MAX_HP}
@@ -652,28 +676,22 @@ export default function GameCanvas() {
           roomPhase={roomRef.current.phase}
           hotbar={hud.hotbar}
           isMobile={isMobile}
-          onPause={() => setIsPaused(true)}
-          onInventory={() => setShowInventory(true)}
-          onActivateSlot={handleActivateSlot}
-          isMinimized={hudMinimized}
-          onMinimize={() => setHudMinimized((p) => !p)}
         />
       )}
 
-      {/* ── Mobile controls (joystick + D-pad) OR desktop glow indicators ── */}
-      {!showMenu && (
-        <MobileControls
-          inputRef={inputRef}
-          isMobile={isMobile}
-          activeKeys={activeKeys}
-        />
-      )}
-
-      {/* ── Minimap ── */}
+      {/* ── Minimap — desktop only (hidden on mobile via CSS) ── */}
       {!showMenu && !isGameOver && (
-        <Minimap
-          state={stateRef.current}
-          isBoss={roomRef.current.phase === 'boss' || roomRef.current.phase === 'victory'}
+        <Minimap state={stateRef.current} isBoss={roomRef.current.phase==='boss'||roomRef.current.phase==='victory'} />
+      )}
+
+      {/* ── Mobile Controls ── */}
+      {!showMenu && !isGameOver && (
+        <MobileControls
+          inputRef={inputRef as React.MutableRefObject<InputHandler | null>}
+          isMobile={isMobile}
+          onPause={handleMobilePause}
+          onInventory={handleMobileInventory}
+          onSlotActivate={handleMobileSlotActivate}
         />
       )}
 
@@ -690,8 +708,7 @@ export default function GameCanvas() {
         <Inventory
           playerStats={state.playerStats} player={state.player} gold={gold}
           nearbyDrops={nearbyDrops} playerConsumables={state.playerConsumables}
-          onGoldChange={handleGoldChange} onEquipDrop={handleEquipDrop}
-          onClose={handleInventoryClose}
+          onGoldChange={handleGoldChange} onEquipDrop={handleEquipDrop} onClose={handleInventoryClose}
         />
       )}
 
@@ -703,18 +720,15 @@ export default function GameCanvas() {
           onClose={handleVictoryClose} onQuit={handleQuitToMenu}
         />
       )}
-
       {victoryMinimized && (
         <button className="victory-badge" onClick={handleVictoryRestore}>
           <span className="victory-badge__gem" />
           <span className="victory-badge__label">Floor Clear</span>
         </button>
       )}
-
       {showTransition && (
         <FloorTransition targetFloor={transitionFloor} onComplete={handleTransitionComplete} />
       )}
-
       {isGameOver && !showMenu && state && (
         <GameOverOverlay
           floor={hud.floor} room={hud.room}
@@ -723,23 +737,19 @@ export default function GameCanvas() {
           onRetry={handleRaidAgain} onQuit={handleQuitToMenu}
         />
       )}
-
       {isPaused && !showMenu && !isGameOver && state && (
         <PauseOverlay
-          floor={hud.floor} room={hud.room} hp={hud.hp} maxHp={MAX_HP} gold={gold}
-          playerStats={state.playerStats}
+          floor={hud.floor} room={hud.room} hp={hud.hp} maxHp={MAX_HP}
+          gold={gold} playerStats={state.playerStats}
           onResume={() => setIsPaused(false)}
           onQuit={() => { setIsPaused(false); handleQuitToMenu(); }}
         />
       )}
-
       {showMenu && <Menu onStart={handleStart} />}
-
       <WaveClearAnnouncement
         show={announcement.show} message={announcement.message}
         subtext={announcement.subtext} color={announcement.color}
       />
-
       {IS_DEV && (
         <DevPanel
           isOpen={devPanelOpen} onToggle={() => setDevPanelOpen((p) => !p)}
