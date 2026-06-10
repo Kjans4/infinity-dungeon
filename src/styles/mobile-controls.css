@@ -2,7 +2,8 @@
    MobileControls — src/styles/mobile-controls.css
    Virtual joystick + action D-pad + slots + inventory
    Layout matches wireframe: joystick bottom-left,
-   right cluster (slots + D-pad + inventory) bottom-right,
+   right cluster (D-pad + inventory) bottom-right,
+   slot row is a full-width horizontal strip above the HUD,
    top-left has fullscreen + pause buttons.
    ============================================================ */
 
@@ -62,14 +63,15 @@
 
 /* ============================================================
    [🧱 BLOCK: Joystick — bottom-left]
-   Raised high enough to clear the HUD strip.
+   Slightly smaller than original (118px → 104px).
+   Raised above the HUD strip + slot row.
    ============================================================ */
 .mc-joystick-base {
   position: absolute;
-  bottom: 100px;
+  bottom: 96px;
   left: 20px;
-  width: 118px;
-  height: 118px;
+  width: 104px;
+  height: 104px;
   border-radius: 50%;
   background: rgba(10, 8, 4, 0.55);
   border: 2px solid rgba(90, 64, 16, 0.7);
@@ -104,8 +106,8 @@
 
 .mc-joystick-knob {
   position: absolute;
-  width: 46px;
-  height: 46px;
+  width: 40px;
+  height: 40px;
   border-radius: 50%;
   background: radial-gradient(circle at 35% 35%,
     rgba(192, 134, 12, 0.9),
@@ -132,39 +134,28 @@
 }
 
 /* ============================================================
-   [🧱 BLOCK: Right Cluster]
-   Contains: slot arc (top), action D-pad (middle),
-   inventory button (bottom-right of cluster).
-   Anchored bottom-right, raised above HUD strip.
+   [🧱 BLOCK: Slot Row — horizontal strip above HUD]
+   Fixed to bottom just above the HUD strip (bottom: 58px).
+   Centered across full screen width.
+   4 equal circles in a flex row, 40px each with 12px gaps.
+   Moved out of .mc-right-cluster — it's now a sibling of it.
    ============================================================ */
-.mc-right-cluster {
-  position: absolute;
-  bottom: 90px;
-  right: 16px;
-  width: 200px;
-  height: 260px;
+.mc-slots {
+  position: fixed;
+  bottom: 52px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 12px;
   pointer-events: none;
   z-index: 20;
 }
 
-/* ============================================================
-   [🧱 BLOCK: Slot Buttons — diagonal arc]
-   4 circles arranged bottom-left to top-right arc,
-   sitting above the action D-pad. Per wireframe.
-   ============================================================ */
-.mc-slots {
-  position: absolute;
-  bottom: 148px;
-  left: 0;
-  width: 160px;
-  height: 120px;
-  pointer-events: none;
-}
-
 .mc-slot-btn {
-  position: absolute;
-  width: 38px;
-  height: 38px;
+  width: 40px;
+  height: 40px;
   border-radius: 50%;
   background: rgba(10, 8, 4, 0.72);
   border: 1.5px solid rgba(90, 64, 16, 0.65);
@@ -178,6 +169,7 @@
   touch-action: manipulation;
   -webkit-tap-highlight-color: transparent;
   transition: background 0.08s, border-color 0.08s;
+  flex-shrink: 0;
 }
 
 .mc-slot-btn:active {
@@ -194,15 +186,26 @@
   pointer-events: none;
 }
 
-/* Diagonal arc: slot 1 bottom-left → slot 4 top-right */
-.mc-slot-btn:nth-child(1) { bottom: 0;   left: 10px;  }
-.mc-slot-btn:nth-child(2) { bottom: 32px; left: 44px; }
-.mc-slot-btn:nth-child(3) { bottom: 64px; left: 80px; }
-.mc-slot-btn:nth-child(4) { bottom: 90px; left: 114px; }
+/* ============================================================
+   [🧱 BLOCK: Right Cluster]
+   Contains: action D-pad + inventory button.
+   Slot arc removed — slots are now a full-width fixed row.
+   Slightly tighter than original.
+   ============================================================ */
+.mc-right-cluster {
+  position: absolute;
+  bottom: 86px;
+  right: 16px;
+  width: 180px;
+  height: 220px;
+  pointer-events: none;
+  z-index: 20;
+}
 
 /* ============================================================
    [🧱 BLOCK: Action D-pad]
    Diamond cross — 4 rotated squares.
+   Slightly smaller (52px → 46px per button).
    ============================================================ */
 .mc-actions {
   position: absolute;
@@ -215,8 +218,8 @@
 
 .mc-btn {
   position: absolute;
-  width: 52px;
-  height: 52px;
+  width: 46px;
+  height: 46px;
   border-radius: 8px;
   transform: rotate(45deg);
   background: rgba(10, 8, 4, 0.75);
@@ -249,7 +252,7 @@
 }
 
 .mc-btn__icon {
-  font-size: 14px;
+  font-size: 12px;
   line-height: 1;
 }
 
@@ -408,19 +411,14 @@
 .mc-desktop-btn--block.mc-btn--active .mc-desktop-btn__label { color: #94a3b8; }
 
 /* ============================================================
-   [🧱 BLOCK: Mobile HUD override]
-   On touch devices, suppress the desktop center-banner HUD
-   and show a compact strip at the very bottom instead.
-   This prevents the banner from overlapping the controls.
+   [🧱 BLOCK: Mobile Overrides]
+   On touch devices, suppress the desktop center-banner HUD.
+   Minimap is intentionally NOT hidden — it sits at top-right
+   which is clear of all bottom-anchored controls.
    ============================================================ */
 @media (pointer: coarse) and (hover: none) {
   /* Hide the desktop horizontal banner */
   .hud-root {
-    display: none !important;
-  }
-
-  /* Hide desktop minimap — MobileControls renders its own */
-  .minimap-root {
     display: none !important;
   }
 

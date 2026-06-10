@@ -29,7 +29,7 @@ const ACTION_BUTTONS: ActionBtn[] = [
 
 // ============================================================
 // [🧱 BLOCK: Slot Button Config]
-// 4 consumable slots — diagonal arc above the action D-pad
+// 4 consumable slots — horizontal row above the HUD strip
 // ============================================================
 const SLOT_BUTTONS = [
   { slotIndex: 0, label: '1' },
@@ -247,6 +247,8 @@ export default function MobileControls({
 
   // ============================================================
   // [🧱 BLOCK: Mobile Layout]
+  // Slot row is a direct child of .mc-root (not inside
+  // .mc-right-cluster) so it can be full-width and centered.
   // ============================================================
   return (
     <div className="mc-root">
@@ -284,21 +286,21 @@ export default function MobileControls({
         />
       </div>
 
-      {/* ── Right side: slots + actions + inventory ── */}
-      <div className="mc-right-cluster">
+      {/* ── Slot row — full-width centered strip above HUD ── */}
+      <div className="mc-slots">
+        {SLOT_BUTTONS.map(({ slotIndex, label }) => (
+          <div
+            key={slotIndex}
+            className="mc-slot-btn"
+            onTouchEnd={(e) => handleSlotTap(e, slotIndex)}
+          >
+            <span className="mc-slot-btn__label">{label}</span>
+          </div>
+        ))}
+      </div>
 
-        {/* Slot buttons — diagonal arc */}
-        <div className="mc-slots">
-          {SLOT_BUTTONS.map(({ slotIndex, label }) => (
-            <div
-              key={slotIndex}
-              className="mc-slot-btn"
-              onTouchEnd={(e) => handleSlotTap(e, slotIndex)}
-            >
-              <span className="mc-slot-btn__label">{label}</span>
-            </div>
-          ))}
-        </div>
+      {/* ── Right cluster: action D-pad + inventory ── */}
+      <div className="mc-right-cluster">
 
         {/* Action D-pad */}
         <div className="mc-actions">
