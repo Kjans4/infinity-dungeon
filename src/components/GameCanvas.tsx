@@ -27,7 +27,7 @@ import { ShopItem }          from "@/engine/items/ItemPool";
 import { ItemDrop }          from "@/engine/ItemDrop";
 import { WeaponItem, ArmorItem } from "@/engine/items/types";
 import { HotbarSlot }        from "@/engine/PlayerConsumables";
-import { ConsumableDef }     from "@/engine/ConsumableRegistry";
+import { ConsumableDef, getEffectsAtLevel } from "@/engine/ConsumableRegistry";
 import { ConsumableSystem }  from "@/engine/ConsumableSystem";
 import { ConsumableDrop }    from "@/engine/ConsumableDrop";
 import { Player }            from "@/engine/Player";
@@ -222,13 +222,17 @@ export default function GameCanvas() {
 
   // ============================================================
   // [🧱 BLOCK: Apply Consumable Effect]
+  // Ward scroll uses getEffectsAtLevel for level-aware hit count.
   // ============================================================
   const applyConsumableEffect = useCallback((def: ConsumableDef, slotIndex: number) => {
     const state = stateRef.current;
     if (!state) return;
     if (def.id === 'ward_scroll') {
-      const slot    = state.playerConsumables.slots[slotIndex];
-      slot.wardHits = Math.max(slot.wardHits, def.effectValue);
+      const slot        = state.playerConsumables.slots[slotIndex];
+      const level       = state.playerConsumables.getLevel(def.id);
+      const fx          = getEffectsAtLevel(def, level);
+      const leveledHits = fx[0] ?? def.effectValue;
+      slot.wardHits     = Math.max(slot.wardHits, leveledHits);
     }
     state.consumableSystem.activate(def, state.player, state);
     const color = def.kind === 'potion' ? '#4ade80' : '#a78bfa';
