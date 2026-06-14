@@ -130,10 +130,19 @@ export class HitSpark {
 // ============================================================
 // [🧱 BLOCK: Damage Number]
 // Floating damage text that rises and fades after a hit.
+//
 // color:
-//   white  = normal hit
-//   yellow = charged attack
-//   red    = heavy attack
+//   white  (#f1f5f9) = normal hit
+//   yellow (#facc15) = charged light
+//   orange (#fb923c) = heavy
+//   red    (#ef4444) = charged heavy
+//
+// Visibility improvements:
+//   - Larger base font sizes (14px normal, 18px heavy)
+//   - Pop scale in first 80ms for punch feel
+//   - Thick dark stroke outline (4px) for contrast over any bg
+//   - Slower drift (-0.45) + longer life (750ms)
+//   - Fade starts only in final 30% of life
 // ============================================================
 export class DamageNumber {
   x:       number;
@@ -141,27 +150,29 @@ export class DamageNumber {
   value:   number;
   color:   string;
   alpha:   number  = 1;
-  life:    number  = 600;    // ms
-  maxLife: number  = 600;
-  vy:      number  = -0.55;  // upward drift px/frame
+  life:    number  = 750;
+  maxLife: number  = 750;
+  vy:      number  = -0.45;  // slower upward drift — stays on screen longer
   size:    number;
+  isCrit:  boolean;
 
   constructor(x: number, y: number, value: number, color: string) {
-    this.x     = x;
-    this.y     = y;
-    this.value = value;
-    this.color = color;
-    // Slightly bigger font for heavy / charged hits
-    this.size  = value >= 20 ? 13 : 10;
-    // Tiny horizontal scatter so stacked numbers don't overlap
-    this.x    += (Math.random() - 0.5) * 20;
+    this.x      = x;
+    this.y      = y;
+    this.value  = value;
+    this.color  = color;
+    this.isCrit = value >= 20;
+    // Larger sizes — normal 14px, heavy/crit 18px
+    this.size   = this.isCrit ? 18 : 14;
+    // Horizontal scatter so stacked numbers don't overlap
+    this.x     += (Math.random() - 0.5) * 24;
   }
 
   update() {
     this.y    += this.vy;
     this.life -= 16;
-    // Fade in last 40% of life
-    const fadeThreshold = this.maxLife * 0.4;
+    // Fade only in final 30% of life
+    const fadeThreshold = this.maxLife * 0.30;
     this.alpha = this.life < fadeThreshold
       ? Math.max(0, this.life / fadeThreshold)
       : 1;
@@ -171,24 +182,35 @@ export class DamageNumber {
 
   draw(ctx: CanvasRenderingContext2D, camera: Camera) {
     if (this.isDone) return;
+
     const sx = camera.toScreenX(this.x);
     const sy = camera.toScreenY(this.y);
 
+    // Pop scale: scale up from 0.6 → 1.0 in first 80ms, then stay at 1.0
+    const elapsed   = this.maxLife - this.life;
+    const popDur    = 80;
+    const popScale  = elapsed < popDur
+      ? 0.6 + 0.4 * (elapsed / popDur)
+      : 1.0;
+    const fontSize  = Math.round(this.size * popScale);
+
+    ctx.save();
     ctx.globalAlpha  = this.alpha;
-    ctx.font         = `bold ${this.size}px 'Courier New', monospace`;
+    ctx.font         = `900 ${fontSize}px 'Courier New', monospace`;
     ctx.textAlign    = "center";
     ctx.textBaseline = "middle";
 
-    // Drop shadow for readability
-    ctx.fillStyle = "rgba(0,0,0,0.6)";
-    ctx.fillText(String(this.value), sx + 1, sy + 1);
+    // Thick dark stroke — creates solid outline readable over fog/tiles/enemies
+    ctx.strokeStyle = "rgba(0, 0, 0, 0.85)";
+    ctx.lineWidth   = 4;
+    ctx.lineJoin    = "round";
+    ctx.strokeText(String(this.value), sx, sy);
 
+    // Colored fill on top
     ctx.fillStyle = this.color;
     ctx.fillText(String(this.value), sx, sy);
 
-    ctx.globalAlpha  = 1;
-    ctx.textAlign    = "left";
-    ctx.textBaseline = "alphabetic";
+    ctx.restore();
   }
 }
 
