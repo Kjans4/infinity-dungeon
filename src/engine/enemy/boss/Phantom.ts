@@ -169,8 +169,15 @@ export class Phantom extends BaseEnemy {
 
   // ============================================================
   // [🧱 BLOCK: Update]
+  // [🧱 BLOCK: Death Fix — instant death on decay]
+  // See Brute.ts for full rationale: BaseEnemy.takeDamage() puts
+  // the enemy into a 380ms isDecaying state instead of isDead.
+  // Horde enemies tick that timer themselves; bosses never did,
+  // so they'd get stuck at 0 HP forever, still fighting and
+  // immune to further damage. Convert decay into instant death.
   // ============================================================
   update(player: Player, worldW: number, worldH: number) {
+    if (this.isDecaying) { this.triggerInstantDeath(); }
     if (this.isDead) return;
 
     this.justEnragedThisFrame = false;

@@ -167,8 +167,19 @@ export class Brute extends BaseEnemy {
 
   // ============================================================
   // [🧱 BLOCK: Update]
+  // [🧱 BLOCK: Death Fix — instant death on decay]
+  // BaseEnemy.takeDamage() starts a 380ms decay timer instead of
+  // setting isDead immediately. Horde enemies tick that timer via
+  // tickDeath() in their own update(); bosses never did, so a
+  // boss that hit 0 HP would sit in isDecaying=true / isDead=false
+  // forever — still fighting, and immune to further damage because
+  // takeDamage() early-returns on isDecaying. We don't need the
+  // shrink/fade decay animation for bosses (BossSystem already
+  // plays its own death VFX + victory sequence), so we just
+  // convert decay into instant death here.
   // ============================================================
   update(player: Player, worldW: number, worldH: number) {
+    if (this.isDecaying) { this.triggerInstantDeath(); }
     if (this.isDead) return;
 
     this.justEnragedThisFrame = false;
