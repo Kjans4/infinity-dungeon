@@ -1,7 +1,7 @@
 // src/engine/ItemDrop.ts
 import { Player }        from "./Player";
 import { Camera }        from "./Camera";
-import { ShopItem }      from "./items/ItemPool";
+import { WeaponItem }     from "./items/types";
 import { circleCircle, rectCenter } from "./Collision";
 
 // ============================================================
@@ -16,11 +16,16 @@ const PROXIMITY_RADIUS = 90;  // px — player must be within this to see drop i
 // There is no auto-pickup — the item never despawns on its own.
 // `collected` is set to true externally by GameCanvas when the
 // player equips the item (or a swap pushes a new drop).
+//
+// [🧱 Phase 1 fix] item is WeaponItem, not ShopItem — ground
+// drops are weapon-only as of Phase 1 (boons are Shop/Boss-Chest
+// only, never dropped). Typing this as ShopItem let boon offers
+// leak in structurally and broke claimWeapon() call sites.
 // ============================================================
 export class ItemDrop {
   x:       number;
   y:       number;
-  item:    ShopItem;
+  item:    WeaponItem;
   radius:  number  = 12;
 
   // Set externally when the item is equipped or discarded
@@ -32,7 +37,7 @@ export class ItemDrop {
   private pulseTimer: number = Math.random() * Math.PI * 2;
   private elapsed:    number = 0;
 
-  constructor(x: number, y: number, item: ShopItem) {
+  constructor(x: number, y: number, item: WeaponItem) {
     this.x    = x;
     this.y    = y;
     this.item = item;
@@ -59,8 +64,8 @@ export class ItemDrop {
 
   // ============================================================
   // [🧱 BLOCK: Draw]
-  // Color by item kind: weapon=blue, charm=yellow, armor=green.
-  // Pulses with a proximity indicator ring when player is near.
+  // Ground drops are weapon-only as of Phase 1 — always blue,
+  // always labeled WEAPON.
   // ============================================================
   draw(ctx: CanvasRenderingContext2D, camera: Camera) {
     if (this.collected) return;
@@ -70,15 +75,8 @@ export class ItemDrop {
     const sy    = camera.toScreenY(this.y);
     const pulse = Math.sin(this.pulseTimer) * 0.3 + 0.7;
 
-    const color =
-      this.item.kind === "weapon" ? "#38bdf8" :
-      this.item.kind === "armor"  ? "#4ade80" :
-                                    "#facc15";
-
-    const kindLabel =
-      this.item.kind === "weapon" ? "WEAPON" :
-      this.item.kind === "armor"  ? "ARMOR"  :
-                                    "CHARM";
+    const color     = "#38bdf8";
+    const kindLabel = "WEAPON";
 
     // ── Proximity ring — glows when player is near ────────────
     if (this.playerIsNear) {
