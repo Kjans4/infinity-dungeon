@@ -3,6 +3,7 @@
 
 import React, { useEffect, useState } from "react";
 import { PlayerStats }                from "@/engine/PlayerStats";
+import { BOON_SLOT_COUNT }            from "@/engine/PlayerBoons";
 import "@/styles/gameover.css";
 
 // ============================================================
@@ -73,7 +74,7 @@ export default function GameOverOverlay({
   const weapon  = playerStats.equippedWeaponItem
     ? `${playerStats.equippedWeaponItem.icon} ${playerStats.equippedWeaponItem.name}`
     : "👊 Bare Fists";
-  const charms  = `${playerStats.charms.length} / ${playerStats.maxCharms}`;
+  const boons = `${playerStats.boons.filledCount} / ${BOON_SLOT_COUNT}`;
 
   return (
     <div className="go-backdrop">
@@ -96,7 +97,7 @@ export default function GameOverOverlay({
               <StatRow icon="☠" label="Kills"        value={String(totalKills)}                />
               <StatRow icon="💰" label="Gold Earned" value={`${totalGoldEarned}g`}             />
               <StatRow icon="⚔" label="Weapon"       value={weapon}                            />
-              <StatRow icon="🧿" label="Charms"       value={charms}                            />
+              <StatRow icon="🧿" label="Boons"        value={boons}                             />
               <StatRow icon="📍" label="Reached"     value={`Floor ${floor} · Room ${room}`}   />
             </div>
           </div>

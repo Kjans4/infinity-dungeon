@@ -15,11 +15,12 @@ import { ItemDrop }                    from "../ItemDrop";
 import { ConsumableDrop }              from "../ConsumableDrop";
 import { Door }                        from "../Door";
 import { ShopNPC }                     from "../ShopNPC";
+import { BossChest }                   from "../BossChest";
 import { RenderSystem, FREEZE_PRESETS } from "./RenderSystem";
 import { ConsumableSystem }            from "../ConsumableSystem";
 import { spawnBurst, spawnHitSpark, spawnDamageNumber } from "../Particle";
 import { WeaponSystem }                from "./WeaponSystem";
-import { getRandomShopItems, getRandomConsumableDrop } from "../items/ItemPool";
+import { getRandomWeaponDrop, getRandomConsumableDrop } from "../items/ItemPool";
 import {
   isRiposteActive, tickRiposte, RIPOSTE_MULT, GLAIVE_EXTRA_COST,
 } from "../WeaponPassiveRegistry";
@@ -34,8 +35,13 @@ const BOSS_GOLD = { min: 80, max: 120 };
 
 // ============================================================
 // [🧱 BLOCK: Boss Drop Constants]
+// Weapon-only ground drops as of Phase 1 — boons no longer drop
+// (Shop / Boss Chest only). Guaranteed drop count reduced from
+// 3 (previously spread across charm/weapon/armor pools) since
+// the pool shrank to weapons alone. See docs/phase-1-boons.md
+// "Open Items to Confirm".
 // ============================================================
-const MIN_ITEM_DROPS      = 3;
+const MIN_WEAPON_DROPS    = 1;
 const FLOOR_BONUS_FLOOR   = 3;
 const BONUS_DROP_CHANCE   = 0.40;
 const BOSS_DROP_SPREAD    = 80;
@@ -51,39 +57,28 @@ function randInt(min: number, max: number): number {
 }
 
 // ============================================================
-// [🧱 BLOCK: Spawn Boss Item Drops]
+// [🧱 BLOCK: Spawn Boss Weapon Drops]
 // ============================================================
-function spawnBossItemDrops(state: GameState, cx: number, cy: number) {
+function spawnBossWeaponDrops(state: GameState, cx: number, cy: number) {
   const floor      = state.boss ? (state.boss as any).floor ?? 1 : 1;
   const floorBonus = floor >= FLOOR_BONUS_FLOOR ? 1 : 0;
   const bonusRoll  = Math.random() < BONUS_DROP_CHANCE ? 1 : 0;
-  const totalDrops = MIN_ITEM_DROPS + floorBonus + bonusRoll;
+  const totalDrops = MIN_WEAPON_DROPS + floorBonus + bonusRoll;
 
   for (let i = 0; i < totalDrops; i++) {
-    const ownedCharmIds   = state.playerStats.charms.map((c) => c.id);
-    const ownedWeaponId   = state.playerStats.equippedWeaponItem?.id ?? null;
-    const ownedArmorIds   = Object.values(state.playerStats.armorSlots)
-      .filter(Boolean).map((a) => a!.id);
-    const groundCharmIds  = state.itemDrops.filter((d) => d.item.kind === 'charm').map((d) => d.item.id);
-    const groundWeaponId  = state.itemDrops.find((d)  => d.item.kind === 'weapon')?.item.id ?? null;
-    const groundArmorIds  = state.itemDrops.filter((d) => d.item.kind === 'armor').map((d) => d.item.id);
+    const ownedWeaponId  = state.playerStats.equippedWeaponItem?.id ?? null;
+    const groundWeaponId = state.itemDrops.find((d) => d.item.id)?.item.id ?? null;
+    const excludeIds = [ownedWeaponId, groundWeaponId].filter((id): id is string => !!id);
 
-    const pool = getRandomShopItems(
-      [...ownedCharmIds, ...groundCharmIds],
-      ownedWeaponId ?? groundWeaponId,
-      [...ownedArmorIds, ...groundArmorIds],
-      1,
-      floor
-    );
-
-    if (!pool[0]) continue;
+    const item = getRandomWeaponDrop(excludeIds);
+    if (!item) continue;
 
     const angle  = (i / totalDrops) * Math.PI * 2;
     const radius = BOSS_DROP_SPREAD * (0.5 + Math.random() * 0.5);
     state.itemDrops.push(new ItemDrop(
       cx + Math.cos(angle) * radius,
       cy + Math.sin(angle) * radius,
-      pool[0]
+      item
     ));
   }
 }
@@ -146,6 +141,7 @@ export class BossSystem {
     state.kills           = 0;
     state.door            = null;
     state.shopNpc         = null;
+    state.bossChest       = null;
 
     state.boss = selectBoss(BOSS_WORLD_W / 2 - 50, 80, rs.floor);
     this.stagger = { timer: 0 };
@@ -160,6 +156,7 @@ export class BossSystem {
     state.boss            = null;
     state.door            = null;
     state.shopNpc         = null;
+    state.bossChest       = null;
     state.goldDrops       = [];
     state.itemDrops       = [];
     state.consumableDrops = [];
@@ -171,13 +168,14 @@ export class BossSystem {
   }
 
   // ============================================================
-  // [🧱 BLOCK: Spawn Victory Door and Shop]
+  // [🧱 BLOCK: Spawn Victory Door, Shop, and Boon Chest]
   // ============================================================
-  private spawnVictoryDoorAndShop(state: GameState) {
+  private spawnVictoryDoorAndShop(state: GameState, chestX: number, chestY: number) {
     state.door          = new Door(BOSS_WORLD_W);
     state.door.isActive = true;
     state.shopNpc       = new ShopNPC(BOSS_WORLD_W);
     state.shopNpc.activate();
+    state.bossChest      = new BossChest(chestX, chestY);
   }
 
   // ============================================================
@@ -201,7 +199,7 @@ export class BossSystem {
   }
 
   // ============================================================
-  // [🧱 BLOCK: Tick Door and Shop Post-Victory]
+  // [🧱 BLOCK: Tick Door, Shop, and Chest Post-Victory]
   // ============================================================
   private tickDoorAndShop(state: GameState, player: Player): number {
     if (state.door) {
@@ -211,6 +209,10 @@ export class BossSystem {
     if (state.shopNpc) {
       state.shopNpc.update();
       state.shopNpc.checkPlayerProximity(player);
+    }
+    if (state.bossChest) {
+      state.bossChest.update();
+      state.bossChest.checkPlayerProximity(player);
     }
 
     const ps = state.playerStats;
@@ -509,12 +511,12 @@ export class BossSystem {
         state.goldDrops.push(new GoldDrop(bx + ox, by + oy, Math.floor(finalAmount / 5)));
       }
 
-      spawnBossItemDrops(state, bx, by);
+      spawnBossWeaponDrops(state, bx, by);
       spawnBossConsumableDrop(state, bx, by);
 
       state.particles.push(...spawnBurst(bx, by, boss.color, 12, 1.8));
 
-      if (ps.hasCharm('executioner')) {
+      if (ps.hasBoon('executioner')) {
         state.particles.push(...spawnBurst(bx, by, '#facc15', 20, 2.2));
       }
 
@@ -526,7 +528,8 @@ export class BossSystem {
       // Boss death — big dramatic freeze
       render.freezeFrames(FREEZE_PRESETS.heavy);
 
-      this.spawnVictoryDoorAndShop(state);
+      // Boon Chest spawns slightly offset from the weapon drops
+      this.spawnVictoryDoorAndShop(state, bx, by + 50);
       state.boss = null;
 
       return { event: "victory", goldCollected };
@@ -652,6 +655,7 @@ export class BossSystem {
     state.boss?.draw(ctx, camera);
     state.door?.draw(ctx, camera);
     state.shopNpc?.draw(ctx, camera, BOSS_WORLD_W);
+    state.bossChest?.draw(ctx, camera);
     state.projectiles.forEach((p)        => p.draw(ctx, camera));
     state.itemDrops.forEach((d)          => d.draw(ctx, camera));
     state.consumableDrops.forEach((d)    => d.draw(ctx, camera));

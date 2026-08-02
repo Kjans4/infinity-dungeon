@@ -4,11 +4,11 @@
 import React, { useState, useEffect } from "react";
 import { PlayerStats }   from "@/engine/PlayerStats";
 import { Player }        from "@/engine/Player";
-import { Charm }         from "@/engine/CharmRegistry";
-import { WeaponItem, ArmorItem, ArmorSlot } from "@/engine/items/types";
+import { WeaponItem }    from "@/engine/items/types";
 import { ItemDrop }      from "@/engine/ItemDrop";
 import { getWeaponPassive } from "@/engine/WeaponPassiveRegistry";
-import { ARMOR_SET_DEFS }   from "@/engine/items/ArmorRegistry";
+import { MAX_BOON_LEVEL, getBoonById } from "@/engine/BoonRegistry";
+import { BOON_SLOT_COUNT } from "@/engine/PlayerBoons";
 import { PlayerConsumables, BagEntry, HOTBAR_SLOTS } from "@/engine/PlayerConsumables";
 import { ConsumableId }  from "@/engine/ConsumableRegistry";
 import "@/styles/inventory.css";
@@ -20,7 +20,7 @@ interface InventoryProps {
   playerStats:        PlayerStats;
   player:             Player;
   gold:               number;
-  nearbyDrops:        ItemDrop[];
+  nearbyDrops:        ItemDrop[];   // weapon-only ground drops, Phase 1
   playerConsumables:  PlayerConsumables;
   onGoldChange:       (newGold: number) => void;
   onEquipDrop:        (drop: ItemDrop) => void;
@@ -28,89 +28,27 @@ interface InventoryProps {
 }
 
 // ============================================================
-// [🧱 BLOCK: Drag Payload]
-// A drag can originate from the bag list OR from an existing
-// hotbar slot. We encode the source so the drop handler knows
-// whether to swap slots or just assign from bag.
-//
-// source: 'bag'   — dragged from the Provisions bag list
-// source: 'slot'  — dragged from an existing hotbar slot (slotIndex set)
+// [🧱 BLOCK: Drag Payloads]
+// A drag can originate from the bag list, an existing hotbar
+// slot, or an existing boon slot. We encode the source so the
+// drop handler knows whether to swap slots or just assign.
 // ============================================================
-type DragPayload =
+type ConsumableDragPayload =
   | { source: 'bag';  id: ConsumableId }
   | { source: 'slot'; id: ConsumableId; slotIndex: number };
 
-const DRAG_KEY = 'consumableDrag';
+type BoonDragPayload = { slotIndex: number };
 
-function encodeDrag(payload: DragPayload): string {
+const DRAG_KEY      = 'consumableDrag';
+const BOON_DRAG_KEY = 'boonDrag';
+
+function encodeDrag(payload: ConsumableDragPayload): string {
   return JSON.stringify(payload);
 }
 
-function decodeDrag(raw: string): DragPayload | null {
-  try { return JSON.parse(raw) as DragPayload; }
+function decodeDrag(raw: string): ConsumableDragPayload | null {
+  try { return JSON.parse(raw) as ConsumableDragPayload; }
   catch { return null; }
-}
-
-// ============================================================
-// [🧱 BLOCK: Armor Slot Order + Labels]
-// ============================================================
-const ARMOR_SLOTS: ArmorSlot[] = ['helmet', 'armor', 'leggings', 'gloves', 'boots'];
-
-const SLOT_LABELS: Record<ArmorSlot, { short: string; full: string }> = {
-  helmet:   { short: 'HLM', full: 'Helmet'   },
-  armor:    { short: 'ARM', full: 'Armor'     },
-  leggings: { short: 'LEG', full: 'Leggings'  },
-  gloves:   { short: 'GLV', full: 'Gloves'    },
-  boots:    { short: 'BTS', full: 'Boots'     },
-};
-
-// ============================================================
-// [🧱 BLOCK: Nearby Drop Row]
-// ============================================================
-function NearbyDropRow({ drop, playerStats, onEquip }: {
-  drop:        ItemDrop;
-  playerStats: PlayerStats;
-  onEquip:     (drop: ItemDrop) => void;
-}) {
-  const item     = drop.item;
-  const isWeapon = item.kind === 'weapon';
-  const isArmor  = item.kind === 'armor';
-  const isCharm  = item.kind === 'charm';
-
-  const kindLabel =
-    isWeapon ? 'Weapon' :
-    isArmor  ? `Armor · ${SLOT_LABELS[(item as ArmorItem).slot]?.full ?? ''}` :
-               'Charm';
-
-  const isSlotOccupied =
-    isWeapon ? !!playerStats.equippedWeaponItem :
-    isArmor  ? playerStats.hasArmorInSlot((item as ArmorItem).slot) :
-               false;
-
-  const isCharmsFull    = isCharm && playerStats.charms.length >= playerStats.maxCharms;
-  const alreadyEquipped =
-    isWeapon ? playerStats.equippedWeaponItem?.id === item.id :
-    isArmor  ? playerStats.armorSlots[(item as ArmorItem).slot]?.id === item.id :
-               playerStats.hasCharm(item.id);
-
-  const canEquip = !alreadyEquipped && !isCharmsFull;
-  const isSwap   = isSlotOccupied && !alreadyEquipped;
-
-  return (
-    <div className="inv-drop-row">
-      <div className="inv-drop-row__info">
-        <div className="inv-drop-row__kind">{kindLabel}</div>
-        <div className="inv-drop-row__name">{item.name}</div>
-      </div>
-      <button
-        className={`inv-drop-btn ${isSwap ? 'inv-drop-btn--swap' : ''} ${!canEquip ? 'inv-drop-btn--disabled' : ''}`}
-        onClick={() => canEquip && onEquip(drop)}
-        disabled={!canEquip}
-      >
-        {alreadyEquipped ? 'Equipped' : isCharmsFull ? 'Full' : isSwap ? 'Swap ↕' : 'Equip'}
-      </button>
-    </div>
-  );
 }
 
 // ============================================================
@@ -160,142 +98,168 @@ function AttributesPanel({ playerStats, player }: {
 }
 
 // ============================================================
-// [🧱 BLOCK: Set Bonuses Panel]
+// [🧱 BLOCK: Weapon Slot Card]
+// Includes the folded-in "Nearby Weapon" pickup, since ground
+// drops are weapon-only as of Phase 1 and no longer warrant a
+// dedicated column.
 // ============================================================
-function SetBonusesPanel({ playerStats }: { playerStats: PlayerStats }) {
-  const counts = playerStats.getEquippedSetCounts();
+function WeaponSlotCard({ item, onSell, nearbyDrop, onEquipDrop }: {
+  item: WeaponItem | null;
+  onSell: () => void;
+  nearbyDrop: ItemDrop | null;
+  onEquipDrop: (drop: ItemDrop) => void;
+}) {
+  const [confirm, setConfirm] = useState(false);
+
   return (
     <>
-      {ARMOR_SET_DEFS.map((def, idx) => {
-        const count = counts[def.id] ?? 0;
-        const pct   = (count / 5) * 100;
-        return (
-          <React.Fragment key={def.id}>
-            {idx > 0 && <div className="inv-set-divider" />}
-            <div className="inv-set-entry">
-              <div className="inv-set-header">
-                <span>{def.name}</span>
-                <span className="inv-set-count">{count} / 5</span>
-              </div>
-              <div className="inv-set-bar-bg">
-                <div className="inv-set-bar-fill" style={{ width: `${pct}%` }} />
-              </div>
-              {def.tiers.map((tier) => {
-                const active = count >= tier.pieces;
-                return (
-                  <div key={tier.pieces} className="inv-tier-row">
-                    <span className={`inv-tier-badge ${active ? 'inv-tier-badge--active' : ''}`}>{tier.pieces}pc</span>
-                    <span className={`inv-tier-desc  ${active ? 'inv-tier-desc--active'  : ''}`}>{tier.description}</span>
-                  </div>
-                );
-              })}
+      {!item ? (
+        <div className="inv-equip-card">
+          <div className="inv-slot-box">WPN</div>
+          <div className="inv-equip-info"><div className="inv-equip-empty">Bare fists — seek steel</div></div>
+        </div>
+      ) : (
+        <div className="inv-equip-card inv-equip-card--filled">
+          <div className="inv-slot-box inv-slot-box--active">WPN</div>
+          <div className="inv-equip-info">
+            <div className="inv-equip-name">{item.icon} {item.name}</div>
+            <div className="inv-equip-sub">{item.weaponType}</div>
+            {(() => {
+              const passive = getWeaponPassive(item.weaponType);
+              return passive ? <div className="inv-equip-pass">Passive · {passive.name}</div> : null;
+            })()}
+          </div>
+          {!confirm ? (
+            <button className="inv-sell-btn" onClick={() => setConfirm(true)}>Sell</button>
+          ) : (
+            <div className="inv-confirm-row">
+              <button className="inv-confirm-btn--yes"    onClick={() => { setConfirm(false); onSell(); }}>+{Math.ceil(item.cost * 0.5)}g</button>
+              <button className="inv-confirm-btn--cancel" onClick={() => setConfirm(false)}>✕</button>
             </div>
-          </React.Fragment>
-        );
-      })}
+          )}
+        </div>
+      )}
+
+      {nearbyDrop && (
+        <div className="inv-nearby-weapon" onClick={() => onEquipDrop(nearbyDrop)}>
+          <div className="inv-nearby-weapon__info">
+            <div className="inv-nearby-weapon__kind">Nearby Weapon</div>
+            <div className="inv-nearby-weapon__name">{nearbyDrop.item.icon} {nearbyDrop.item.name}</div>
+          </div>
+          <button className="inv-nearby-weapon__btn" onClick={(e) => { e.stopPropagation(); onEquipDrop(nearbyDrop); }}>
+            {item ? 'Swap ↕' : 'Equip'}
+          </button>
+        </div>
+      )}
     </>
   );
 }
 
 // ============================================================
-// [🧱 BLOCK: Weapon Slot Card]
+// [🧱 BLOCK: Boon Slot Card]
+// Draggable — drop onto another slot to swap boons (levels stay
+// with the slot, not the boon). Empty slots show a level-only
+// placeholder and are still valid swap/drop targets.
 // ============================================================
-function WeaponSlotCard({ item, onSell }: { item: WeaponItem | null; onSell: () => void }) {
-  const [confirm, setConfirm] = useState(false);
-  if (!item) {
-    return (
-      <div className="inv-equip-card">
-        <div className="inv-slot-box">WPN</div>
-        <div className="inv-equip-info"><div className="inv-equip-empty">Bare fists — seek steel</div></div>
-      </div>
-    );
-  }
-  const passive = getWeaponPassive(item.weaponType);
-  const refund  = Math.ceil(item.cost * 0.5);
-  return (
-    <div className="inv-equip-card inv-equip-card--filled">
-      <div className="inv-slot-box inv-slot-box--active">WPN</div>
-      <div className="inv-equip-info">
-        <div className="inv-equip-name">{item.icon} {item.name}</div>
-        <div className="inv-equip-sub">{item.weaponType}</div>
-        {passive && <div className="inv-equip-pass">Passive · {passive.name}</div>}
-      </div>
-      {!confirm ? (
-        <button className="inv-sell-btn" onClick={() => setConfirm(true)}>Sell</button>
-      ) : (
-        <div className="inv-confirm-row">
-          <button className="inv-confirm-btn--yes"    onClick={() => { setConfirm(false); onSell(); }}>+{refund}g</button>
-          <button className="inv-confirm-btn--cancel" onClick={() => setConfirm(false)}>✕</button>
-        </div>
-      )}
-    </div>
-  );
-}
+function BoonSlotCard({
+  slotIndex, playerStats, gold, player, onSell, onUpgrade, onSwap, refresh,
+}: {
+  slotIndex:   number;
+  playerStats: PlayerStats;
+  gold:        number;
+  player:      Player;
+  onSell:      (slotIndex: number) => void;
+  onUpgrade:   (slotIndex: number) => void;
+  onSwap:      (a: number, b: number) => void;
+  refresh:     () => void;
+}) {
+  const [confirm, setConfirm]   = useState(false);
+  const [dragOver, setDragOver] = useState(false);
 
-// ============================================================
-// [🧱 BLOCK: Armor Slot Card]
-// ============================================================
-function ArmorSlotCard({ slot, item, onSell }: { slot: ArmorSlot; item: ArmorItem | null; onSell: () => void }) {
-  const [confirm, setConfirm] = useState(false);
-  const label = SLOT_LABELS[slot];
-  if (!item) {
-    return (
-      <div className="inv-equip-card">
-        <div className="inv-slot-box">{label.short}</div>
-        <div className="inv-equip-info"><div className="inv-equip-empty">Empty — {label.full}</div></div>
-      </div>
-    );
-  }
-  const refund = Math.ceil(item.cost * 0.5);
-  return (
-    <div className="inv-equip-card inv-equip-card--filled">
-      <div className="inv-slot-box inv-slot-box--active">{label.short}</div>
-      <div className="inv-equip-info">
-        <div className="inv-equip-name">{item.icon} {item.name}</div>
-        <div className="inv-equip-sub">{item.description} · {item.setName}</div>
-      </div>
-      {!confirm ? (
-        <button className="inv-sell-btn" onClick={() => setConfirm(true)}>Sell</button>
-      ) : (
-        <div className="inv-confirm-row">
-          <button className="inv-confirm-btn--yes"    onClick={() => { setConfirm(false); onSell(); }}>+{refund}g</button>
-          <button className="inv-confirm-btn--cancel" onClick={() => setConfirm(false)}>✕</button>
-        </div>
-      )}
-    </div>
-  );
-}
+  const slot  = playerStats.boons.slots[slotIndex];
+  const boon  = slot.boonId ? getBoonById(slot.boonId) : null;
+  const level = slot.level;
+  const maxed = level >= MAX_BOON_LEVEL;
+  const cost  = playerStats.boons.getSlotUpgradeCost(slotIndex);
+  const canAffordUpg = !maxed && gold >= cost;
 
-// ============================================================
-// [🧱 BLOCK: Charm Row]
-// ============================================================
-function CharmRow({ charm, onSell }: { charm: Charm; onSell: () => void }) {
-  const [confirm, setConfirm] = useState(false);
-  const refund = Math.ceil(charm.cost * 0.5);
+  const handleDragStart = (e: React.DragEvent) => {
+    const payload: BoonDragPayload = { slotIndex };
+    e.dataTransfer.setData(BOON_DRAG_KEY, JSON.stringify(payload));
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setDragOver(false);
+    const raw = e.dataTransfer.getData(BOON_DRAG_KEY);
+    if (!raw) return;
+    try {
+      const payload = JSON.parse(raw) as BoonDragPayload;
+      if (payload.slotIndex === slotIndex) return;
+      onSwap(payload.slotIndex, slotIndex);
+    } catch { /* ignore malformed payload */ }
+  };
+
   return (
-    <div className="inv-charm-row">
-      <span className="inv-charm-icon">{charm.icon}</span>
-      <div className="inv-charm-info">
-        <div className="inv-charm-name">{charm.name}</div>
-        <div className="inv-charm-desc">{charm.description}</div>
-        {charm.tradeOff && <div className="inv-charm-tradeoff">⚠ {charm.tradeOff}</div>}
+    <div
+      className={`inv-boon-slot ${!boon ? 'inv-boon-slot--empty' : ''} ${dragOver ? 'inv-boon-slot--dragover' : ''}`}
+      draggable
+      onDragStart={handleDragStart}
+      onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+      onDragLeave={() => setDragOver(false)}
+      onDrop={handleDrop}
+    >
+      <div className="inv-boon-slot__header">
+        <span className="inv-boon-slot__icon">{boon?.icon ?? '—'}</span>
+        <span className="inv-boon-slot__name">{boon ? boon.name : 'Empty Slot'}</span>
+        <span className="inv-boon-slot__level-badge">Lv{level}</span>
       </div>
-      {!confirm ? (
-        <button className="inv-sell-btn" onClick={() => setConfirm(true)}>Sell</button>
+
+      {boon ? (
+        <>
+          <div className="inv-boon-slot__desc">{boon.description(level)}</div>
+          {boon.tradeOff && <div className="inv-boon-slot__tradeoff">⚠ {boon.tradeOff}</div>}
+        </>
       ) : (
-        <div className="inv-confirm-row">
-          <button className="inv-confirm-btn--yes"    onClick={() => { setConfirm(false); onSell(); }}>+{refund}g</button>
-          <button className="inv-confirm-btn--cancel" onClick={() => setConfirm(false)}>✕</button>
-        </div>
+        <div className="inv-boon-slot__desc">Drag a boon here, or buy one from the Merchant.</div>
       )}
+
+      <div className="inv-boon-slot__pips">
+        {Array.from({ length: MAX_BOON_LEVEL }).map((_, i) => (
+          <div key={i} className={`inv-boon-pip ${i < level ? 'inv-boon-pip--filled' : ''}`} />
+        ))}
+      </div>
+
+      <div className="inv-boon-slot__footer">
+        {maxed ? (
+          <span style={{ fontSize: 9, color: '#4ade80', letterSpacing: 1 }}>MAX LEVEL</span>
+        ) : (
+          <button
+            className="inv-nearby-weapon__btn"
+            disabled={!canAffordUpg}
+            style={!canAffordUpg ? { opacity: 0.35, cursor: 'not-allowed' } : undefined}
+            onClick={() => { onUpgrade(slotIndex); refresh(); }}
+          >
+            ↑ Lv ({cost}g)
+          </button>
+        )}
+        {boon && (
+          confirm ? (
+            <div className="inv-confirm-row">
+              <button className="inv-confirm-btn--yes"    onClick={() => { setConfirm(false); onSell(slotIndex); }}>+{Math.ceil(boon.cost * 0.5)}g</button>
+              <button className="inv-confirm-btn--cancel" onClick={() => setConfirm(false)}>✕</button>
+            </div>
+          ) : (
+            <button className="inv-sell-btn" onClick={() => setConfirm(true)}>Sell</button>
+          )
+        )}
+      </div>
     </div>
   );
 }
 
 // ============================================================
 // [🧱 BLOCK: Consumable Bag Row]
-// Draggable row — only the item icon travels as the ghost.
-// Sets DragPayload { source: 'bag', id } on dataTransfer.
 // ============================================================
 function ConsumableBagRow({ entry, onDragStart }: {
   entry:       BagEntry;
@@ -304,7 +268,6 @@ function ConsumableBagRow({ entry, onDragStart }: {
   const isPotion = entry.def.kind === 'potion';
 
   const handleDragStart = (e: React.DragEvent) => {
-    // Icon-only ghost
     const ghost = document.createElement('div');
     ghost.style.cssText = `
       position:fixed; top:-100px; left:-100px;
@@ -319,7 +282,7 @@ function ConsumableBagRow({ entry, onDragStart }: {
     e.dataTransfer.setDragImage(ghost, 18, 18);
     setTimeout(() => document.body.removeChild(ghost), 0);
 
-    const payload: DragPayload = { source: 'bag', id: entry.def.id };
+    const payload: ConsumableDragPayload = { source: 'bag', id: entry.def.id };
     e.dataTransfer.setData(DRAG_KEY, encodeDrag(payload));
     onDragStart(entry.def.id);
   };
@@ -345,15 +308,6 @@ function ConsumableBagRow({ entry, onDragStart }: {
 
 // ============================================================
 // [🧱 BLOCK: Hotbar Assign Panel]
-// Four drop targets. Supports three drag interactions:
-//
-//  1. Bag → empty slot      — assign
-//  2. Bag → occupied slot   — replace (old assignment cleared)
-//  3. Slot → slot           — swap both assignments
-//
-// Each assigned slot is also draggable (source: 'slot') so the
-// player can rearrange without going back to the bag list.
-// The drag ghost always shows only the item icon.
 // ============================================================
 function HotbarAssignPanel({ playerConsumables, onSwapSlots, onAssign, refresh }: {
   playerConsumables: PlayerConsumables;
@@ -363,7 +317,6 @@ function HotbarAssignPanel({ playerConsumables, onSwapSlots, onAssign, refresh }
 }) {
   const [dragOverSlot, setDragOverSlot] = useState<number | null>(null);
 
-  // ── Build icon-only ghost ───────────────────────────────────
   const makeGhost = (icon: string) => {
     const ghost = document.createElement('div');
     ghost.style.cssText = `
@@ -378,7 +331,6 @@ function HotbarAssignPanel({ playerConsumables, onSwapSlots, onAssign, refresh }
     return ghost;
   };
 
-  // ── Drop handler ────────────────────────────────────────────
   const handleDrop = (e: React.DragEvent, targetSlotIndex: number) => {
     e.preventDefault();
     setDragOverSlot(null);
@@ -388,13 +340,10 @@ function HotbarAssignPanel({ playerConsumables, onSwapSlots, onAssign, refresh }
     if (!payload) return;
 
     if (payload.source === 'bag') {
-      // Bag → slot: just assign (replaces whatever was there)
       onAssign(targetSlotIndex, payload.id);
     } else if (payload.source === 'slot') {
       const sourceSlotIndex = payload.slotIndex;
-      if (sourceSlotIndex === targetSlotIndex) return; // dropped on self
-
-      // Slot → slot: swap both assignments
+      if (sourceSlotIndex === targetSlotIndex) return;
       onSwapSlots(sourceSlotIndex, targetSlotIndex);
     }
 
@@ -412,7 +361,6 @@ function HotbarAssignPanel({ playerConsumables, onSwapSlots, onAssign, refresh }
         const count      = assignedId ? playerConsumables.bagCount(assignedId) : 0;
         const isOver     = dragOverSlot === i;
 
-        // ── Drag handler for already-assigned slot ────────────
         const handleSlotDragStart = (e: React.DragEvent) => {
           if (!assignedId || !def) return;
           const ghost = makeGhost(def.icon);
@@ -420,7 +368,7 @@ function HotbarAssignPanel({ playerConsumables, onSwapSlots, onAssign, refresh }
           e.dataTransfer.setDragImage(ghost, 18, 18);
           setTimeout(() => document.body.removeChild(ghost), 0);
 
-          const payload: DragPayload = { source: 'slot', id: assignedId, slotIndex: i };
+          const payload: ConsumableDragPayload = { source: 'slot', id: assignedId, slotIndex: i };
           e.dataTransfer.setData(DRAG_KEY, encodeDrag(payload));
         };
 
@@ -438,7 +386,6 @@ function HotbarAssignPanel({ playerConsumables, onSwapSlots, onAssign, refresh }
             </div>
 
             {def ? (
-              // ── Assigned slot — draggable ────────────────────
               <div
                 className="inv-hotbar-slot__assigned"
                 draggable
@@ -453,7 +400,7 @@ function HotbarAssignPanel({ playerConsumables, onSwapSlots, onAssign, refresh }
                 <button
                   className="inv-hotbar-slot__clear"
                   onClick={(e) => {
-                    e.stopPropagation(); // prevent drag from firing
+                    e.stopPropagation();
                     onAssign(i, null);
                     refresh();
                   }}
@@ -492,33 +439,29 @@ export default function Inventory({
   }, [onClose]);
 
   const handleSellWeapon = () => { onGoldChange(playerStats.unequipWeapon(gold, player)); refresh(); };
-  const handleSellArmor  = (slot: ArmorSlot) => { onGoldChange(playerStats.sellArmor(slot, gold, player)); refresh(); };
-  const handleSellCharm  = (id: string) => { onGoldChange(playerStats.sellCharm(id, gold, player)); refresh(); };
   const handleEquipDrop  = (drop: ItemDrop) => { onEquipDrop(drop); refresh(); };
+
+  const handleSellBoon    = (slotIndex: number) => { onGoldChange(playerStats.sellBoon(slotIndex, gold, player)); refresh(); };
+  const handleUpgradeBoon = (slotIndex: number) => { onGoldChange(playerStats.upgradeBoonSlot(slotIndex, gold, player)); refresh(); };
+  const handleSwapBoons   = (a: number, b: number) => { playerStats.swapBoonSlots(a, b, player); refresh(); };
 
   const handleAssignSlot = (slotIndex: number, id: ConsumableId | null) => {
     playerConsumables.assignSlot(slotIndex, id);
     refresh();
   };
 
-  // ── Swap two hotbar slots ────────────────────────────────────
-  // Reads both current assignedIds, then writes them crossed.
-  // Cooldown / duration timers are NOT swapped — only the
-  // item assignment changes so active buffs keep ticking on
-  // their original slot.
   const handleSwapSlots = (a: number, b: number) => {
     const slotA = playerConsumables.slots[a];
     const slotB = playerConsumables.slots[b];
     const idA   = slotA.assignedId;
     const idB   = slotB.assignedId;
-    // Direct mutation — assignSlot resets timers, which we don't
-    // want for a mid-combat rearrange, so swap assignedId directly.
     slotA.assignedId = idB;
     slotB.assignedId = idA;
     refresh();
   };
 
-  const bagEntries = playerConsumables.bagEntries();
+  const bagEntries    = playerConsumables.bagEntries();
+  const nearbyWeapon  = nearbyDrops[0] ?? null;
 
   return (
     <div className="inv-backdrop">
@@ -537,85 +480,54 @@ export default function Inventory({
             </div>
           </div>
 
-          {/* ── 4-Column Body ── */}
+          {/* ── 3-Column Body ── */}
           <div className="inv-cols">
 
-            {/* ── Column 1: Nearby Drops · Attributes · Set Bonuses ── */}
+            {/* ── Column 1: Boons ── */}
             <div className="inv-col">
-              <div>
-                <span className="inv-sec-label">Nearby Drops</span>
-                <div className="inv-box">
-                  {nearbyDrops.length === 0 ? (
-                    <div className="inv-drop-empty">No items nearby</div>
-                  ) : (
-                    nearbyDrops.map((drop, i) => (
-                      <NearbyDropRow
-                        key={`${drop.item.id}-${i}`}
-                        drop={drop}
-                        playerStats={playerStats}
-                        onEquip={handleEquipDrop}
-                      />
-                    ))
-                  )}
-                </div>
+              <span className="inv-sec-label">
+                Boons ({playerStats.boons.filledCount}/{BOON_SLOT_COUNT}) · Drag to reorder
+              </span>
+              <div className="inv-box inv-box--grow">
+                {Array.from({ length: BOON_SLOT_COUNT }).map((_, i) => (
+                  <BoonSlotCard
+                    key={i}
+                    slotIndex={i}
+                    playerStats={playerStats}
+                    gold={gold}
+                    player={player}
+                    onSell={handleSellBoon}
+                    onUpgrade={handleUpgradeBoon}
+                    onSwap={handleSwapBoons}
+                    refresh={refresh}
+                  />
+                ))}
               </div>
+            </div>
+
+            {/* ── Column 2: Attributes + Weapon ── */}
+            <div className="inv-col">
               <div>
                 <span className="inv-sec-label">Attributes</span>
                 <div className="inv-box">
                   <AttributesPanel playerStats={playerStats} player={player} />
                 </div>
               </div>
-              <div className="inv-set-section">
-                <span className="inv-sec-label">Set Bonuses</span>
-                <div className="inv-set-box">
-                  <SetBonusesPanel playerStats={playerStats} />
-                </div>
-              </div>
-            </div>
-
-            {/* ── Column 2: Weapon + Armor ── */}
-            <div className="inv-col">
               <div>
                 <span className="inv-sec-label">Weapon</span>
                 <div className="inv-box">
-                  <WeaponSlotCard item={playerStats.equippedWeaponItem} onSell={handleSellWeapon} />
-                </div>
-              </div>
-              <div>
-                <span className="inv-sec-label">Armor</span>
-                <div className="inv-box">
-                  {ARMOR_SLOTS.map((slot) => (
-                    <ArmorSlotCard
-                      key={slot} slot={slot}
-                      item={playerStats.armorSlots[slot]}
-                      onSell={() => handleSellArmor(slot)}
-                    />
-                  ))}
+                  <WeaponSlotCard
+                    item={playerStats.equippedWeaponItem}
+                    onSell={handleSellWeapon}
+                    nearbyDrop={nearbyWeapon}
+                    onEquipDrop={handleEquipDrop}
+                  />
                 </div>
               </div>
             </div>
 
-            {/* ── Column 3: Charms ── */}
+            {/* ── Column 3: Provisions ── */}
             <div className="inv-col">
-              <div>
-                <span className="inv-sec-label">
-                  Charms ({playerStats.charms.length} / {playerStats.maxCharms})
-                </span>
-                <div className="inv-box">
-                  {playerStats.charms.map((charm) => (
-                    <CharmRow key={charm.id} charm={charm} onSell={() => handleSellCharm(charm.id)} />
-                  ))}
-                  {Array.from({ length: playerStats.maxCharms - playerStats.charms.length }).map((_, i) => (
-                    <div key={`empty-${i}`} className="inv-charm-empty">— Empty charm slot</div>
-                  ))}
-                </div>
-              </div>
-            </div>
-
-            {/* ── Column 4: Provisions ── */}
-            <div className="inv-col">
-
-              {/* Hotbar assignment */}
               <div>
                 <span className="inv-sec-label">Hotbar · Drag to assign or swap</span>
                 <HotbarAssignPanel
@@ -626,7 +538,6 @@ export default function Inventory({
                 />
               </div>
 
-              {/* Bag list */}
               <div className="inv-prov-bag">
                 <span className="inv-sec-label">Provisions</span>
                 <div className="inv-box inv-box--grow">
@@ -643,8 +554,8 @@ export default function Inventory({
                   )}
                 </div>
               </div>
-
             </div>
+
           </div>
 
           {/* ── Footer ── */}

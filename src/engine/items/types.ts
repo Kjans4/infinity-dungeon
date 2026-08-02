@@ -35,8 +35,10 @@ export interface WeaponDef {
 
 // ============================================================
 // [🧱 BLOCK: Item System Types]
+// 'armor' removed — Phase 1 replaces armor sets + charms with
+// the unified boon system. See BoonRegistry.ts.
 // ============================================================
-export type ItemKind = 'charm' | 'weapon' | 'armor';
+export type ItemKind = 'boon' | 'weapon';
 
 export interface WeaponItem {
   kind:        'weapon';
@@ -51,52 +53,18 @@ export interface WeaponItem {
 }
 
 // ============================================================
-// [🧱 BLOCK: Armor Types]
-// ArmorSlot — 'weapon' replaced with 'leggings'
-// Slot order: helmet, armor, leggings, gloves, boots
+// [🧱 BLOCK: BoonItem]
+// Flattened shop-offer wrapper for a BoonDef. Description is
+// resolved at generation time (level-1 preview text) since shop
+// offers represent "acquire this boon", not a specific level —
+// the boon takes on whatever level the destination slot has.
 // ============================================================
-export type ArmorSlot    = 'helmet' | 'armor' | 'leggings' | 'gloves' | 'boots';
-export type ArmorStatType = 'maxHp' | 'damageReduction' | 'moveSpeed' | 'atk';
-export type ArmorSetId   = 'iron_warden' | 'shadow_walker' | 'blood_reaper';
-
-// ── Slot → stat type mapping ──────────────────────────────────
-// leggings replaces weapon slot, gives moveSpeed (boots also moveSpeed — stacks)
-export const ARMOR_SLOT_STAT: Record<ArmorSlot, ArmorStatType> = {
-  helmet:   'maxHp',
-  armor:    'damageReduction',
-  leggings: 'moveSpeed',
-  gloves:   'atk',
-  boots:    'moveSpeed',
-};
-
-// ── Stat scaling per slot ─────────────────────────────────────
-export interface ArmorStatScale {
-  base:  number;
-  rate:  number;
-  max:   number;
-}
-
-export const ARMOR_STAT_SCALE: Record<ArmorSlot, ArmorStatScale> = {
-  helmet:   { base: 10,   rate: 1.5,  max: 25   },  // +HP
-  armor:    { base: 0.05, rate: 0.007,max: 0.12  },  // damage reduction (fraction)
-  leggings: { base: 0.3,  rate: 0.05, max: 0.8   },  // move speed
-  gloves:   { base: 5,    rate: 1.0,  max: 15    },  // atk
-  boots:    { base: 0.3,  rate: 0.05, max: 0.8   },  // move speed
-};
-
-// ============================================================
-// [🧱 BLOCK: ArmorItem Interface]
-// ============================================================
-export interface ArmorItem {
-  kind:        'armor';
-  id:          string;
+export interface BoonItem {
+  kind:        'boon';
+  id:          string;   // BoonId
   name:        string;
   icon:        string;
-  slot:        ArmorSlot;
-  setId:       ArmorSetId;
-  setName:     string;
-  statType:    ArmorStatType;
-  statValue:   number;
   description: string;
+  tradeOff?:   string;
   cost:        number;
 }

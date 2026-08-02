@@ -4,8 +4,9 @@
 import React, { useState, useCallback, useRef } from "react";
 import { PlayerStats, STAT_DEFS, StatKey, statCost, statCap } from "@/engine/PlayerStats";
 import { Player }     from "@/engine/Player";
-import { Charm }      from "@/engine/CharmRegistry";
-import { WeaponItem, ArmorItem, ArmorSlot } from "@/engine/items/types";
+import { BoonDef, getBoonById, getBoonEffectsAtLevel, MAX_BOON_LEVEL } from "@/engine/BoonRegistry";
+import { BOON_SLOT_COUNT } from "@/engine/PlayerBoons";
+import { WeaponItem } from "@/engine/items/types";
 import { ShopItem }   from "@/engine/items/ItemPool";
 import { getWeaponPassive } from "@/engine/WeaponPassiveRegistry";
 import {
@@ -13,7 +14,6 @@ import {
   MAX_CONSUMABLE_LEVEL, getUpgradeCost,
 } from "@/engine/ConsumableRegistry";
 import { PlayerConsumables } from "@/engine/PlayerConsumables";
-import { getShopConsumableOptions } from "@/engine/items/ItemPool";
 import "@/styles/shop.css";
 
 // ============================================================
@@ -27,6 +27,7 @@ interface ShopProps {
   player:             Player;
   playerConsumables:  PlayerConsumables;
   isMidRoom:          boolean;
+  nearbyWeaponDrop?:  { name: string; icon: string } | null;
   onGoldChange:       (newGold: number) => void;
   onContinue:         () => void;
   onClose:            () => void;
@@ -40,19 +41,6 @@ const HEAL_TIERS = [
   { label: "Draught",  hp: 50,  baseCost: 75,  icon: "💊" },
   { label: "Elixir",   hp: 999, baseCost: 120, icon: "❤️" },
 ];
-
-// ============================================================
-// [🧱 BLOCK: Armor Slot Labels]
-// ============================================================
-const ARMOR_SLOT_LABELS: Record<ArmorSlot, string> = {
-  helmet:   'Helmet',
-  armor:    'Armor',
-  leggings: 'Leggings',
-  gloves:   'Gloves',
-  boots:    'Boots',
-};
-
-const ARMOR_SLOTS: ArmorSlot[] = ['helmet', 'armor', 'leggings', 'gloves', 'boots'];
 
 // ============================================================
 // [🧱 BLOCK: Pill Button]
@@ -121,46 +109,33 @@ function StatRow({ statKey, playerStats, player, gold, floor, onSpend }: {
 
 // ============================================================
 // [🧱 BLOCK: Shop Item Card — Horizontal layout]
+// Handles both weapon and boon offers.
 // ============================================================
-function ShopItemCard({ item, gold, playerStats, player, onBuy }: {
+function ShopItemCard({ item, gold, playerStats, onBuyWeapon, onBuyBoon }: {
   item: ShopItem; gold: number;
-  playerStats: PlayerStats; player: Player;
-  onBuy: (newGold: number) => void;
+  playerStats: PlayerStats;
+  onBuyWeapon: (item: WeaponItem) => void;
+  onBuyBoon:   (item: Extract<ShopItem, { kind: 'boon' }>) => void;
 }) {
   const isWeapon = item.kind === "weapon";
-  const isArmor  = item.kind === "armor";
-  const isCharm  = item.kind === "charm";
+  const isBoon   = item.kind === "boon";
 
   const weaponItem = isWeapon ? (item as WeaponItem) : null;
-  const armorItem  = isArmor  ? (item as ArmorItem)  : null;
-  const charmItem  = isCharm  ? (item as Charm & { kind: "charm" }) : null;
 
   const alreadyOwned = isWeapon
     ? playerStats.equippedWeaponItem?.id === weaponItem!.id
-    : isArmor
-    ? playerStats.armorSlots[armorItem!.slot]?.id === armorItem!.id
-    : playerStats.hasCharm(charmItem!.id);
+    : playerStats.hasBoon(item.id);
 
-  const charmsFull = isCharm && playerStats.charms.length >= playerStats.maxCharms;
-  const canAfford  = gold >= item.cost;
-  const canBuy     = !alreadyOwned && canAfford && !charmsFull;
+  const canAfford = gold >= item.cost;
+  const canBuy    = !alreadyOwned && canAfford;
 
-  const accentColor = isWeapon ? "#60a5fa" : isArmor ? "#4ade80" : "#f0c040";
-  const typeLabel   = isWeapon
-    ? `${weaponItem!.weaponType.toUpperCase()} · WPN`
-    : isArmor
-    ? `${ARMOR_SLOT_LABELS[armorItem!.slot].toUpperCase()} · ARM`
-    : "CHARM";
-
-  const existingArmor = isArmor ? playerStats.armorSlots[armorItem!.slot] : null;
+  const accentColor = isWeapon ? "#60a5fa" : "#f0c040";
+  const typeLabel    = isWeapon ? `${weaponItem!.weaponType.toUpperCase()} · WPN` : "BOON";
 
   function handleBuy() {
     if (!canBuy) return;
-    let newGold: number;
-    if (isWeapon)     newGold = playerStats.equipWeapon(weaponItem!, gold, player);
-    else if (isArmor) newGold = playerStats.equipArmor(armorItem!, gold, player);
-    else              newGold = playerStats.buyCharm(charmItem!, gold, player);
-    onBuy(newGold);
+    if (isWeapon) onBuyWeapon(weaponItem!);
+    else          onBuyBoon(item as Extract<ShopItem, { kind: 'boon' }>);
   }
 
   return (
@@ -178,18 +153,9 @@ function ShopItemCard({ item, gold, playerStats, player, onBuy }: {
           </div>
         ) : null;
       })()}
-      {isArmor && (
-        <div className="shop-item-card__armor-slot">
-          {armorItem!.setName}
-        </div>
-      )}
-      {(isCharm && item.tradeOff) && <div className="shop-item-card__tradeoff">⚠ {item.tradeOff}</div>}
-      {existingArmor && !alreadyOwned && (
-        <div className="shop-item-card__replace-warn">Replaces {existingArmor.name}</div>
-      )}
+      {item.tradeOff && <div className="shop-item-card__tradeoff">⚠ {item.tradeOff}</div>}
       <div className="shop-item-card__footer">
         <span className="shop-item-card__cost">{item.cost}g</span>
-        {charmsFull && <span className="shop-item-card__full-warning">Full</span>}
         <PillBtn
           label={alreadyOwned ? "Owned" : "Acquire"}
           onClick={handleBuy}
@@ -204,8 +170,6 @@ function ShopItemCard({ item, gold, playerStats, player, onBuy }: {
 
 // ============================================================
 // [🧱 BLOCK: Consumable Shop Row — with upgrade system]
-// Shows: icon | name+desc | kind badge | stack count | buy btn
-//        level pips (●●●○○) | upgrade cost | upgrade btn
 // ============================================================
 function ConsumableShopRow({ def, gold, playerConsumables, onBuy, onUpgrade }: {
   def:               ConsumableDef;
@@ -221,13 +185,11 @@ function ConsumableShopRow({ def, gold, playerConsumables, onBuy, onUpgrade }: {
   const canBuy        = canAffordBuy && !maxed;
   const accentColor   = isPotion ? '#a78bfa' : '#38bdf8';
 
-  // ── Upgrade state ──────────────────────────────────────────
   const currentLevel  = playerConsumables.getLevel(def.id);
   const isMaxLevel    = currentLevel >= MAX_CONSUMABLE_LEVEL;
   const upgradeCost   = isMaxLevel ? 0 : playerConsumables.getUpgradeCost(def);
   const canAffordUpg  = !isMaxLevel && gold >= upgradeCost;
 
-  // Level description shown next to pips
   const levelDescriptions: Record<string, string[]> = {
     health_potion:    ['40 HP', '55 HP', '75 HP', '100 HP', '130 HP'],
     wrath_potion:     ['+25 ATK/15s', '+32 ATK/17s', '+40 ATK/20s', '+50 ATK/23s', '+65 ATK/27s'],
@@ -245,7 +207,6 @@ function ConsumableShopRow({ def, gold, playerConsumables, onBuy, onUpgrade }: {
 
   return (
     <div className="shop-consumable-row shop-consumable-row--upgradable">
-      {/* ── Top row: icon | info | kind | count | buy ── */}
       <div className="shop-consumable-row__main">
         <span className="shop-consumable-row__icon">{def.icon}</span>
         <div className="shop-consumable-row__info">
@@ -277,9 +238,7 @@ function ConsumableShopRow({ def, gold, playerConsumables, onBuy, onUpgrade }: {
         </div>
       </div>
 
-      {/* ── Bottom row: level pips + current stat + upgrade btn ── */}
       <div className="shop-consumable-row__upgrade-row">
-        {/* Level pips */}
         <div className="shop-consumable-row__level-pips">
           {Array.from({ length: MAX_CONSUMABLE_LEVEL }).map((_, i) => (
             <div
@@ -290,12 +249,10 @@ function ConsumableShopRow({ def, gold, playerConsumables, onBuy, onUpgrade }: {
           ))}
         </div>
 
-        {/* Current level stat */}
         <span className="shop-consumable-row__level-stat" style={{ color: accentColor }}>
           {currentDesc}
         </span>
 
-        {/* Arrow + next level preview */}
         {!isMaxLevel && (
           <>
             <span className="shop-consumable-row__upgrade-arrow">→</span>
@@ -303,10 +260,8 @@ function ConsumableShopRow({ def, gold, playerConsumables, onBuy, onUpgrade }: {
           </>
         )}
 
-        {/* Spacer */}
         <div style={{ flex: 1 }} />
 
-        {/* Upgrade button */}
         {isMaxLevel ? (
           <span className="shop-consumable-row__max-badge" style={{ color: accentColor }}>
             MAX LVL
@@ -327,28 +282,6 @@ function ConsumableShopRow({ def, gold, playerConsumables, onBuy, onUpgrade }: {
           </>
         )}
       </div>
-    </div>
-  );
-}
-
-// ============================================================
-// [🧱 BLOCK: Owned Charm Pill]
-// ============================================================
-function OwnedCharmPill({ charm, onSell }: { charm: Charm; onSell: () => void }) {
-  const [confirm, setConfirm] = useState(false);
-  const refund = Math.ceil(charm.cost * 0.5);
-  return (
-    <div className="shop-owned-pill shop-owned-pill--charm">
-      <span className="shop-owned-pill__icon">{charm.icon}</span>
-      <span className="shop-owned-pill__name">{charm.name}</span>
-      {confirm ? (
-        <div className="shop-owned-pill__confirm">
-          <PillBtn label={`+${refund}g`} onClick={onSell} color="#ef4444" small />
-          <PillBtn label="Keep" onClick={() => setConfirm(false)} color="#5a4010" small />
-        </div>
-      ) : (
-        <PillBtn label="Sell" onClick={() => setConfirm(true)} color="#5a4010" small />
-      )}
     </div>
   );
 }
@@ -379,41 +312,95 @@ function EquippedWeaponPill({ item, onSell }: { item: WeaponItem; onSell: () => 
 }
 
 // ============================================================
-// [🧱 BLOCK: Equipped Armor Pill]
+// [🧱 BLOCK: Boon Slot Card]
+// picking = true means a boon purchase is pending and this
+// card acts as a clickable replace target.
 // ============================================================
-function EquippedArmorPill({ slot, item, onSell }: {
-  slot:  ArmorSlot;
-  item:  ArmorItem | null;
-  onSell: () => void;
+function BoonSlotCard({
+  slotIndex, playerStats, gold, player,
+  picking, onPickSlot, onSell, onUpgrade,
+}: {
+  slotIndex:   number;
+  playerStats: PlayerStats;
+  gold:        number;
+  player:      Player;
+  picking:     boolean;
+  onPickSlot:  (slotIndex: number) => void;
+  onSell:      (slotIndex: number) => void;
+  onUpgrade:   (slotIndex: number) => void;
 }) {
   const [confirm, setConfirm] = useState(false);
-  const label = ARMOR_SLOT_LABELS[slot];
+  const slot   = playerStats.boons.slots[slotIndex];
+  const boon   = slot.boonId ? getBoonById(slot.boonId) : null;
+  const level  = slot.level;
+  const maxed  = level >= MAX_BOON_LEVEL;
+  const cost   = playerStats.boons.getSlotUpgradeCost(slotIndex);
+  const canAffordUpg = !maxed && gold >= cost;
 
-  if (!item) {
+  if (picking) {
     return (
-      <div className="shop-owned-pill shop-owned-pill--armor shop-owned-pill--empty">
-        <span className="shop-owned-pill__slot-label">{label}</span>
-        <span className="shop-owned-pill__empty-text">— Empty</span>
+      <div className="shop-boon-slot shop-boon-slot--picking" onClick={() => onPickSlot(slotIndex)}>
+        <div className="shop-boon-slot__header">
+          <span className="shop-boon-slot__icon">{boon?.icon ?? '➕'}</span>
+          <span className="shop-boon-slot__name">{boon ? boon.name : `Empty Slot`}</span>
+          <span className="shop-boon-slot__level-badge">Lv{level}</span>
+        </div>
+        <div className="shop-boon-slot__desc">
+          {boon ? "Click to replace with the new boon" : "Click to fill this empty slot"}
+        </div>
       </div>
     );
   }
 
-  const refund = Math.ceil(item.cost * 0.5);
   return (
-    <div className="shop-owned-pill shop-owned-pill--armor">
-      <span className="shop-owned-pill__icon">{item.icon}</span>
-      <div className="shop-owned-pill__weapon-info">
-        <div className="shop-owned-pill__name">{item.name}</div>
-        <div className="shop-owned-pill__weapon-sub">{item.setName} · {item.description}</div>
+    <div className={`shop-boon-slot ${!boon ? 'shop-boon-slot--empty' : ''}`}>
+      <div className="shop-boon-slot__header">
+        <span className="shop-boon-slot__icon">{boon?.icon ?? '—'}</span>
+        <span className="shop-boon-slot__name">{boon ? boon.name : 'Empty'}</span>
+        <span className="shop-boon-slot__level-badge">Lv{level}</span>
       </div>
-      {confirm ? (
-        <div className="shop-owned-pill__confirm">
-          <PillBtn label={`+${refund}g`} onClick={onSell} color="#ef4444" small />
-          <PillBtn label="Keep" onClick={() => setConfirm(false)} color="#5a4010" small />
-        </div>
+
+      {boon ? (
+        <>
+          <div className="shop-boon-slot__desc">{boon.description(level)}</div>
+          {boon.tradeOff && <div className="shop-boon-slot__tradeoff">⚠ {boon.tradeOff}</div>}
+        </>
       ) : (
-        <PillBtn label="Sell" onClick={() => setConfirm(true)} color="#5a4010" small />
+        <div className="shop-boon-slot__empty-text">No boon slotted — buy one from Wares.</div>
       )}
+
+      <div className="shop-boon-slot__pips">
+        {Array.from({ length: MAX_BOON_LEVEL }).map((_, i) => (
+          <div key={i} className={`shop-boon-pip ${i < level ? 'shop-boon-pip--filled' : ''}`} />
+        ))}
+      </div>
+
+      <div className="shop-boon-slot__actions">
+        {maxed ? (
+          <span className="shop-boon-slot__max-badge">MAX</span>
+        ) : (
+          <>
+            <span className="shop-boon-slot__upgrade-cost">{cost}g</span>
+            <PillBtn
+              label="↑ Level"
+              onClick={() => onUpgrade(slotIndex)}
+              disabled={!canAffordUpg}
+              color="#f0c040"
+              small
+            />
+          </>
+        )}
+        {boon && (
+          confirm ? (
+            <div className="shop-owned-pill__confirm">
+              <PillBtn label={`+${Math.ceil(boon.cost * 0.5)}g`} onClick={() => { setConfirm(false); onSell(slotIndex); }} color="#ef4444" small />
+              <PillBtn label="Keep" onClick={() => setConfirm(false)} color="#5a4010" small />
+            </div>
+          ) : (
+            <PillBtn label="Sell" onClick={() => setConfirm(true)} color="#5a4010" small />
+          )
+        )}
+      </div>
     </div>
   );
 }
@@ -479,18 +466,24 @@ function HealingSection({ player, gold, floor, onHeal }: {
 // [🧱 BLOCK: Shop Main]
 // 4-Column layout — 1440×700 panel, no scroll.
 //   Col 1 — Attributes (stat allocation)
-//   Col 2 — Wares (5 item cards horizontal + reroll) + Healing
-//   Col 3 — Equipped Gear (weapon + armor slots + charms)
-//   Col 4 — Provisions (buy + upgrade potions/scrolls)
+//   Col 2 — Wares (5 boon+weapon cards) + Healing
+//   Col 3 — Weapon + Boon Slots
+//   Col 4 — Provisions (buy & upgrade potions/scrolls)
 // ============================================================
 export default function Shop({
   floor, room, gold, playerStats, player,
   playerConsumables,
-  isMidRoom,
+  isMidRoom, nearbyWeaponDrop,
   onGoldChange, onContinue, onClose,
 }: ShopProps) {
   const [, forceUpdate] = useState(0);
   const refresh = useCallback(() => forceUpdate((n) => n + 1), []);
+
+  // Pending boon purchase — set when Acquire is clicked on a boon
+  // offer while all 5 slots are full. Player then clicks a slot
+  // in the Boon Slots column to confirm the replacement.
+  const [pendingBoonPurchase, setPendingBoonPurchase] =
+    useState<Extract<ShopItem, { kind: 'boon' }> | null>(null);
 
   // Generate shop options once on mount
   const shopInitRef = useRef(false);
@@ -500,18 +493,46 @@ export default function Shop({
   }
 
   const handleStatSpend  = (ng: number) => { onGoldChange(ng); refresh(); };
-  const handleBuy        = (ng: number) => { onGoldChange(ng); refresh(); };
   const handleReroll     = () => { onGoldChange(playerStats.reroll(gold, floor)); refresh(); };
-  const handleSellCharm  = (id: string) => { onGoldChange(playerStats.sellCharm(id, gold, player)); refresh(); };
   const handleSellWeapon = () => { onGoldChange(playerStats.unequipWeapon(gold, player)); refresh(); };
-  const handleSellArmor  = (slot: ArmorSlot) => { onGoldChange(playerStats.sellArmor(slot, gold, player)); refresh(); };
   const handleHeal       = (ng: number) => { onGoldChange(ng); refresh(); };
   const handleConsumableBuy = (ng: number) => { onGoldChange(ng); refresh(); };
   const handleConsumableUpgrade = (ng: number) => { onGoldChange(ng); refresh(); };
 
+  const handleBuyWeapon = (item: WeaponItem) => {
+    onGoldChange(playerStats.equipWeapon(item, gold, player));
+    refresh();
+  };
+
+  const handleBuyBoon = (item: Extract<ShopItem, { kind: 'boon' }>) => {
+    if (playerStats.boons.filledCount >= BOON_SLOT_COUNT) {
+      setPendingBoonPurchase(item);
+      return;
+    }
+    const emptyIdx = playerStats.boons.slots.findIndex((s) => !s.boonId);
+    onGoldChange(playerStats.equipBoon(item.id, emptyIdx, gold, player));
+    refresh();
+  };
+
+  const handlePickSlot = (slotIndex: number) => {
+    if (!pendingBoonPurchase) return;
+    onGoldChange(playerStats.equipBoon(pendingBoonPurchase.id, slotIndex, gold, player));
+    setPendingBoonPurchase(null);
+    refresh();
+  };
+
+  const handleSellBoon = (slotIndex: number) => {
+    onGoldChange(playerStats.sellBoon(slotIndex, gold, player));
+    refresh();
+  };
+
+  const handleUpgradeBoonSlot = (slotIndex: number) => {
+    onGoldChange(playerStats.upgradeBoonSlot(slotIndex, gold, player));
+    refresh();
+  };
+
   const cap            = statCap(floor);
   const nextRerollCost = playerStats.rerollCost;
-  const atRerollCap    = nextRerollCost >= 100;
 
   return (
     <div className="shop-backdrop">
@@ -555,7 +576,7 @@ export default function Shop({
                 <div className="shop-wares__header">
                   <p className="shop-section__label">Wares</p>
                   <PillBtn
-                    label={atRerollCap ? `Reroll ${nextRerollCost}g · max` : `Reroll ${nextRerollCost}g`}
+                    label={`Reroll ${nextRerollCost}g`}
                     onClick={handleReroll}
                     disabled={gold < nextRerollCost}
                     color="#5a4010"
@@ -567,9 +588,10 @@ export default function Shop({
                     {playerStats.shopOptions.map((item, i) => (
                       <ShopItemCard
                         key={`${item.id}-${i}`}
-                        item={item as ShopItem} gold={gold}
-                        playerStats={playerStats} player={player}
-                        onBuy={handleBuy}
+                        item={item} gold={gold}
+                        playerStats={playerStats}
+                        onBuyWeapon={handleBuyWeapon}
+                        onBuyBoon={handleBuyBoon}
                       />
                     ))}
                     {playerStats.shopOptions.length === 0 && (
@@ -584,10 +606,10 @@ export default function Shop({
               </div>
             </div>
 
-            {/* ── Column 3: Equipped Gear ── */}
+            {/* ── Column 3: Weapon + Boon Slots ── */}
             <div className="shop-col shop-col--gear">
-              <p className="shop-section__label">Equipped Gear</p>
-              <div className="shop-col__box shop-col__box--grow shop-col__box--gear-scroll">
+              <p className="shop-section__label">Arsenal</p>
+              <div className="shop-col__box shop-col__box--grow shop-col__box--boon-scroll">
 
                 <p className="shop-gear__sublabel">Weapon</p>
                 {playerStats.equippedWeaponItem ? (
@@ -595,29 +617,39 @@ export default function Shop({
                 ) : (
                   <p className="shop-none-msg">"Bare fists — seek steel."</p>
                 )}
-
-                <p className="shop-gear__sublabel" style={{ marginTop: 10 }}>Armor</p>
-                {ARMOR_SLOTS.map((slot) => (
-                  <EquippedArmorPill
-                    key={slot}
-                    slot={slot}
-                    item={playerStats.armorSlots[slot]}
-                    onSell={() => handleSellArmor(slot)}
-                  />
-                ))}
-
-                <p className="shop-gear__sublabel" style={{ marginTop: 10 }}>
-                  Charms ({playerStats.charms.length}/{playerStats.maxCharms})
-                </p>
-                {playerStats.charms.length === 0 ? (
-                  <p className="shop-none-msg">"No charms equipped."</p>
-                ) : (
-                  <div className="shop-charms-list">
-                    {playerStats.charms.map((charm) => (
-                      <OwnedCharmPill key={charm.id} charm={charm} onSell={() => handleSellCharm(charm.id)} />
-                    ))}
+                {nearbyWeaponDrop && (
+                  <div className="shop-nearby-weapon">
+                    <span className="shop-nearby-weapon__label">Nearby</span>
+                    <span className="shop-nearby-weapon__name">{nearbyWeaponDrop.icon} {nearbyWeaponDrop.name}</span>
                   </div>
                 )}
+
+                <p className="shop-gear__sublabel" style={{ marginTop: 12 }}>
+                  Boons ({playerStats.boons.filledCount}/{BOON_SLOT_COUNT})
+                </p>
+
+                {pendingBoonPurchase && (
+                  <div className="shop-boon-picker-banner">
+                    <span className="shop-boon-picker-banner__text">
+                      Choose a slot to replace with {pendingBoonPurchase.name}
+                    </span>
+                    <PillBtn label="Cancel" onClick={() => setPendingBoonPurchase(null)} color="#5a4010" small />
+                  </div>
+                )}
+
+                {Array.from({ length: BOON_SLOT_COUNT }).map((_, i) => (
+                  <BoonSlotCard
+                    key={i}
+                    slotIndex={i}
+                    playerStats={playerStats}
+                    gold={gold}
+                    player={player}
+                    picking={!!pendingBoonPurchase}
+                    onPickSlot={handlePickSlot}
+                    onSell={handleSellBoon}
+                    onUpgrade={handleUpgradeBoonSlot}
+                  />
+                ))}
               </div>
             </div>
 
