@@ -16,6 +16,7 @@ import Menu                  from "@/components/Menu";
 import Shop                  from "@/components/Shop";
 import Minimap               from "@/components/Minimap";
 import Inventory             from "@/components/Inventory";
+import BoonPicker            from "@/components/BoonPicker";
 import MobileControls        from "@/components/MobileControls";
 import GameOverOverlay        from "@/components/overlays/GameOverOverlay";
 import VictoryOverlay        from "@/components/overlays/VictoryOverlay";
@@ -23,13 +24,11 @@ import PauseOverlay          from "@/components/overlays/PauseOverlay";
 import WaveClearAnnouncement from "@/components/overlays/WaveClearAnnouncement";
 import FloorTransition       from "@/components/overlays/FloorTransition";
 import { spawnBurst }        from "@/engine/Particle";
-import { ShopItem }          from "@/engine/items/ItemPool";
+import { getRandomChestBoons } from "@/engine/items/ItemPool";
 import { ItemDrop }          from "@/engine/ItemDrop";
-import { WeaponItem, ArmorItem } from "@/engine/items/types";
 import { HotbarSlot }        from "@/engine/PlayerConsumables";
 import { ConsumableDef, getEffectsAtLevel } from "@/engine/ConsumableRegistry";
 import { ConsumableSystem }  from "@/engine/ConsumableSystem";
-import { ConsumableDrop }    from "@/engine/ConsumableDrop";
 import { Player }            from "@/engine/Player";
 import { ShopNPC }           from "@/engine/ShopNPC";
 import "@/styles/victory.css";
@@ -172,7 +171,7 @@ export default function GameCanvas() {
   const roomRef   = useRef<RoomState>(initialRoomState());
 
   const iHoldTimer                = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const uiActiveRef               = useRef({ menu: true, shop: false, gameOver: false, inventory: false });
+  const uiActiveRef               = useRef({ menu: true, shop: false, gameOver: false, inventory: false, boonPicker: false });
   const lastAnnouncedRemainingRef = useRef<number | null>(null);
   const isDyingRef                = useRef(false);
   const deathStartRef             = useRef(0);
@@ -200,6 +199,7 @@ export default function GameCanvas() {
   const [isMidRoom,        setIsMidRoom]         = useState(false);
   const [isPaused,         setIsPaused]          = useState(false);
   const [showInventory,    setShowInventory]     = useState(false);
+  const [showBoonPicker,   setShowBoonPicker]    = useState(false);
   const [gold,             setGold]              = useState(0);
   const [hud,              setHud]               = useState<HUDState>(BLANK_HUD);
   const [victoryStats,     setVictoryStats]      = useState({ kills: 0, gold: 0 });
@@ -211,9 +211,9 @@ export default function GameCanvas() {
   const pendingContinueRef = useRef<(() => void) | null>(null);
 
   useEffect(() => {
-    uiActiveRef.current     = { menu: showMenu, shop: showShop, gameOver: isGameOver, inventory: showInventory };
+    uiActiveRef.current     = { menu: showMenu, shop: showShop, gameOver: isGameOver, inventory: showInventory, boonPicker: showBoonPicker };
     announcementRef.current = announcement.show;
-  }, [showMenu, showShop, isGameOver, showInventory, announcement.show]);
+  }, [showMenu, showShop, isGameOver, showInventory, showBoonPicker, announcement.show]);
 
   const announce = useCallback((message: string, subtext?: string, color?: string) => {
     setAnnouncement({ show: true, message, subtext, color });
@@ -241,11 +241,10 @@ export default function GameCanvas() {
 
   // ============================================================
   // [🧱 BLOCK: Mobile Slot Activate]
-  // Called by MobileControls when a slot circle is tapped.
   // ============================================================
   const handleMobileSlotActivate = useCallback((slotIndex: number) => {
     const ui = uiActiveRef.current;
-    if (ui.menu || ui.shop || ui.gameOver) return;
+    if (ui.menu || ui.shop || ui.gameOver || ui.boonPicker) return;
     const state = stateRef.current;
     if (!state) return;
     const activated = state.playerConsumables.activateSlot(slotIndex);
@@ -257,7 +256,7 @@ export default function GameCanvas() {
   // ============================================================
   const handleMobilePause = useCallback(() => {
     const ui = uiActiveRef.current;
-    if (ui.menu || ui.gameOver) return;
+    if (ui.menu || ui.gameOver || ui.boonPicker) return;
     if (ui.inventory) { setShowInventory(false); return; }
     setIsPaused(p => !p);
   }, []);
@@ -267,8 +266,29 @@ export default function GameCanvas() {
   // ============================================================
   const handleMobileInventory = useCallback(() => {
     const ui = uiActiveRef.current;
-    if (ui.menu || ui.shop || ui.gameOver) return;
+    if (ui.menu || ui.shop || ui.gameOver || ui.boonPicker) return;
     setShowInventory(p => !p);
+  }, []);
+
+  // ============================================================
+  // [🧱 BLOCK: Boon Chest Open]
+  // Rolls 3 free boon choices and opens the picker. The chest
+  // itself is marked opened immediately so it disappears from
+  // the world regardless of whether the player finishes picking.
+  // ============================================================
+  const handleOpenBossChest = useCallback(() => {
+    const state = stateRef.current;
+    if (!state || !state.bossChest || state.bossChest.opened) return;
+    const ownedIds = state.playerStats.boons.equippedIds;
+    state.pendingBoonChoices = getRandomChestBoons(ownedIds, 3);
+    state.bossChest.open();
+    setShowBoonPicker(true);
+  }, []);
+
+  const handleBoonPickerResolved = useCallback(() => {
+    const state = stateRef.current;
+    if (state) state.pendingBoonChoices = [];
+    setShowBoonPicker(false);
   }, []);
 
   // ============================================================
@@ -286,6 +306,7 @@ export default function GameCanvas() {
       if (e.code === "F1") { e.preventDefault(); if (IS_DEV) setDevPanelOpen((p) => !p); return; }
 
       if (e.code === "Escape") {
+        if (uiActiveRef.current.boonPicker) return; // must resolve the picker first
         if (uiActiveRef.current.inventory) setShowInventory(false);
         else setIsPaused((p) => !p);
         return;
@@ -293,20 +314,25 @@ export default function GameCanvas() {
 
       if (e.code === "KeyF" && !e.repeat) {
         const ui = uiActiveRef.current;
-        if (ui.menu || ui.shop || ui.gameOver) return;
+        if (ui.menu || ui.shop || ui.gameOver || ui.boonPicker) return;
         const state = stateRef.current;
         if (!state) return;
         if (state.door?.playerIsNear)    { handleDoorEnterRef.current(); return; }
         if (state.shopNpc?.playerIsNear) {
           state.playerStats.generateShopOptions();
           setIsMidRoom(true); setShowShop(true);
+          return;
+        }
+        if (state.bossChest?.playerIsNear && !state.bossChest.opened) {
+          handleOpenBossChestRef.current();
+          return;
         }
         return;
       }
 
       if (e.code === "KeyI" && !e.repeat) {
         const ui = uiActiveRef.current;
-        if (ui.menu || ui.shop || ui.gameOver) return;
+        if (ui.menu || ui.shop || ui.gameOver || ui.boonPicker) return;
         if (ui.inventory) { setShowInventory(false); return; }
         if (iHoldTimer.current) clearTimeout(iHoldTimer.current);
         iHoldTimer.current = setTimeout(() => { setShowInventory(true); iHoldTimer.current = null; }, INVENTORY_HOLD_MS);
@@ -316,7 +342,7 @@ export default function GameCanvas() {
         const slotMap: Record<string, number> = { Digit1: 0, Digit2: 1, Digit3: 2, Digit4: 3 };
         if (e.code in slotMap) {
           const ui = uiActiveRef.current;
-          if (ui.menu || ui.shop || ui.gameOver) return;
+          if (ui.menu || ui.shop || ui.gameOver || ui.boonPicker) return;
           const state = stateRef.current;
           if (!state) return;
           const activated = state.playerConsumables.activateSlot(slotMap[e.code]);
@@ -388,6 +414,7 @@ export default function GameCanvas() {
     setIsGameOver(false);    setIsVictory(false);   setVictoryMinimized(false);
     setShowShop(false);      setIsPaused(false);    setIsMidRoom(false);
     setShowInventory(false); setShowMenu(showMenuAfter); setShowTransition(false);
+    setShowBoonPicker(false);
     lastAnnouncedRemainingRef.current = null;
     isDyingRef.current = false; vignetteAlphaRef.current = 0;
   }, []);
@@ -455,6 +482,9 @@ export default function GameCanvas() {
   const handleDoorEnterRef = useRef(handleDoorEnter);
   useEffect(() => { handleDoorEnterRef.current = handleDoorEnter; }, [handleDoorEnter]);
 
+  const handleOpenBossChestRef = useRef(handleOpenBossChest);
+  useEffect(() => { handleOpenBossChestRef.current = handleOpenBossChest; }, [handleOpenBossChest]);
+
   const handleNpcClose       = useCallback(() => { setShowShop(false); setIsMidRoom(false); }, []);
   const handleInventoryClose = useCallback(() => { setShowInventory(false); }, []);
   const handleVictoryClose   = useCallback(() => { setIsVictory(false); setVictoryMinimized(true); }, []);
@@ -463,7 +493,9 @@ export default function GameCanvas() {
   const handleTransitionComplete = useCallback(() => { setShowTransition(false); pendingContinueRef.current?.(); pendingContinueRef.current = null; }, []);
 
   // ============================================================
-  // [🧱 BLOCK: Equip Drop]
+  // [🧱 BLOCK: Equip Drop — Weapon-Only (Phase 1)]
+  // ItemDrop only ever carries a WeaponItem now; boons come from
+  // the Shop or the Boss Chest, never the ground.
   // ============================================================
   const handleEquipDrop = useCallback((drop: ItemDrop) => {
     const state = stateRef.current; if (!state) return;
@@ -472,18 +504,9 @@ export default function GameCanvas() {
     const dropX  = player.x + player.width  + SWAP_DROP_OFFSET;
     const dropY  = player.y + player.height + SWAP_DROP_OFFSET;
 
-    if (item.kind === 'weapon') {
-      const existing = state.playerStats.equippedWeaponItem;
-      if (existing) state.itemDrops.push(new ItemDrop(dropX, dropY, { ...existing, kind: 'weapon' }));
-      state.playerStats.claimWeapon(item as WeaponItem, player);
-    } else if (item.kind === 'armor') {
-      const ai       = item as ArmorItem;
-      const existing = state.playerStats.armorSlots[ai.slot];
-      if (existing) state.itemDrops.push(new ItemDrop(dropX, dropY, { ...existing, kind: 'armor' }));
-      state.playerStats.claimArmor(ai, player);
-    } else if (item.kind === 'charm') {
-      state.playerStats.claimCharm(item as any, player);
-    }
+    const existing = state.playerStats.equippedWeaponItem;
+    if (existing) state.itemDrops.push(new ItemDrop(dropX, dropY, existing));
+    state.playerStats.claimWeapon(item, player);
 
     drop.collected = true;
     const idx = state.itemDrops.findIndex((d) => d === drop);
@@ -530,7 +553,7 @@ export default function GameCanvas() {
     const canvas = canvasRef.current; const state = stateRef.current; const input = inputRef.current;
     if (!canvas || !state || !input) return;
     const ctx = canvas.getContext("2d"); if (!ctx) return;
-    if (showMenu || showShop || isGameOver || isPaused || showTransition) return;
+    if (showMenu || showShop || isGameOver || isPaused || showTransition || showBoonPicker) return;
 
     const rs     = roomRef.current;
     const isBoss = rs.phase === 'boss' || rs.phase === 'victory';
@@ -637,7 +660,7 @@ export default function GameCanvas() {
       if (event === "victory") {
         setVictoryStats({ kills: floorKillsRef.current, gold: floorGoldRef.current });
         roomRef.current = { ...rs, phase: 'victory' };
-        announce("BOSS SLAIN", "Approach the gate to descend", "#4ade80");
+        announce("BOSS SLAIN", "A chest awaits — approach the gate to descend", "#4ade80");
         setTimeout(() => setIsVictory(true), 1200);
       }
       bossRef.current.draw(state, ctx, state.camera, player);
@@ -664,6 +687,10 @@ export default function GameCanvas() {
   const nearbyDrops = state
     ? state.itemDrops.filter((d) => !d.collected && d.playerIsNear)
     : [];
+
+  const nearbyWeaponDrop = nearbyDrops[0]
+    ? { name: nearbyDrops[0].item.name, icon: nearbyDrops[0].item.icon }
+    : null;
 
   return (
     <div style={{ width: "100vw", height: "100vh", overflow: "hidden", background: "#0f172a" }}>
@@ -704,6 +731,7 @@ export default function GameCanvas() {
           floor={roomRef.current.floor} room={roomRef.current.roomDisplay}
           gold={gold} playerStats={state.playerStats} player={state.player}
           playerConsumables={state.playerConsumables} isMidRoom={isMidRoom}
+          nearbyWeaponDrop={nearbyWeaponDrop}
           onGoldChange={handleGoldChange} onContinue={handleNpcClose} onClose={handleNpcClose}
         />
       )}
@@ -713,6 +741,15 @@ export default function GameCanvas() {
           playerStats={state.playerStats} player={state.player} gold={gold}
           nearbyDrops={nearbyDrops} playerConsumables={state.playerConsumables}
           onGoldChange={handleGoldChange} onEquipDrop={handleEquipDrop} onClose={handleInventoryClose}
+        />
+      )}
+
+      {showBoonPicker && state && state.pendingBoonChoices.length > 0 && (
+        <BoonPicker
+          choices={state.pendingBoonChoices}
+          playerStats={state.playerStats}
+          player={state.player}
+          onResolved={handleBoonPickerResolved}
         />
       )}
 

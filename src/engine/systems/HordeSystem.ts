@@ -17,7 +17,8 @@ import { WeaponSystem }                         from "./WeaponSystem";
 import { RenderSystem, FREEZE_PRESETS }         from "./RenderSystem";
 import { ConsumableSystem }                     from "../ConsumableSystem";
 import { spawnBurst, spawnHitSpark, spawnDamageNumber } from "../Particle";
-import { getRandomShopItems, getRandomConsumableDrop } from "../items/ItemPool";
+import { getRandomWeaponDrop, getRandomConsumableDrop } from "../items/ItemPool";
+import { WeaponItem }                           from "../items/types";
 import { circleCircle, rectCenter }             from "../Collision";
 import {
   isRendMarked, clearRendMark, REND_BONUS_DAMAGE,
@@ -27,7 +28,9 @@ import {
   tryIronWardenReflect,
   applyShadowWalkerFreeze,
   onBloodReaperKill,
-} from "../items/ArmorRegistry";
+  triggerExecutionerShockwave,
+  MAX_BOON_LEVEL,
+} from "../BoonRegistry";
 
 // ============================================================
 // [🧱 BLOCK: Constants]
@@ -67,6 +70,8 @@ const TANK_RADIUS_BONUS   = 10;
 
 // ============================================================
 // [🧱 BLOCK: Item Drop Chances]
+// Ground drops are weapon-only as of Phase 1 — boons no longer
+// drop from enemies (Shop / Boss Chest only).
 // ============================================================
 const DROP_CHANCE = {
   grunt:   0.20,
@@ -144,28 +149,17 @@ function spawnScaledTank(
 
 // ============================================================
 // [🧱 BLOCK: Roll Item Drop]
+// Weapon-only ground drops as of Phase 1.
 // ============================================================
 function rollItemDrop(
   state:  GameState,
-  chance: number,
-  floor:  number
-): import("../items/ItemPool").ShopItem | null {
+  chance: number
+): WeaponItem | null {
   if (Math.random() > chance) return null;
-  const ownedCharmIds   = state.playerStats.charms.map((c) => c.id);
   const ownedWeaponId   = state.playerStats.equippedWeaponItem?.id ?? null;
-  const ownedArmorIds   = Object.values(state.playerStats.armorSlots)
-    .filter(Boolean).map((a) => a!.id);
-  const pendingCharmIds = state.pendingLoot.filter((i) => i.kind === "charm").map((i) => i.id);
   const pendingWeaponId = state.pendingLoot.find((i) => i.kind === "weapon")?.id ?? null;
-  const pendingArmorIds = state.pendingLoot.filter((i) => i.kind === "armor").map((i) => i.id);
-  const pool = getRandomShopItems(
-    [...ownedCharmIds, ...pendingCharmIds],
-    ownedWeaponId ?? pendingWeaponId,
-    [...ownedArmorIds, ...pendingArmorIds],
-    1,
-    floor
-  );
-  return pool[0] ?? null;
+  const excludeIds = [ownedWeaponId, pendingWeaponId].filter((id): id is string => !!id);
+  return getRandomWeaponDrop(excludeIds);
 }
 
 // ============================================================
@@ -235,6 +229,7 @@ export class HordeSystem {
     state.door          = new Door(worldW);
     state.door.isActive = false;
     state.shopNpc       = new ShopNPC(worldW);
+    state.bossChest      = null;
 
     // Reset farming state for new room
     this.farming = {
@@ -262,6 +257,7 @@ export class HordeSystem {
     state.damageNumbers   = [];
     state.door            = null;
     state.shopNpc         = null;
+    state.bossChest       = null;
     state.kills           = 0;
     state.alive           = 0;
     state.lastSpawn       = 0;
@@ -395,8 +391,8 @@ export class HordeSystem {
     if (dmg > 0) player.takeHit(dmg);
 
     if (source !== null) {
-      const iw5Count = state.playerStats.getEquippedSetCounts()['iron_warden'] ?? 0;
-      tryIronWardenReflect(iw5Count, source);
+      const iwLevel = state.playerStats.getBoonLevel('iron_warden');
+      tryIronWardenReflect(iwLevel, source);
     }
 
     return false;
@@ -594,13 +590,13 @@ export class HordeSystem {
       state.shopNpc.checkPlayerProximity(player);
     }
 
-    // ── Shadow Walker 5pc ─────────────────────────────────────
-    const sw5Count = ps.getEquippedSetCounts()['shadow_walker'] ?? 0;
-    if (sw5Count >= 5) {
+    // ── Shadow Walker (boon, level 5) ─────────────────────────
+    const swLevel = ps.getBoonLevel('shadow_walker');
+    if (swLevel >= MAX_BOON_LEVEL) {
       const wasDashing = (player as any)._wasDashingLastFrame ?? false;
       const isDashing  = player.dashTimer > 0;
       if (isDashing && !wasDashing) {
-        applyShadowWalkerFreeze(sw5Count, state.enemies);
+        applyShadowWalkerFreeze(swLevel, state.enemies);
         state.particles.push(...spawnBurst(
           player.x + player.width  / 2,
           player.y + player.height / 2,
@@ -767,10 +763,12 @@ export class HordeSystem {
       }
     );
 
-    if (isHeavy && ps.hasCharm("executioner")) {
+    // ── Executioner (boon) — heavy-kill shockwave ──────────────
+    if (isHeavy && ps.hasBoon("executioner")) {
+      const execLevel = ps.getBoonLevel("executioner");
       hitEnemies.forEach((enemy) => {
         if (enemy.isDead) {
-          this.triggerShockwave(state, enemy.x + enemy.width / 2, enemy.y + enemy.height / 2, 25);
+          triggerExecutionerShockwave(execLevel, state, enemy.x + enemy.width / 2, enemy.y + enemy.height / 2);
         }
       });
     }
@@ -781,7 +779,7 @@ export class HordeSystem {
     state.enemies     = state.enemies.filter((e) => !e.isDead);
     const justKilled  = before - state.enemies.length;
 
-    const br5Count = ps.getEquippedSetCounts()['blood_reaper'] ?? 0;
+    const brLevel = ps.getBoonLevel('blood_reaper');
 
     if (justKilled > 0) {
       state.kills      += justKilled;
@@ -826,7 +824,7 @@ export class HordeSystem {
 
         const baseChance = DROP_CHANCE[type];
         const chance     = isElite ? baseChance * ELITE_DROP_MULT : baseChance;
-        const dropped    = rollItemDrop(state, chance, rs.floor);
+        const dropped    = rollItemDrop(state, chance);
         if (dropped) {
           state.itemDrops.push(new ItemDrop(
             enemy.x + enemy.width  / 2,
@@ -846,12 +844,11 @@ export class HordeSystem {
           ));
         }
 
-        ps.charms.forEach((charm) => charm.onKill?.(player, ps.modifiers));
         if (ps.healOnKill > 0) {
           player.hp = Math.min(player.maxHp, player.hp + ps.healOnKill);
         }
         passive?.onKill?.(player, enemy, state);
-        onBloodReaperKill(br5Count, enemy, state.enemies, state);
+        onBloodReaperKill(brLevel, enemy, state.enemies, state);
       });
     }
 
@@ -948,19 +945,6 @@ export class HordeSystem {
     state.totalGoldEarned += goldCollected;
 
     return { event: null, goldCollected, farmingBatchSpawned };
-  }
-
-  // ============================================================
-  // [🧱 BLOCK: Shockwave]
-  // ============================================================
-  private triggerShockwave(state: GameState, cx: number, cy: number, damage: number) {
-    state.enemies.forEach((enemy) => {
-      if (enemy.isDead) return;
-      const ex   = enemy.x + enemy.width  / 2;
-      const ey   = enemy.y + enemy.height / 2;
-      const dist = Math.sqrt((cx - ex) ** 2 + (cy - ey) ** 2);
-      if (dist < 100) enemy.takeDamage(damage);
-    });
   }
 
   // ============================================================

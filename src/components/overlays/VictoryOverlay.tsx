@@ -3,6 +3,8 @@
 
 import React, { useEffect, useState } from "react";
 import { PlayerStats }                from "@/engine/PlayerStats";
+import { getBoonById }                from "@/engine/BoonRegistry";
+import { BOON_SLOT_COUNT }            from "@/engine/PlayerBoons";
 import "@/styles/victory.css";
 
 // ============================================================
@@ -66,6 +68,10 @@ export default function VictoryOverlay({
     ? `${playerStats.equippedWeaponItem.icon} ${playerStats.equippedWeaponItem.name}`
     : "👊 Bare Fists";
 
+  const equippedBoons = playerStats.boons.slots
+    .map((slot, i) => ({ slot, i }))
+    .filter(({ slot }) => slot.boonId);
+
   return (
     <div className="victory-backdrop">
       <div className={`victory-card ${visible ? "victory-card--visible" : ""}`}>
@@ -110,18 +116,22 @@ export default function VictoryOverlay({
               <StatRow icon="⚔" label="Weapon"      value={weapon}               />
             </div>
 
-            {playerStats.charms.length > 0 && (
+            {equippedBoons.length > 0 && (
               <div className="victory-charms">
                 <p className="victory-charms__label">
-                  Charms ({playerStats.charms.length}/{playerStats.maxCharms})
+                  Boons ({equippedBoons.length}/{BOON_SLOT_COUNT})
                 </p>
                 <div className="victory-charms__list">
-                  {playerStats.charms.map((charm) => (
-                    <div key={charm.id} className="victory-charm-pill">
-                      <span className="victory-charm-pill__icon">{charm.icon}</span>
-                      <span className="victory-charm-pill__name">{charm.name}</span>
-                    </div>
-                  ))}
+                  {equippedBoons.map(({ slot, i }) => {
+                    const def = getBoonById(slot.boonId!);
+                    if (!def) return null;
+                    return (
+                      <div key={i} className="victory-charm-pill">
+                        <span className="victory-charm-pill__icon">{def.icon}</span>
+                        <span className="victory-charm-pill__name">{def.name} · Lv{slot.level}</span>
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
             )}

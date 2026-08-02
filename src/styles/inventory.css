@@ -1,6 +1,7 @@
 /* ============================================================
    Inventory — src/styles/inventory.css
-   4-column layout at 1280×640. Column 4 = Provisions.
+   3-column layout at 1280×640, Hades-inspired.
+   Col 1: Boons | Col 2: Attributes + Weapon | Col 3: Provisions
    ============================================================ */
 
 /* ============================================================
@@ -95,11 +96,11 @@
 }
 
 /* ============================================================
-   [🧱 BLOCK: 4-Column Grid]
+   [🧱 BLOCK: 3-Column Grid]
    ============================================================ */
 .inv-cols {
   display:               grid;
-  grid-template-columns: 1fr 1fr 1fr 1fr;
+  grid-template-columns: 1.1fr 1fr 1fr;
   gap:                   14px;
   flex:                  1;
   min-height:            0;
@@ -146,51 +147,6 @@
 }
 
 /* ============================================================
-   [🧱 BLOCK: Nearby Drop Rows]
-   ============================================================ */
-.inv-drop-row {
-  display:       flex;
-  align-items:   center;
-  gap:           8px;
-  padding:       6px 8px;
-  border:        1px solid #1e1a10;
-  margin-bottom: 3px;
-  cursor:        pointer;
-  transition:    border-color 0.1s, background 0.1s;
-}
-
-.inv-drop-row:last-child { margin-bottom: 0; }
-.inv-drop-row:hover      { border-color: #5a7050; background: #0e0c08; }
-
-.inv-drop-row__info  { flex: 1; min-width: 0; }
-.inv-drop-row__kind  { font-size: 9px; color: #5a7050; letter-spacing: 1px; text-transform: uppercase; }
-.inv-drop-row__name  { font-size: 11px; color: #c8b89a; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-
-.inv-drop-empty {
-  font-size:  10px;
-  color:      #2a2010;
-  font-style: italic;
-  padding:    6px 2px;
-}
-
-.inv-drop-btn {
-  font-family:    'Courier New', monospace;
-  font-size:      9px;
-  padding:        2px 7px;
-  background:     transparent;
-  cursor:         pointer;
-  letter-spacing: 1px;
-  flex-shrink:    0;
-  border:         1px solid #2a4030;
-  color:          #5a8060;
-  transition:     border-color 0.1s, color 0.1s;
-}
-.inv-drop-btn:hover          { border-color: #8abf9a; color: #8abf9a; }
-.inv-drop-btn--swap          { border-color: #4a3010; color: #c08840; }
-.inv-drop-btn--swap:hover    { border-color: #d4af37; color: #d4af37; }
-.inv-drop-btn--disabled      { opacity: 0.3; cursor: not-allowed; pointer-events: none; }
-
-/* ============================================================
    [🧱 BLOCK: Attributes / Stats Table]
    ============================================================ */
 .inv-stat-table          { width: 100%; border-collapse: collapse; font-size: 11px; }
@@ -204,24 +160,6 @@
 .inv-stat-bar-fill       { height: 100%; background: #8b6914; }
 .inv-stat-table__total   { color: #c8b89a; text-align: right; font-size: 11px; white-space: nowrap; }
 .inv-stat-table__bonus   { color: #4a6840; font-size: 9px; text-align: right; white-space: nowrap; padding-left: 3px; }
-
-/* ============================================================
-   [🧱 BLOCK: Set Bonuses]
-   ============================================================ */
-.inv-set-section         { flex: 1; min-height: 0; overflow: hidden; display: flex; flex-direction: column; }
-.inv-set-box             { flex: 1; min-height: 0; overflow: hidden; background: rgba(0,0,0,0.38); border: 1px solid #2a2418; box-shadow: inset 0 0 0 1px #1a1610; padding: 10px; }
-.inv-set-entry           { margin-bottom: 8px; }
-.inv-set-entry:last-child{ margin-bottom: 0; }
-.inv-set-header          { display: flex; justify-content: space-between; margin-bottom: 3px; font-size: 11px; color: #c8b89a; }
-.inv-set-count           { color: #d4af37; font-size: 10px; }
-.inv-set-bar-bg          { background: #1a1610; height: 3px; border: 1px solid #2a2418; margin-bottom: 4px; }
-.inv-set-bar-fill        { height: 100%; background: #4a3a0a; transition: width 0.3s ease; }
-.inv-tier-row            { display: flex; align-items: center; gap: 5px; margin-bottom: 2px; }
-.inv-tier-badge          { font-size: 8px; padding: 1px 4px; border: 1px solid #2a2418; color: #3a3020; letter-spacing: 1px; flex-shrink: 0; }
-.inv-tier-badge--active  { border-color: #d4af37; color: #d4af37; }
-.inv-tier-desc           { font-size: 9px; color: #2e2818; }
-.inv-tier-desc--active   { color: #8a7840; }
-.inv-set-divider         { height: 1px; background: linear-gradient(90deg, transparent, #3a2a10 40%, #3a2a10 60%, transparent); margin: 6px 0; }
 
 /* ============================================================
    [🧱 BLOCK: Equipment Cards]
@@ -244,20 +182,132 @@
 .inv-confirm-btn--cancel   { font-family: 'Courier New', monospace; font-size: 9px; color: #5a4a20; border: 1px solid #3a2a10; padding: 2px 6px; background: transparent; cursor: pointer; }
 
 /* ============================================================
-   [🧱 BLOCK: Charm Rows]
+   [🧱 BLOCK: Nearby Weapon — folded into Weapon card area]
    ============================================================ */
-.inv-charm-row             { display: flex; align-items: center; gap: 8px; padding: 6px 0; border-bottom: 1px solid #1a1610; }
-.inv-charm-row:last-child  { border-bottom: none; }
-.inv-charm-icon            { font-size: 14px; width: 18px; text-align: center; flex-shrink: 0; }
-.inv-charm-info            { flex: 1; min-width: 0; }
-.inv-charm-name            { font-size: 11px; color: #8abf9a; }
-.inv-charm-desc            { font-size: 9px; color: #3a3020; margin-top: 1px; }
-.inv-charm-tradeoff        { font-size: 9px; color: #7a2a18; margin-top: 1px; }
-.inv-charm-empty           { font-size: 9px; color: #221e10; padding: 4px 0; border-bottom: 1px dashed #1a1610; font-style: italic; }
+.inv-nearby-weapon {
+  display:       flex;
+  align-items:   center;
+  gap:           8px;
+  padding:       6px 8px;
+  border:        1px dashed #2a2418;
+  margin-top:    4px;
+  cursor:        pointer;
+  transition:    border-color 0.1s, background 0.1s;
+}
+.inv-nearby-weapon:hover { border-color: #5a7050; background: #0e0c08; }
+.inv-nearby-weapon__info  { flex: 1; min-width: 0; }
+.inv-nearby-weapon__kind  { font-size: 8px; color: #5a7050; letter-spacing: 1px; text-transform: uppercase; }
+.inv-nearby-weapon__name  { font-size: 10px; color: #c8b89a; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.inv-nearby-weapon__btn {
+  font-family:    'Courier New', monospace;
+  font-size:      9px;
+  padding:        2px 7px;
+  background:     transparent;
+  cursor:         pointer;
+  letter-spacing: 1px;
+  flex-shrink:    0;
+  border:         1px solid #4a3010;
+  color:          #c08840;
+  transition:     border-color 0.1s, color 0.1s;
+}
+.inv-nearby-weapon__btn:hover { border-color: #d4af37; color: #d4af37; }
 
 /* ============================================================
-   [🧱 BLOCK: Consumable Bag Rows — Column 4]
-   Draggable rows. Kind badge colors: potion=amber, scroll=cyan.
+   [🧱 BLOCK: Boon Slot Cards — Column 1]
+   Draggable — reorder/swap boons between slots.
+   ============================================================ */
+.inv-boon-slot {
+  display:        flex;
+  flex-direction: column;
+  gap:            5px;
+  padding:        8px 9px;
+  border:         1px solid #1e1a10;
+  margin-bottom:  6px;
+  cursor:         grab;
+  transition:     border-color 0.1s, background 0.1s;
+}
+.inv-boon-slot:last-child { margin-bottom: 0; }
+.inv-boon-slot:active     { cursor: grabbing; }
+.inv-boon-slot:hover      { border-color: #5a4010; background: #0e0c08; }
+
+.inv-boon-slot--empty {
+  border-style: dashed;
+  opacity:      0.55;
+  cursor:       default;
+}
+
+.inv-boon-slot--dragover {
+  border-color: #8b6914;
+  background:   rgba(139,105,20,0.08);
+}
+
+.inv-boon-slot__header {
+  display:     flex;
+  align-items: center;
+  gap:         8px;
+}
+
+.inv-boon-slot__icon { font-size: 16px; flex-shrink: 0; width: 20px; text-align: center; }
+
+.inv-boon-slot__name {
+  font-size:   11px;
+  color:       #d4af37;
+  flex:        1;
+  min-width:   0;
+  white-space: nowrap;
+  overflow:    hidden;
+  text-overflow: ellipsis;
+}
+
+.inv-boon-slot__level-badge {
+  font-size:   9px;
+  font-weight: 700;
+  color:       #f0c040;
+  background:  #0a0804;
+  border:      1px solid #5a4010;
+  padding:     1px 6px;
+  flex-shrink: 0;
+}
+
+.inv-boon-slot__desc {
+  font-size:   9px;
+  color:       #7a6020;
+  line-height: 1.4;
+}
+
+.inv-boon-slot__tradeoff {
+  font-size: 8px;
+  color:     #7a2a18;
+}
+
+.inv-boon-slot__pips {
+  display: flex;
+  gap:     2px;
+}
+
+.inv-boon-pip {
+  width:      6px;
+  height:     6px;
+  background: #1a1610;
+  border:     1px solid #2a2010;
+  transform:  rotate(45deg);
+}
+
+.inv-boon-pip--filled {
+  background:   #8b6914;
+  border-color: #c0860c;
+  box-shadow:   0 0 4px rgba(192,134,12,0.4);
+}
+
+.inv-boon-slot__footer {
+  display:         flex;
+  align-items:     center;
+  justify-content: space-between;
+  gap:             5px;
+}
+
+/* ============================================================
+   [🧱 BLOCK: Consumable Bag Rows — Column 3]
    ============================================================ */
 .inv-consumable-row {
   display:     flex;
@@ -332,6 +382,13 @@
   min-height:     0;
   display:        flex;
   flex-direction: column;
+}
+
+.inv-drop-empty {
+  font-size:  10px;
+  color:      #2a2010;
+  font-style: italic;
+  padding:    6px 2px;
 }
 
 /* ============================================================

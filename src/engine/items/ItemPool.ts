@@ -1,62 +1,89 @@
 // src/engine/items/ItemPool.ts
-import { Charm, CHARM_POOL }             from "../CharmRegistry";
-import { WeaponItem, ArmorItem }         from "./types";
-import { WEAPON_ITEM_POOL }              from "./WeaponItemRegistry";
-import { ARMOR_TEMPLATES, buildArmorItem } from "./ArmorRegistry";
+import { WeaponItem }                          from "./types";
+import { WEAPON_ITEM_POOL }                    from "./WeaponItemRegistry";
+import { BoonDef, BOON_POOL, getRandomBoons }  from "../BoonRegistry";
 import { ConsumableDef, POTION_POOL, SCROLL_POOL } from "../ConsumableRegistry";
 
 // ============================================================
 // [🧱 BLOCK: Shop Item Union]
-// A shop slot holds a Charm, WeaponItem, or ArmorItem.
-// Consumables are sold separately via the Provisions section.
+// A shop slot holds a boon offer or a weapon offer. Consumables
+// are sold separately via the Provisions section (unchanged).
 // ============================================================
 export type ShopItem =
-  | (Charm      & { kind: 'charm'  })
   | (WeaponItem & { kind: 'weapon' })
-  | (ArmorItem  & { kind: 'armor'  });
+  | { kind: 'boon'; id: string; name: string; icon: string; description: string; tradeOff?: string; cost: number };
+
+// ============================================================
+// [🧱 BLOCK: Boon Def → Shop Offer]
+// Resolves the dynamic description() at level 1 for shop-card
+// display — the boon itself is level-agnostic; it inherits
+// whatever level the destination slot currently has.
+// ============================================================
+function boonToShopItem(def: BoonDef): ShopItem {
+  return {
+    kind:        'boon',
+    id:          def.id,
+    name:        def.name,
+    icon:        def.icon,
+    description: def.description(1),
+    tradeOff:    def.tradeOff,
+    cost:        def.cost,
+  };
+}
 
 // ============================================================
 // [🧱 BLOCK: Get Random Shop Items]
-// Returns `count` random items from the combined pool,
-// excluding IDs the player already owns or has pending.
+// Returns `count` random items from the combined boon+weapon
+// pool, excluding IDs the player already owns or has pending.
 //
-// ownedCharmIds  — charm IDs already equipped
+// ownedBoonIds   — boon IDs already equipped in any slot
 // ownedWeaponId  — current equipped weapon ID (or null)
-// ownedArmorIds  — armor piece IDs already in slots or pending
-// count          — how many items to return (default 5)
-// floor          — current floor, used to scale armor stat values
-//
-// Pool weights: each category contributes equally to the shuffle.
+// count          — how many items to return (default 5 per
+//                  the Phase 1 Decisions Log)
 // ============================================================
 export function getRandomShopItems(
-  ownedCharmIds:  string[],
-  ownedWeaponId:  string | null,
-  ownedArmorIds:  string[] = [],
-  count:          number   = 5,
-  floor:          number   = 1
+  ownedBoonIds:  string[],
+  ownedWeaponId: string | null,
+  count:         number = 5
 ): ShopItem[] {
-  // ── Available charms ───────────────────────────────────────
-  const availableCharms: ShopItem[] = CHARM_POOL
-    .filter((c: Charm) => !ownedCharmIds.includes(c.id))
-    .map((c: Charm) => ({ ...c, kind: 'charm' as const }));
+  // ── Available boons ─────────────────────────────────────────
+  const availableBoons: ShopItem[] = BOON_POOL
+    .filter((b) => !ownedBoonIds.includes(b.id))
+    .map(boonToShopItem);
 
-  // ── Available weapons ──────────────────────────────────────
+  // ── Available weapons ────────────────────────────────────────
   const availableWeapons: ShopItem[] = WEAPON_ITEM_POOL
     .filter((w: WeaponItem) => w.id !== ownedWeaponId)
     .map((w: WeaponItem) => ({ ...w, kind: 'weapon' as const }));
 
-  // ── Available armor ────────────────────────────────────────
-  const availableArmor: ShopItem[] = ARMOR_TEMPLATES
-    .filter((t) => !ownedArmorIds.includes(t.id))
-    .map((t)    => buildArmorItem(t.id, floor))
-    .filter((item): item is ArmorItem => item !== null)
-    .map((item) => ({ ...item, kind: 'armor' as const }));
-
   // ── Combine and shuffle ────────────────────────────────────
-  const combined = [...availableCharms, ...availableWeapons, ...availableArmor]
+  const combined = [...availableBoons, ...availableWeapons]
     .sort(() => Math.random() - 0.5);
 
   return combined.slice(0, count);
+}
+
+// ============================================================
+// [🧱 BLOCK: Get Random Boons — Chest Rewards]
+// Used by the Boss Chest to offer 3 free boon choices. Returns
+// full BoonDef objects (not flattened ShopItem) since the chest
+// picker needs the level-aware description() function.
+// ============================================================
+export function getRandomChestBoons(ownedBoonIds: string[], count: number = 3): BoonDef[] {
+  return getRandomBoons(ownedBoonIds, count);
+}
+
+// ============================================================
+// [🧱 BLOCK: Get Random Weapon Drop — Ground Drops]
+// Used by HordeSystem/BossSystem for enemy/boss weapon drops.
+// Boons are Shop-only (and Boss-Chest-only) — never ground-dropped,
+// per the Phase 1 invariant. This is intentionally separate from
+// getRandomShopItems, which mixes in boons for the Shop.
+// ============================================================
+export function getRandomWeaponDrop(excludeIds: string[] = []): WeaponItem | null {
+  const available = WEAPON_ITEM_POOL.filter((w) => !excludeIds.includes(w.id));
+  if (available.length === 0) return null;
+  return available[Math.floor(Math.random() * available.length)];
 }
 
 // ============================================================

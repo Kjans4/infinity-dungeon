@@ -3,6 +3,8 @@
 
 import React, { useState } from "react";
 import { PlayerStats, STAT_DEFS } from "@/engine/PlayerStats";
+import { getBoonById } from "@/engine/BoonRegistry";
+import { BOON_SLOT_COUNT } from "@/engine/PlayerBoons";
 import "@/styles/pause.css";
 
 // ============================================================
@@ -52,6 +54,10 @@ function StatsPanel({ hp, maxHp, gold, playerStats }: {
 }) {
   const hpPct   = Math.round((hp / maxHp) * 100);
   const hpColor = hpPct > 50 ? "#4ade80" : hpPct > 25 ? "#facc15" : "#ef4444";
+
+  const equippedBoons = playerStats.boons.slots
+    .map((slot, i) => ({ slot, i }))
+    .filter(({ slot }) => slot.boonId);
 
   return (
     <div className="pause-stats">
@@ -105,21 +111,25 @@ function StatsPanel({ hp, maxHp, gold, playerStats }: {
         )}
       </div>
 
-      {/* Charms */}
+      {/* Boons */}
       <div className="pause-stats__section">
         <p className="pause-stats__sublabel">
-          Charms ({playerStats.charms.length}/{playerStats.maxCharms})
+          Boons ({equippedBoons.length}/{BOON_SLOT_COUNT})
         </p>
-        {playerStats.charms.length === 0 ? (
-          <p className="pause-stats__empty">No charms equipped</p>
+        {equippedBoons.length === 0 ? (
+          <p className="pause-stats__empty">No boons equipped</p>
         ) : (
           <div className="pause-stats__charms">
-            {playerStats.charms.map((charm) => (
-              <div key={charm.id} className="pause-stats__charm-row">
-                <span>{charm.icon}</span>
-                <span className="pause-stats__charm-name">{charm.name}</span>
-              </div>
-            ))}
+            {equippedBoons.map(({ slot, i }) => {
+              const def = getBoonById(slot.boonId!);
+              if (!def) return null;
+              return (
+                <div key={i} className="pause-stats__charm-row">
+                  <span>{def.icon}</span>
+                  <span className="pause-stats__charm-name">{def.name} · Lv{slot.level}</span>
+                </div>
+              );
+            })}
           </div>
         )}
       </div>
