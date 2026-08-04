@@ -8,10 +8,9 @@ import { Colossus }                    from "../enemy/boss/Colossus";
 import { Mage }                        from "../enemy/boss/Mage";
 import { Shade }                       from "../enemy/boss/Shade";
 import { RoomState }                   from "../RoomManager";
-import { GameState, PENDING_LOOT_CAP } from "../GameState";
+import { GameState }                   from "../GameState";
 import { BOSS_WORLD_W, BOSS_WORLD_H }  from "../Camera";
 import { GoldDrop }                    from "../GoldDrop";
-import { ItemDrop }                    from "../ItemDrop";
 import { ConsumableDrop }              from "../ConsumableDrop";
 import { Door }                        from "../Door";
 import { ShopNPC }                     from "../ShopNPC";
@@ -20,7 +19,7 @@ import { RenderSystem, FREEZE_PRESETS } from "./RenderSystem";
 import { ConsumableSystem }            from "../ConsumableSystem";
 import { spawnBurst, spawnHitSpark, spawnDamageNumber } from "../Particle";
 import { WeaponSystem }                from "./WeaponSystem";
-import { getRandomWeaponDrop, getRandomConsumableDrop } from "../items/ItemPool";
+import { getRandomConsumableDrop }     from "../items/ItemPool";
 import {
   isRiposteActive, tickRiposte, RIPOSTE_MULT, GLAIVE_EXTRA_COST,
 } from "../WeaponPassiveRegistry";
@@ -34,19 +33,6 @@ const BOSS_PARRY_VULN_MULT = 1.5;
 const BOSS_GOLD = { min: 80, max: 120 };
 
 // ============================================================
-// [🧱 BLOCK: Boss Drop Constants]
-// Weapon-only ground drops as of Phase 1 — boons no longer drop
-// (Shop / Boss Chest only). Guaranteed drop count reduced from
-// 3 (previously spread across charm/weapon/armor pools) since
-// the pool shrank to weapons alone. See docs/phase-1-boons.md
-// "Open Items to Confirm".
-// ============================================================
-const MIN_WEAPON_DROPS    = 1;
-const FLOOR_BONUS_FLOOR   = 3;
-const BONUS_DROP_CHANCE   = 0.40;
-const BOSS_DROP_SPREAD    = 80;
-
-// ============================================================
 // [🧱 BLOCK: Freeze Damage Threshold]
 // Player must take at least this much to trigger freeze.
 // ============================================================
@@ -57,34 +43,10 @@ function randInt(min: number, max: number): number {
 }
 
 // ============================================================
-// [🧱 BLOCK: Spawn Boss Weapon Drops]
-// ============================================================
-function spawnBossWeaponDrops(state: GameState, cx: number, cy: number) {
-  const floor      = state.boss ? (state.boss as any).floor ?? 1 : 1;
-  const floorBonus = floor >= FLOOR_BONUS_FLOOR ? 1 : 0;
-  const bonusRoll  = Math.random() < BONUS_DROP_CHANCE ? 1 : 0;
-  const totalDrops = MIN_WEAPON_DROPS + floorBonus + bonusRoll;
-
-  for (let i = 0; i < totalDrops; i++) {
-    const ownedWeaponId  = state.playerStats.equippedWeaponItem?.id ?? null;
-    const groundWeaponId = state.itemDrops.find((d) => d.item.id)?.item.id ?? null;
-    const excludeIds = [ownedWeaponId, groundWeaponId].filter((id): id is string => !!id);
-
-    const item = getRandomWeaponDrop(excludeIds);
-    if (!item) continue;
-
-    const angle  = (i / totalDrops) * Math.PI * 2;
-    const radius = BOSS_DROP_SPREAD * (0.5 + Math.random() * 0.5);
-    state.itemDrops.push(new ItemDrop(
-      cx + Math.cos(angle) * radius,
-      cy + Math.sin(angle) * radius,
-      item
-    ));
-  }
-}
-
-// ============================================================
 // [🧱 BLOCK: Spawn Boss Consumable Drop]
+// [🧱 Phase 2] Weapon ground drops removed entirely — weapons
+// are Shop-only now (see docs/phase-2-weapon-lock.md). Consumable
+// drops are untouched by this phase.
 // ============================================================
 function spawnBossConsumableDrop(state: GameState, cx: number, cy: number) {
   const def = getRandomConsumableDrop();
@@ -133,7 +95,6 @@ export class BossSystem {
     state.enemies         = [];
     state.projectiles     = [];
     state.goldDrops       = [];
-    state.itemDrops       = [];
     state.consumableDrops = [];
     state.particles       = [];
     state.hitSparks       = [];
@@ -158,7 +119,6 @@ export class BossSystem {
     state.shopNpc         = null;
     state.bossChest       = null;
     state.goldDrops       = [];
-    state.itemDrops       = [];
     state.consumableDrops = [];
     state.particles       = [];
     state.hitSparks       = [];
@@ -227,12 +187,6 @@ export class BossSystem {
       if (!was && drop.collected) goldCollected += drop.amount;
     });
     state.goldDrops = state.goldDrops.filter((d) => !d.collected);
-
-    state.itemDrops = state.itemDrops.filter((drop) => {
-      if (drop.collected) return false;
-      drop.update(player);
-      return true;
-    });
 
     this.tickConsumableDrops(state, player);
     return goldCollected;
@@ -479,13 +433,6 @@ export class BossSystem {
     state.goldDrops = state.goldDrops.filter((d) => !d.collected);
     state.totalGoldEarned += goldCollected;
 
-    // ── Item drop tick during boss fight ──────────────────────
-    state.itemDrops = state.itemDrops.filter((drop) => {
-      if (drop.collected) return false;
-      drop.update(player);
-      return true;
-    });
-
     // ── Consumable drops on ground during boss fight ──────────
     this.tickConsumableDrops(state, player);
 
@@ -511,7 +458,6 @@ export class BossSystem {
         state.goldDrops.push(new GoldDrop(bx + ox, by + oy, Math.floor(finalAmount / 5)));
       }
 
-      spawnBossWeaponDrops(state, bx, by);
       spawnBossConsumableDrop(state, bx, by);
 
       state.particles.push(...spawnBurst(bx, by, boss.color, 12, 1.8));
@@ -528,7 +474,7 @@ export class BossSystem {
       // Boss death — big dramatic freeze
       render.freezeFrames(FREEZE_PRESETS.heavy);
 
-      // Boon Chest spawns slightly offset from the weapon drops
+      // Boon Chest spawns slightly offset from the gold drops
       this.spawnVictoryDoorAndShop(state, bx, by + 50);
       state.boss = null;
 
@@ -657,7 +603,6 @@ export class BossSystem {
     state.shopNpc?.draw(ctx, camera, BOSS_WORLD_W);
     state.bossChest?.draw(ctx, camera);
     state.projectiles.forEach((p)        => p.draw(ctx, camera));
-    state.itemDrops.forEach((d)          => d.draw(ctx, camera));
     state.consumableDrops.forEach((d)    => d.draw(ctx, camera));
     state.goldDrops.forEach((drop)       => drop.draw(ctx, camera));
 

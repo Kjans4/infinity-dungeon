@@ -18,6 +18,8 @@ import "@/styles/shop.css";
 
 // ============================================================
 // [🧱 BLOCK: Props]
+// [🧱 Phase 2] nearbyWeaponDrop removed — weapon acquisition is
+// Shop-only now, there is no ground pickup to surface here.
 // ============================================================
 interface ShopProps {
   floor:              number;
@@ -27,7 +29,6 @@ interface ShopProps {
   player:             Player;
   playerConsumables:  PlayerConsumables;
   isMidRoom:          boolean;
-  nearbyWeaponDrop?:  { name: string; icon: string } | null;
   onGoldChange:       (newGold: number) => void;
   onContinue:         () => void;
   onClose:            () => void;
@@ -473,7 +474,7 @@ function HealingSection({ player, gold, floor, onHeal }: {
 export default function Shop({
   floor, room, gold, playerStats, player,
   playerConsumables,
-  isMidRoom, nearbyWeaponDrop,
+  isMidRoom,
   onGoldChange, onContinue, onClose,
 }: ShopProps) {
   const [, forceUpdate] = useState(0);
@@ -616,12 +617,6 @@ export default function Shop({
                   <EquippedWeaponPill item={playerStats.equippedWeaponItem} onSell={handleSellWeapon} />
                 ) : (
                   <p className="shop-none-msg">"Bare fists — seek steel."</p>
-                )}
-                {nearbyWeaponDrop && (
-                  <div className="shop-nearby-weapon">
-                    <span className="shop-nearby-weapon__label">Nearby</span>
-                    <span className="shop-nearby-weapon__name">{nearbyWeaponDrop.icon} {nearbyWeaponDrop.name}</span>
-                  </div>
                 )}
 
                 <p className="shop-gear__sublabel" style={{ marginTop: 12 }}>
