@@ -182,39 +182,10 @@
 .inv-confirm-btn--cancel   { font-family: 'Courier New', monospace; font-size: 9px; color: #5a4a20; border: 1px solid #3a2a10; padding: 2px 6px; background: transparent; cursor: pointer; }
 
 /* ============================================================
-   [🧱 BLOCK: Nearby Weapon — folded into Weapon card area]
-   ============================================================ */
-.inv-nearby-weapon {
-  display:       flex;
-  align-items:   center;
-  gap:           8px;
-  padding:       6px 8px;
-  border:        1px dashed #2a2418;
-  margin-top:    4px;
-  cursor:        pointer;
-  transition:    border-color 0.1s, background 0.1s;
-}
-.inv-nearby-weapon:hover { border-color: #5a7050; background: #0e0c08; }
-.inv-nearby-weapon__info  { flex: 1; min-width: 0; }
-.inv-nearby-weapon__kind  { font-size: 8px; color: #5a7050; letter-spacing: 1px; text-transform: uppercase; }
-.inv-nearby-weapon__name  { font-size: 10px; color: #c8b89a; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.inv-nearby-weapon__btn {
-  font-family:    'Courier New', monospace;
-  font-size:      9px;
-  padding:        2px 7px;
-  background:     transparent;
-  cursor:         pointer;
-  letter-spacing: 1px;
-  flex-shrink:    0;
-  border:         1px solid #4a3010;
-  color:          #c08840;
-  transition:     border-color 0.1s, color 0.1s;
-}
-.inv-nearby-weapon__btn:hover { border-color: #d4af37; color: #d4af37; }
-
-/* ============================================================
    [🧱 BLOCK: Boon Slot Cards — Column 1]
-   Draggable — reorder/swap boons between slots.
+   Draggable — reorder/swap boons between slots. The upgrade
+   button inside each boon slot reuses the same pill styling
+   that used to live on the "Nearby Weapon" card.
    ============================================================ */
 .inv-boon-slot {
   display:        flex;
@@ -305,6 +276,21 @@
   justify-content: space-between;
   gap:             5px;
 }
+
+/* ── Shared small pill button (boon slot upgrade) ── */
+.inv-nearby-weapon__btn {
+  font-family:    'Courier New', monospace;
+  font-size:      9px;
+  padding:        2px 7px;
+  background:     transparent;
+  cursor:         pointer;
+  letter-spacing: 1px;
+  flex-shrink:    0;
+  border:         1px solid #4a3010;
+  color:          #c08840;
+  transition:     border-color 0.1s, color 0.1s;
+}
+.inv-nearby-weapon__btn:hover { border-color: #d4af37; color: #d4af37; }
 
 /* ============================================================
    [🧱 BLOCK: Consumable Bag Rows — Column 3]

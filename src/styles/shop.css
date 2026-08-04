@@ -602,36 +602,6 @@
 .shop-owned-pill__confirm { display: flex; gap: 3px; flex-shrink: 0; }
 
 /* ============================================================
-   [🧱 BLOCK: Nearby Weapon — folded into Weapon section]
-   ============================================================ */
-.shop-nearby-weapon {
-  border:      1px dashed #3a2808;
-  padding:     5px 7px;
-  margin-top:  4px;
-  display:     flex;
-  align-items: center;
-  gap:         6px;
-}
-
-.shop-nearby-weapon__label {
-  font-size:      7px;
-  color:          #7a6020;
-  letter-spacing: 0.5px;
-  text-transform: uppercase;
-  flex-shrink:    0;
-}
-
-.shop-nearby-weapon__name {
-  font-size:     9px;
-  color:         #c8b89a;
-  flex:          1;
-  min-width:     0;
-  white-space:   nowrap;
-  overflow:      hidden;
-  text-overflow: ellipsis;
-}
-
-/* ============================================================
    [🧱 BLOCK: Boon Slot Card]
    ============================================================ */
 .shop-boon-slot {

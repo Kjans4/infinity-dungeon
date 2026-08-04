@@ -74,19 +74,6 @@ export function getRandomChestBoons(ownedBoonIds: string[], count: number = 3): 
 }
 
 // ============================================================
-// [🧱 BLOCK: Get Random Weapon Drop — Ground Drops]
-// Used by HordeSystem/BossSystem for enemy/boss weapon drops.
-// Boons are Shop-only (and Boss-Chest-only) — never ground-dropped,
-// per the Phase 1 invariant. This is intentionally separate from
-// getRandomShopItems, which mixes in boons for the Shop.
-// ============================================================
-export function getRandomWeaponDrop(excludeIds: string[] = []): WeaponItem | null {
-  const available = WEAPON_ITEM_POOL.filter((w) => !excludeIds.includes(w.id));
-  if (available.length === 0) return null;
-  return available[Math.floor(Math.random() * available.length)];
-}
-
-// ============================================================
 // [🧱 BLOCK: Get Random Consumable Drop]
 // Used by HordeSystem to spawn consumable ground drops.
 // Weighted: potions slightly more common than scrolls.

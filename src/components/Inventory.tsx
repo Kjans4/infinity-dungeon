@@ -4,8 +4,6 @@
 import React, { useState, useEffect } from "react";
 import { PlayerStats }   from "@/engine/PlayerStats";
 import { Player }        from "@/engine/Player";
-import { WeaponItem }    from "@/engine/items/types";
-import { ItemDrop }      from "@/engine/ItemDrop";
 import { getWeaponPassive } from "@/engine/WeaponPassiveRegistry";
 import { MAX_BOON_LEVEL, getBoonById } from "@/engine/BoonRegistry";
 import { BOON_SLOT_COUNT } from "@/engine/PlayerBoons";
@@ -15,15 +13,15 @@ import "@/styles/inventory.css";
 
 // ============================================================
 // [🧱 BLOCK: Props]
+// [🧱 Phase 2] nearbyDrops removed — there is no ground weapon
+// pickup anymore. Weapon buy/sell lives entirely in the Shop.
 // ============================================================
 interface InventoryProps {
   playerStats:        PlayerStats;
   player:             Player;
   gold:               number;
-  nearbyDrops:        ItemDrop[];   // weapon-only ground drops, Phase 1
   playerConsumables:  PlayerConsumables;
   onGoldChange:       (newGold: number) => void;
-  onEquipDrop:        (drop: ItemDrop) => void;
   onClose:            () => void;
 }
 
@@ -99,24 +97,17 @@ function AttributesPanel({ playerStats, player }: {
 
 // ============================================================
 // [🧱 BLOCK: Weapon Slot Card]
-// Includes the folded-in "Nearby Weapon" pickup, since ground
-// drops are weapon-only as of Phase 1 and no longer warrant a
-// dedicated column.
+// [🧱 Phase 2] Read-only — informational display only. No Sell
+// button, no swap interaction. All weapon economy (buy, sell)
+// lives in the Shop; this card just shows what's equipped.
 // ============================================================
-function WeaponSlotCard({ item, onSell, nearbyDrop, onEquipDrop }: {
-  item: WeaponItem | null;
-  onSell: () => void;
-  nearbyDrop: ItemDrop | null;
-  onEquipDrop: (drop: ItemDrop) => void;
-}) {
-  const [confirm, setConfirm] = useState(false);
-
+function WeaponSlotCard({ item }: { item: import("@/engine/items/types").WeaponItem | null }) {
   return (
     <>
       {!item ? (
         <div className="inv-equip-card">
           <div className="inv-slot-box">WPN</div>
-          <div className="inv-equip-info"><div className="inv-equip-empty">Bare fists — seek steel</div></div>
+          <div className="inv-equip-info"><div className="inv-equip-empty">Bare fists — seek the Merchant</div></div>
         </div>
       ) : (
         <div className="inv-equip-card inv-equip-card--filled">
@@ -129,26 +120,6 @@ function WeaponSlotCard({ item, onSell, nearbyDrop, onEquipDrop }: {
               return passive ? <div className="inv-equip-pass">Passive · {passive.name}</div> : null;
             })()}
           </div>
-          {!confirm ? (
-            <button className="inv-sell-btn" onClick={() => setConfirm(true)}>Sell</button>
-          ) : (
-            <div className="inv-confirm-row">
-              <button className="inv-confirm-btn--yes"    onClick={() => { setConfirm(false); onSell(); }}>+{Math.ceil(item.cost * 0.5)}g</button>
-              <button className="inv-confirm-btn--cancel" onClick={() => setConfirm(false)}>✕</button>
-            </div>
-          )}
-        </div>
-      )}
-
-      {nearbyDrop && (
-        <div className="inv-nearby-weapon" onClick={() => onEquipDrop(nearbyDrop)}>
-          <div className="inv-nearby-weapon__info">
-            <div className="inv-nearby-weapon__kind">Nearby Weapon</div>
-            <div className="inv-nearby-weapon__name">{nearbyDrop.item.icon} {nearbyDrop.item.name}</div>
-          </div>
-          <button className="inv-nearby-weapon__btn" onClick={(e) => { e.stopPropagation(); onEquipDrop(nearbyDrop); }}>
-            {item ? 'Swap ↕' : 'Equip'}
-          </button>
         </div>
       )}
     </>
@@ -422,9 +393,9 @@ function HotbarAssignPanel({ playerConsumables, onSwapSlots, onAssign, refresh }
 // [🧱 BLOCK: Inventory Main]
 // ============================================================
 export default function Inventory({
-  playerStats, player, gold, nearbyDrops,
+  playerStats, player, gold,
   playerConsumables,
-  onGoldChange, onEquipDrop, onClose,
+  onGoldChange, onClose,
 }: InventoryProps) {
   const [, forceUpdate] = useState(0);
   const refresh = () => forceUpdate((n) => n + 1);
@@ -437,9 +408,6 @@ export default function Inventory({
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [onClose]);
-
-  const handleSellWeapon = () => { onGoldChange(playerStats.unequipWeapon(gold, player)); refresh(); };
-  const handleEquipDrop  = (drop: ItemDrop) => { onEquipDrop(drop); refresh(); };
 
   const handleSellBoon    = (slotIndex: number) => { onGoldChange(playerStats.sellBoon(slotIndex, gold, player)); refresh(); };
   const handleUpgradeBoon = (slotIndex: number) => { onGoldChange(playerStats.upgradeBoonSlot(slotIndex, gold, player)); refresh(); };
@@ -460,8 +428,7 @@ export default function Inventory({
     refresh();
   };
 
-  const bagEntries    = playerConsumables.bagEntries();
-  const nearbyWeapon  = nearbyDrops[0] ?? null;
+  const bagEntries = playerConsumables.bagEntries();
 
   return (
     <div className="inv-backdrop">
@@ -514,14 +481,9 @@ export default function Inventory({
                 </div>
               </div>
               <div>
-                <span className="inv-sec-label">Weapon</span>
+                <span className="inv-sec-label">Weapon · Manage at the Merchant</span>
                 <div className="inv-box">
-                  <WeaponSlotCard
-                    item={playerStats.equippedWeaponItem}
-                    onSell={handleSellWeapon}
-                    nearbyDrop={nearbyWeapon}
-                    onEquipDrop={handleEquipDrop}
-                  />
+                  <WeaponSlotCard item={playerStats.equippedWeaponItem} />
                 </div>
               </div>
             </div>

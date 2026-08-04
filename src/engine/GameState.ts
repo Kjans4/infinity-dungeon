@@ -3,7 +3,6 @@ import { Player }             from "./Player";
 import { Camera, WORLD_W, WORLD_H } from "./Camera";
 import { Door }               from "./Door";
 import { GoldDrop }           from "./GoldDrop";
-import { ItemDrop }           from "./ItemDrop";
 import { ConsumableDrop }     from "./ConsumableDrop";
 import { ShopNPC }            from "./ShopNPC";
 import { BossChest }          from "./BossChest";
@@ -12,15 +11,10 @@ import { Particle, HitSpark, DamageNumber } from "./Particle";
 import { PlayerStats }        from "./PlayerStats";
 import { PlayerConsumables }  from "./PlayerConsumables";
 import { ConsumableSystem }   from "./ConsumableSystem";
-import { ShopItem }           from "./items/ItemPool";
+import { WeaponItem }         from "./items/types";
 import { Grunt, Shooter, Tank, Projectile, Dasher, Bomber } from "./enemy";
 import { AnyBoss }            from "./enemy/boss/index";
 import { TileMap }            from "./TileMap";
-
-// ============================================================
-// [🧱 BLOCK: Pending Loot Cap]
-// ============================================================
-export const PENDING_LOOT_CAP = 12;
 
 // ============================================================
 // [🧱 BLOCK: Run Record — localStorage persistence]
@@ -85,7 +79,6 @@ export class GameState {
   bossChest:        BossChest | null;
   projectiles:      Projectile[];
   goldDrops:        GoldDrop[];
-  itemDrops:        ItemDrop[];
   consumableDrops:  ConsumableDrop[];
   particles:        Particle[];
   hitSparks:        HitSpark[];
@@ -106,16 +99,21 @@ export class GameState {
   consumableSystem:  ConsumableSystem;
 
   // ============================================================
-  // [🧱 BLOCK: Pending Loot]
-  // ============================================================
-  pendingLoot: ShopItem[];
-
-  // ============================================================
   // [🧱 BLOCK: Pending Boon Choices — Boss Chest]
   // Set when the player opens a BossChest; consumed by the boon
   // picker UI (3 random choices, pick 1).
   // ============================================================
   pendingBoonChoices: BoonDef[];
+
+  // ============================================================
+  // [🧱 BLOCK: Pending Weapon Choices — Run-Start Picker]
+  // [🧱 Phase 2] Set on every full run reset (Menu → RAID, or
+  // Game Over → Raid Again); consumed by WeaponPicker (3 random
+  // choices, pick 1, no reroll/cancel). Weapons are Shop-only
+  // after this — this is the only free-grant exception, mirroring
+  // pendingBoonChoices for the Boss Chest.
+  // ============================================================
+  pendingWeaponChoices: WeaponItem[];
 
   // ============================================================
   // [🧱 BLOCK: Horde Tracking]
@@ -151,7 +149,6 @@ export class GameState {
     this.bossChest       = null;
     this.projectiles     = [];
     this.goldDrops       = [];
-    this.itemDrops       = [];
     this.consumableDrops = [];
     this.particles       = [];
     this.hitSparks       = [];
@@ -163,8 +160,8 @@ export class GameState {
     this.playerStats       = new PlayerStats();
     this.playerConsumables = new PlayerConsumables();
     this.consumableSystem  = new ConsumableSystem();
-    this.pendingLoot        = [];
-    this.pendingBoonChoices = [];
+    this.pendingBoonChoices   = [];
+    this.pendingWeaponChoices = [];
 
     this.kills         = 0;
     this.alive         = 0;
@@ -189,7 +186,6 @@ export class GameState {
     this.bossChest       = null;
     this.projectiles     = [];
     this.goldDrops       = [];
-    this.itemDrops       = [];
     this.consumableDrops = [];
     this.particles       = [];
     this.hitSparks       = [];
@@ -199,8 +195,8 @@ export class GameState {
     this.alive           = 0;
     this.lastSpawn       = 0;
     this.roomEntryTime   = 0;
-    this.pendingLoot        = [];
-    this.pendingBoonChoices = [];
+    this.pendingBoonChoices   = [];
+    this.pendingWeaponChoices = [];
 
     this.totalKills      = 0;
     this.totalGoldEarned = 0;
@@ -223,7 +219,6 @@ export class GameState {
     this.enemies         = [];
     this.projectiles     = [];
     this.goldDrops       = [];
-    this.itemDrops       = [];
     this.consumableDrops = [];
     this.particles       = [];
     this.hitSparks       = [];
@@ -236,7 +231,6 @@ export class GameState {
     this.shopNpc         = null;
     this.bossChest       = null;
     this.boss            = null;
-    this.pendingLoot        = [];
     this.pendingBoonChoices = [];
     this.consumableSystem.reset();
     this.tileMap.regenerate(WORLD_W, WORLD_H);

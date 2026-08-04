@@ -3,7 +3,6 @@ import { Player }                               from "../Player";
 import { Camera }                               from "../Camera";
 import { Door }                                 from "../Door";
 import { ShopNPC }                              from "../ShopNPC";
-import { ItemDrop }                             from "../ItemDrop";
 import { ConsumableDrop }                       from "../ConsumableDrop";
 import { BaseEnemy }                            from "../enemy/BaseEnemy";
 import { Grunt, Shooter, Tank, spawnWave }      from "../enemy";
@@ -11,14 +10,13 @@ import { Dasher }                               from "../enemy/Dasher";
 import { Bomber }                               from "../enemy/Bomber";
 import { spawnEliteWave }                       from "../enemy/spawn";
 import { RoomState }                            from "../RoomManager";
-import { GameState, PENDING_LOOT_CAP }          from "../GameState";
+import { GameState }                            from "../GameState";
 import { GoldSystem }                           from "./GoldSystem";
 import { WeaponSystem }                         from "./WeaponSystem";
 import { RenderSystem, FREEZE_PRESETS }         from "./RenderSystem";
 import { ConsumableSystem }                     from "../ConsumableSystem";
 import { spawnBurst, spawnHitSpark, spawnDamageNumber } from "../Particle";
-import { getRandomWeaponDrop, getRandomConsumableDrop } from "../items/ItemPool";
-import { WeaponItem }                           from "../items/types";
+import { getRandomConsumableDrop }              from "../items/ItemPool";
 import { circleCircle, rectCenter }             from "../Collision";
 import {
   isRendMarked, clearRendMark, REND_BONUS_DAMAGE,
@@ -69,21 +67,10 @@ const SEPARATION_STRENGTH = 0.4;
 const TANK_RADIUS_BONUS   = 10;
 
 // ============================================================
-// [🧱 BLOCK: Item Drop Chances]
-// Ground drops are weapon-only as of Phase 1 — boons no longer
-// drop from enemies (Shop / Boss Chest only).
-// ============================================================
-const DROP_CHANCE = {
-  grunt:   0.20,
-  shooter: 0.30,
-  tank:    0.20,
-  dasher:  0.20,
-  bomber:  0.25,
-};
-const ELITE_DROP_MULT = 2.0;
-
-// ============================================================
 // [🧱 BLOCK: Consumable Drop Chances]
+// [🧱 Phase 2] Weapon ground drops removed entirely — weapons
+// are Shop-only now (see docs/phase-2-weapon-lock.md). Consumable
+// drops are untouched by this phase.
 // ============================================================
 const CONSUMABLE_DROP_CHANCE = {
   grunt:   0.04,
@@ -148,21 +135,6 @@ function spawnScaledTank(
 }
 
 // ============================================================
-// [🧱 BLOCK: Roll Item Drop]
-// Weapon-only ground drops as of Phase 1.
-// ============================================================
-function rollItemDrop(
-  state:  GameState,
-  chance: number
-): WeaponItem | null {
-  if (Math.random() > chance) return null;
-  const ownedWeaponId   = state.playerStats.equippedWeaponItem?.id ?? null;
-  const pendingWeaponId = state.pendingLoot.find((i) => i.kind === "weapon")?.id ?? null;
-  const excludeIds = [ownedWeaponId, pendingWeaponId].filter((id): id is string => !!id);
-  return getRandomWeaponDrop(excludeIds);
-}
-
-// ============================================================
 // [🧱 BLOCK: Random Edge Position]
 // ============================================================
 function randomEdgePosition(
@@ -218,7 +190,6 @@ export class HordeSystem {
     state.roomEntryTime  = Date.now();
     state.projectiles    = [];
     state.goldDrops      = [];
-    state.itemDrops      = [];
     state.consumableDrops = [];
     state.particles      = [];
     state.hitSparks      = [];
@@ -250,7 +221,6 @@ export class HordeSystem {
     state.enemies         = [];
     state.projectiles     = [];
     state.goldDrops       = [];
-    state.itemDrops       = [];
     state.consumableDrops = [];
     state.particles       = [];
     state.hitSparks       = [];
@@ -790,7 +760,7 @@ export class HordeSystem {
       this.syncFarmingAliveCount(justKilled);
 
       deadEnemies.forEach((enemy) => {
-        const type: keyof typeof DROP_CHANCE =
+        const type: keyof typeof CONSUMABLE_DROP_CHANCE =
           enemy instanceof Tank    ? "tank"    :
           enemy instanceof Shooter ? "shooter" :
           enemy instanceof Dasher  ? "dasher"  :
@@ -822,17 +792,6 @@ export class HordeSystem {
           this.handleVolatileExplosion(state, enemy, player, ps, render);
         }
 
-        const baseChance = DROP_CHANCE[type];
-        const chance     = isElite ? baseChance * ELITE_DROP_MULT : baseChance;
-        const dropped    = rollItemDrop(state, chance);
-        if (dropped) {
-          state.itemDrops.push(new ItemDrop(
-            enemy.x + enemy.width  / 2,
-            enemy.y + enemy.height / 2,
-            dropped
-          ));
-        }
-
         const cBaseChance = CONSUMABLE_DROP_CHANCE[type];
         const cChance     = isElite ? cBaseChance * ELITE_CONSUMABLE_MULT : cBaseChance;
         if (Math.random() < cChance) {
@@ -851,13 +810,6 @@ export class HordeSystem {
         onBloodReaperKill(brLevel, enemy, state.enemies, state);
       });
     }
-
-    // ── Item drop tick ────────────────────────────────────────
-    state.itemDrops = state.itemDrops.filter((drop) => {
-      if (drop.collected) return false;
-      drop.update(player);
-      return true;
-    });
 
     // ── Consumable drop auto-pickup ───────────────────────────
     state.consumableDrops = state.consumableDrops.filter((drop) => {
@@ -955,7 +907,6 @@ export class HordeSystem {
     state.shopNpc?.draw(ctx, camera, worldW);
     state.enemies.forEach((e)           => e.draw(ctx, camera));
     state.projectiles.forEach((p)       => p.draw(ctx, camera));
-    state.itemDrops.forEach((d)         => d.draw(ctx, camera));
     state.consumableDrops.forEach((d)   => d.draw(ctx, camera));
     this.goldSystem.draw(state, ctx, camera);
 
