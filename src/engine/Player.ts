@@ -4,6 +4,7 @@ import { Camera }           from "./Camera";
 import { Weapon }           from "./items/Weapon";
 import { AttackDef }        from "./items/types";
 import { getPlayerSprites } from "./PlayerSprites";
+import { SkillId }          from "./WeaponSkillRegistry";
 
 // ============================================================
 // [🧱 BLOCK: Constants]
@@ -148,8 +149,25 @@ export class Player {
 
   // ============================================================
   // [🧱 BLOCK: Consumable State Flags]
+  // isInvisible is driven externally each frame from
+  // WeaponSkillSystem.isPhantomActive(state).
   // ============================================================
   isInvisible: boolean = false;
+
+  // ============================================================
+  // [🧱 BLOCK: Weapon Skill State — Q (scroll) / E (potion)]
+  // Rolled fresh by PlayerStats on every weapon equip. Cooldown
+  // and buff-duration/ward-hit state live here directly since
+  // each weapon only ever carries exactly one Q and one E skill
+  // at a time — no bag/hotbar indirection needed.
+  // ============================================================
+  equippedQSkill: SkillId | null = null;
+  equippedESkill: SkillId | null = null;
+  qCooldownMs:    number = 0;
+  eCooldownMs:    number = 0;
+  qDurationMs:    number = 0;   // active buff remaining (ward only, Q side)
+  eDurationMs:    number = 0;   // active buff remaining (wrath/iron/phantom, E side)
+  qWardHits:      number = 0;   // Ward hit-absorption counter
 
   attackHitSet!: Set<unknown>;
   equippedWeapon: Weapon;
@@ -349,6 +367,15 @@ export class Player {
       if (this.hitFlashTimer <= 0) this.isHit = false;
     }
     if (this.hitRingTimer  > 0) this.hitRingTimer   -= 16;
+
+    // ── Weapon skill cooldowns / durations ─────────────────────
+    if (this.qCooldownMs > 0) this.qCooldownMs = Math.max(0, this.qCooldownMs - 16);
+    if (this.eCooldownMs > 0) this.eCooldownMs = Math.max(0, this.eCooldownMs - 16);
+    if (this.qDurationMs > 0) {
+      this.qDurationMs = Math.max(0, this.qDurationMs - 16);
+      if (this.qDurationMs === 0) this.qWardHits = 0;
+    }
+    if (this.eDurationMs > 0) this.eDurationMs = Math.max(0, this.eDurationMs - 16);
 
     if (this.chargeState !== 'none') this.chargeVisual += 16;
     else                              this.chargeVisual  = 0;

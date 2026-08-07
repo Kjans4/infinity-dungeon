@@ -11,15 +11,13 @@ import { RoomState }                   from "../RoomManager";
 import { GameState }                   from "../GameState";
 import { BOSS_WORLD_W, BOSS_WORLD_H }  from "../Camera";
 import { GoldDrop }                    from "../GoldDrop";
-import { ConsumableDrop }              from "../ConsumableDrop";
 import { Door }                        from "../Door";
 import { ShopNPC }                     from "../ShopNPC";
 import { BossChest }                   from "../BossChest";
 import { RenderSystem, FREEZE_PRESETS } from "./RenderSystem";
-import { ConsumableSystem }            from "../ConsumableSystem";
+import { WeaponSkillSystem }           from "../WeaponSkillSystem";
 import { spawnBurst, spawnHitSpark, spawnDamageNumber } from "../Particle";
 import { WeaponSystem }                from "./WeaponSystem";
-import { getRandomConsumableDrop }     from "../items/ItemPool";
 import {
   isRiposteActive, tickRiposte, RIPOSTE_MULT, GLAIVE_EXTRA_COST,
 } from "../WeaponPassiveRegistry";
@@ -40,21 +38,6 @@ const FREEZE_PLAYER_HIT_THRESHOLD = 15;
 
 function randInt(min: number, max: number): number {
   return Math.floor(Math.random() * (max - min + 1)) + min;
-}
-
-// ============================================================
-// [🧱 BLOCK: Spawn Boss Consumable Drop]
-// [🧱 Phase 2] Weapon ground drops removed entirely — weapons
-// are Shop-only now (see docs/phase-2-weapon-lock.md). Consumable
-// drops are untouched by this phase.
-// ============================================================
-function spawnBossConsumableDrop(state: GameState, cx: number, cy: number) {
-  const def = getRandomConsumableDrop();
-  state.consumableDrops.push(new ConsumableDrop(
-    cx + (Math.random() - 0.5) * 60,
-    cy + (Math.random() - 0.5) * 60,
-    def
-  ));
 }
 
 // ============================================================
@@ -95,7 +78,6 @@ export class BossSystem {
     state.enemies         = [];
     state.projectiles     = [];
     state.goldDrops       = [];
-    state.consumableDrops = [];
     state.particles       = [];
     state.hitSparks       = [];
     state.damageNumbers   = [];
@@ -119,7 +101,6 @@ export class BossSystem {
     state.shopNpc         = null;
     state.bossChest       = null;
     state.goldDrops       = [];
-    state.consumableDrops = [];
     state.particles       = [];
     state.hitSparks       = [];
     state.damageNumbers   = [];
@@ -139,27 +120,7 @@ export class BossSystem {
   }
 
   // ============================================================
-  // [🧱 BLOCK: Tick Consumable Drops]
-  // ============================================================
-  private tickConsumableDrops(state: GameState, player: Player): void {
-    state.consumableDrops = state.consumableDrops.filter((drop) => {
-      if (drop.collected) return false;
-      drop.update(player);
-      if (drop.collected) {
-        state.playerConsumables.addToBag(drop.def, 1);
-        state.particles.push(...spawnBurst(
-          drop.x, drop.y,
-          drop.def.kind === 'potion' ? '#a78bfa' : '#38bdf8',
-          5, 0.8
-        ));
-        return false;
-      }
-      return true;
-    });
-  }
-
-  // ============================================================
-  // [🧱 BLOCK: Tick Door, Shop, and Chest Post-Victory]
+  // [🧱 BLOCK: Tick Door and Shop Post-Victory]
   // ============================================================
   private tickDoorAndShop(state: GameState, player: Player): number {
     if (state.door) {
@@ -188,7 +149,6 @@ export class BossSystem {
     });
     state.goldDrops = state.goldDrops.filter((d) => !d.collected);
 
-    this.tickConsumableDrops(state, player);
     return goldCollected;
   }
 
@@ -246,8 +206,8 @@ export class BossSystem {
   ): boolean {
     if (player.iFrames > 0) return true;
 
-    if (ConsumableSystem.wardCanAbsorb(state)) {
-      ConsumableSystem.consumeWardHit(state);
+    if (WeaponSkillSystem.wardCanAbsorb(state)) {
+      WeaponSkillSystem.consumeWardHit(state);
       state.particles.push(...spawnBurst(
         player.x + player.width  / 2,
         player.y + player.height / 2,
@@ -262,7 +222,7 @@ export class BossSystem {
       rawDamage = afterBlock;
     }
 
-    const ironMult = ConsumableSystem.ironDamageReductionMult(state);
+    const ironMult = WeaponSkillSystem.ironDamageReductionMult(state);
     const dmg      = Math.round(rawDamage * ironMult);
 
     if (dmg > 0) {
@@ -314,7 +274,7 @@ export class BossSystem {
     if (boss instanceof Mage) {
       this.resolveWeaponHitMageFakes(
         player, boss,
-        ps.atkBonus + ps.lastStandBonus(player) + ConsumableSystem.wrathAtkBonus(state),
+        ps.atkBonus + ps.lastStandBonus(player) + WeaponSkillSystem.wrathAtkBonus(state),
         ps.weaponPassive?.id ?? null,
         state,
         render
@@ -408,7 +368,7 @@ export class BossSystem {
 
     tickRiposte(16);
 
-    const atkBonus = ps.atkBonus + ps.lastStandBonus(player) + ConsumableSystem.wrathAtkBonus(state);
+    const atkBonus = ps.atkBonus + ps.lastStandBonus(player) + WeaponSkillSystem.wrathAtkBonus(state);
 
     this.resolveWeaponHit(
       player, boss,
@@ -433,9 +393,6 @@ export class BossSystem {
     state.goldDrops = state.goldDrops.filter((d) => !d.collected);
     state.totalGoldEarned += goldCollected;
 
-    // ── Consumable drops on ground during boss fight ──────────
-    this.tickConsumableDrops(state, player);
-
     // ── Enrage event ──────────────────────────────────────────
     if (boss.justEnragedThisFrame) {
       render.shake('heavy');
@@ -457,8 +414,6 @@ export class BossSystem {
         const oy = (Math.random() - 0.5) * 60;
         state.goldDrops.push(new GoldDrop(bx + ox, by + oy, Math.floor(finalAmount / 5)));
       }
-
-      spawnBossConsumableDrop(state, bx, by);
 
       state.particles.push(...spawnBurst(bx, by, boss.color, 12, 1.8));
 
@@ -603,7 +558,6 @@ export class BossSystem {
     state.shopNpc?.draw(ctx, camera, BOSS_WORLD_W);
     state.bossChest?.draw(ctx, camera);
     state.projectiles.forEach((p)        => p.draw(ctx, camera));
-    state.consumableDrops.forEach((d)    => d.draw(ctx, camera));
     state.goldDrops.forEach((drop)       => drop.draw(ctx, camera));
 
     state.particles.forEach((p)    => p.update());

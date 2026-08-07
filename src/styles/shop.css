@@ -1,7 +1,7 @@
 /* ============================================================
    Shop — src/styles/shop.css
    4-column layout at 1440×700. No scroll on main body.
-   Col 1: Attributes | Col 2: Wares+Healing | Col 3: Weapon+Boons | Col 4: Provisions
+   Col 1: Attributes | Col 2: Wares+Healing | Col 3: Weapon+Boons | Col 4: Active Skills
    ============================================================ */
 
 @import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700&family=Cinzel+Decorative:wght@400;700&family=IM+Fell+English:ital@0;1&display=swap');
@@ -210,16 +210,6 @@
 .shop-col__box--boon-scroll::-webkit-scrollbar { width: 4px; }
 .shop-col__box--boon-scroll::-webkit-scrollbar-track { background: #0a0804; }
 .shop-col__box--boon-scroll::-webkit-scrollbar-thumb { background: #3a2808; border-radius: 2px; }
-
-/* Provisions column scrollable box */
-.shop-col__box--provisions-scroll {
-  overflow-y: auto;
-  scrollbar-width: thin;
-  scrollbar-color: #3a2808 #0a0804;
-}
-.shop-col__box--provisions-scroll::-webkit-scrollbar { width: 4px; }
-.shop-col__box--provisions-scroll::-webkit-scrollbar-track { background: #0a0804; }
-.shop-col__box--provisions-scroll::-webkit-scrollbar-thumb { background: #3a2808; border-radius: 2px; }
 
 /* ============================================================
    [🧱 BLOCK: Attributes Column]
@@ -739,163 +729,95 @@
 }
 
 /* ============================================================
-   [🧱 BLOCK: Consumable Shop Row — Provisions column]
-   Two-row layout: main info row + upgrade row below.
+   [🧱 BLOCK: Active Skills Panel — Column 4]
+   Replaces the old Provisions column now that potions/scrolls
+   are weapon-bound Q/E skills instead of purchasable bag items.
    ============================================================ */
-.shop-consumable-row {
-  border:        1px solid #1e1a10;
-  margin-bottom: 4px;
-  transition:    border-color 0.1s;
+.shop-skills-panel {
+  display:        flex;
+  flex-direction: column;
+  gap:            8px;
 }
 
-.shop-consumable-row:hover {
-  border-color: #3a2808;
-}
-
-.shop-consumable-row:last-child { margin-bottom: 0; }
-
-/* ── Main info row ── */
-.shop-consumable-row__main {
+.shop-skill-row {
   display:     flex;
   align-items: center;
-  gap:         7px;
-  padding:     5px 7px 3px;
+  gap:         8px;
+  padding:     8px;
+  border:      1px solid #1e1a10;
+  background:  rgba(255,255,255,0.01);
 }
 
-.shop-consumable-row__icon {
-  font-size:   15px;
+.shop-skill-row__key {
+  font-family:    'Cinzel', serif;
+  font-size:      10px;
+  font-weight:    700;
+  color:          #f0c040;
+  background:     #0a0804;
+  border:         1px solid #5a4010;
+  width:          22px;
+  height:         22px;
+  flex-shrink:    0;
+  display:        flex;
+  align-items:    center;
+  justify-content: center;
+}
+
+.shop-skill-row__icon {
+  font-size:   17px;
   flex-shrink: 0;
-  width:       20px;
+  width:       22px;
   text-align:  center;
 }
 
-.shop-consumable-row__info {
+.shop-skill-row__info {
   flex:      1;
   min-width: 0;
 }
 
-.shop-consumable-row__name {
-  font-size:     9px;
-  font-weight:   700;
-  color:         #c8b89a;
-  white-space:   nowrap;
-  overflow:      hidden;
-  text-overflow: ellipsis;
-}
-
-.shop-consumable-row__desc {
-  font-family:   'IM Fell English', serif;
-  font-style:    italic;
-  font-size:     7px;
-  color:         #4a3808;
-  white-space:   nowrap;
-  overflow:      hidden;
-  text-overflow: ellipsis;
-  margin-top:    1px;
-}
-
-.shop-consumable-row__right {
-  display:     flex;
-  align-items: center;
-  gap:         5px;
-  flex-shrink: 0;
-}
-
-.shop-consumable-row__kind {
-  font-size:      7px;
-  font-weight:    700;
-  letter-spacing: 1px;
-  text-transform: uppercase;
-  padding:        1px 5px;
-  border:         1px solid;
-  flex-shrink:    0;
-}
-
-.shop-consumable-row__count {
+.shop-skill-row__name {
   font-size:   9px;
   font-weight: 700;
   color:       #d4af37;
-  min-width:   22px;
-  text-align:  right;
+  white-space: nowrap;
+  overflow:    hidden;
+  text-overflow: ellipsis;
 }
 
-.shop-consumable-row__cost {
+.shop-skill-row__desc {
+  font-family: 'IM Fell English', serif;
+  font-style:  italic;
+  font-size:   7px;
+  color:       #7a6020;
+  margin-top:  2px;
+  line-height: 1.3;
+}
+
+.shop-skill-row__level {
+  font-size:   8px;
+  font-weight: 700;
+  color:       #f0c040;
+  background:  #0a0804;
+  border:      1px solid #5a4010;
+  padding:     2px 6px;
+  flex-shrink: 0;
+}
+
+.shop-skill-row__empty {
+  font-family: 'IM Fell English', serif;
+  font-style:  italic;
   font-size:   9px;
-  font-weight: 700;
-  color:       #8b6914;
-  min-width:   30px;
-  text-align:  right;
-}
-
-/* ============================================================
-   [🧱 BLOCK: Consumable Upgrade Row]
-   ============================================================ */
-.shop-consumable-row__upgrade-row {
-  display:     flex;
-  align-items: center;
-  gap:         5px;
-  padding:     3px 7px 5px;
-  border-top:  1px solid #1a1610;
-  background:  rgba(0, 0, 0, 0.2);
-}
-
-.shop-consumable-row__level-pips {
-  display:     flex;
-  align-items: center;
-  gap:         2px;
-  flex-shrink: 0;
-}
-
-.shop-consumable-pip {
-  width:        6px;
-  height:       6px;
-  background:   #1a1610;
-  border:       1px solid #2a2010;
-  transform:    rotate(45deg);
-  flex-shrink:  0;
-  transition:   background 0.15s, border-color 0.15s, box-shadow 0.15s;
-}
-
-.shop-consumable-pip--filled {
-  box-shadow: 0 0 4px currentColor;
-}
-
-.shop-consumable-row__level-stat {
-  font-size:      8px;
-  font-weight:    700;
-  letter-spacing: 0.5px;
-  white-space:    nowrap;
-  flex-shrink:    0;
-}
-
-.shop-consumable-row__upgrade-arrow {
-  font-size:   8px;
   color:       #3a2808;
-  flex-shrink: 0;
+  flex:        1;
 }
 
-.shop-consumable-row__next-stat {
-  font-size:   8px;
-  color:       #5a4818;
-  white-space: nowrap;
-  flex-shrink: 0;
-}
-
-.shop-consumable-row__upgrade-cost {
-  font-size:   8px;
-  font-weight: 700;
-  color:       #8b6914;
-  white-space: nowrap;
-  flex-shrink: 0;
-}
-
-.shop-consumable-row__max-badge {
-  font-size:      7px;
-  font-weight:    700;
-  letter-spacing: 1px;
-  text-transform: uppercase;
-  opacity:        0.7;
-  flex-shrink:    0;
+.shop-skills-panel__hint {
+  font-family: 'IM Fell English', serif;
+  font-style:  italic;
+  font-size:   7px;
+  color:       #3a2808;
+  line-height: 1.5;
+  margin-top:  4px;
 }
 
 /* ============================================================

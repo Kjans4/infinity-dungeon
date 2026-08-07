@@ -4,11 +4,18 @@
 import React from "react";
 import "@/styles/hud.css";
 import { RoomPhase } from "@/engine/RoomManager";
-import { HotbarSlot } from "@/engine/PlayerConsumables";
-import { CONSUMABLE_REGISTRY, SLOT_COOLDOWNS } from "@/engine/ConsumableRegistry";
+import { SKILL_COOLDOWN_MS } from "@/engine/WeaponSkillRegistry";
+
+// ============================================================
+// [🧱 BLOCK: Types]
+// ============================================================
+interface BoonChip { icon: string; level: number; }
 
 // ============================================================
 // [🧱 BLOCK: HUD Props]
+// Hotbar (4 consumable slots) replaced by:
+//  - Q/E weapon skill slots (icon + cooldown ring + active-buff bar)
+//  - a 5-icon boon strip (read-only, mirrors equipped boon slots)
 // ============================================================
 interface HUDProps {
   hp:            number;
@@ -24,7 +31,15 @@ interface HUDProps {
   bossMaxHp:     number;
   bossIsEnraged: boolean;
   roomPhase:     RoomPhase;
-  hotbar:        [HotbarSlot, HotbarSlot, HotbarSlot, HotbarSlot];
+  qSkillIcon:    string | null;
+  qSkillName:    string | null;
+  qCooldownMs:   number;
+  qDurationMs:   number;
+  eSkillIcon:    string | null;
+  eSkillName:    string | null;
+  eCooldownMs:   number;
+  eDurationMs:   number;
+  boonSlots:     BoonChip[];
   isMobile?:     boolean;
 }
 
@@ -186,33 +201,38 @@ function BossHPBar({ hp, maxHp, isEnraged, floor }: {
 }
 
 // ============================================================
-// [🧱 BLOCK: Hotbar Slot Widget]
+// [🧱 BLOCK: Skill Slot Widget — Q / E]
+// Cooldown ring uses the flat SKILL_COOLDOWN_MS placeholder.
+// Duration bar (bottom sliver) shows remaining active-buff time
+// for buff-style skills (ward/wrath/iron/phantom) — 0 for
+// instant-effect skills like fireball.
 // ============================================================
-function HotbarSlotWidget({ slot, slotIndex, bagCount }: {
-  slot: HotbarSlot; slotIndex: number; bagCount: number;
+function SkillSlotWidget({ label, icon, name, cooldownMs, durationMs }: {
+  label: 'Q' | 'E';
+  icon:  string | null;
+  name:  string | null;
+  cooldownMs: number;
+  durationMs: number;
 }) {
-  const def         = slot.assignedId ? CONSUMABLE_REGISTRY[slot.assignedId] : null;
-  const cooldownMax = SLOT_COOLDOWNS[slotIndex];
-  const cdPct       = slot.cooldownMs > 0 ? slot.cooldownMs / cooldownMax : 0;
-  const durPct      = def && def.durationMs > 0 && slot.durationMs > 0
-    ? slot.durationMs / def.durationMs
-    : 0;
-
-  const isEmpty    = !def;
-  const onCooldown = slot.cooldownMs > 0;
-  const noneLeft   = def && bagCount === 0;
+  const isEmpty    = !icon;
+  const onCooldown = cooldownMs > 0;
 
   const R    = 18;
   const CIRC = 2 * Math.PI * R;
+  const cdPct = onCooldown ? cooldownMs / SKILL_COOLDOWN_MS : 0;
   const sweepOffset = CIRC * (1 - cdPct);
 
+  // Duration bar caps its visual fill at a generous ceiling so a
+  // long buff (e.g. extended Wrath) doesn't look perpetually full.
+  const durPct = durationMs > 0 ? Math.min(1, durationMs / 20000) : 0;
+
   return (
-    <div className={`hud-hotbar-slot ${isEmpty ? "hud-hotbar-slot--empty" : ""} ${onCooldown ? "hud-hotbar-slot--cooldown" : ""} ${noneLeft ? "hud-hotbar-slot--depleted" : ""}`}>
-      <span className="hud-hotbar-slot__key">{slotIndex + 1}</span>
-      <span className="hud-hotbar-slot__icon">{def ? def.icon : "·"}</span>
-      {def && bagCount > 0 && (
-        <span className="hud-hotbar-slot__count">×{bagCount}</span>
-      )}
+    <div
+      className={`hud-hotbar-slot ${isEmpty ? "hud-hotbar-slot--empty" : ""} ${onCooldown ? "hud-hotbar-slot--cooldown" : ""}`}
+      title={name ?? undefined}
+    >
+      <span className="hud-hotbar-slot__key">{label}</span>
+      <span className="hud-hotbar-slot__icon">{icon ?? "·"}</span>
       {onCooldown && (
         <svg className="hud-hotbar-slot__cd-svg" viewBox="0 0 44 44">
           <circle
@@ -229,7 +249,7 @@ function HotbarSlotWidget({ slot, slotIndex, bagCount }: {
       )}
       {onCooldown && (
         <span className="hud-hotbar-slot__cd-text">
-          {(slot.cooldownMs / 1000).toFixed(1)}
+          {(cooldownMs / 1000).toFixed(1)}
         </span>
       )}
       {durPct > 0 && (
@@ -242,16 +262,31 @@ function HotbarSlotWidget({ slot, slotIndex, bagCount }: {
 }
 
 // ============================================================
-// [🧱 BLOCK: Hotbar Row]
+// [🧱 BLOCK: Skill Row — Q + E]
 // ============================================================
-function HotbarRow({ hotbar, bagCounts }: {
-  hotbar: [HotbarSlot, HotbarSlot, HotbarSlot, HotbarSlot];
-  bagCounts: number[];
+function SkillRow({ qIcon, qName, qCooldownMs, qDurationMs, eIcon, eName, eCooldownMs, eDurationMs }: {
+  qIcon: string | null; qName: string | null; qCooldownMs: number; qDurationMs: number;
+  eIcon: string | null; eName: string | null; eCooldownMs: number; eDurationMs: number;
 }) {
   return (
     <div className="hud-hotbar">
-      {hotbar.map((slot, i) => (
-        <HotbarSlotWidget key={i} slot={slot} slotIndex={i} bagCount={bagCounts[i] ?? 0} />
+      <SkillSlotWidget label="Q" icon={qIcon} name={qName} cooldownMs={qCooldownMs} durationMs={qDurationMs} />
+      <SkillSlotWidget label="E" icon={eIcon} name={eName} cooldownMs={eCooldownMs} durationMs={eDurationMs} />
+    </div>
+  );
+}
+
+// ============================================================
+// [🧱 BLOCK: Boon Strip — 5 read-only icon chips]
+// ============================================================
+function BoonStrip({ boonSlots }: { boonSlots: BoonChip[] }) {
+  return (
+    <div className="hud-boon-strip">
+      {boonSlots.map((chip, i) => (
+        <div key={i} className={`hud-boon-chip ${!chip.icon ? "hud-boon-chip--empty" : ""}`}>
+          <span className="hud-boon-chip__icon">{chip.icon || "—"}</span>
+          {chip.icon && <span className="hud-boon-chip__level">{chip.level}</span>}
+        </div>
       ))}
     </div>
   );
@@ -260,7 +295,8 @@ function HotbarRow({ hotbar, bagCounts }: {
 // ============================================================
 // [🧱 BLOCK: Mobile HUD Strip]
 // Compact bottom strip: HP bar | ST bar | Room/Floor | Kill | Gold
-// Hotbar slots are handled by MobileControls circular buttons.
+// Q/E + boons are handled by MobileControls / not shown here to
+// save space — same rationale the old hotbar had on mobile.
 // ============================================================
 function MobileHUDStrip({ hp, maxHp, stamina, maxStamina, kills, killThreshold, room, floor, gold, roomPhase }: {
   hp: number; maxHp: number;
@@ -343,7 +379,9 @@ export default function HUD({
   hp, maxHp, stamina, maxStamina,
   kills, killThreshold, room, floor, gold,
   bossHp, bossMaxHp, bossIsEnraged, roomPhase,
-  hotbar,
+  qSkillIcon, qSkillName, qCooldownMs, qDurationMs,
+  eSkillIcon, eSkillName, eCooldownMs, eDurationMs,
+  boonSlots,
   isMobile = false,
 }: HUDProps) {
   const isEliteRoom = roomPhase === 'elite';
@@ -354,9 +392,6 @@ export default function HUD({
     hp / maxHp > 0.25 ? "#facc15" :
                         "#ef4444";
   const staminaEmpty = stamina < STAMINA_EMPTY_THRESHOLD;
-  const bagCounts = hotbar.map((slot) =>
-    slot.assignedId ? (slot as any)._bagCount ?? 0 : 0
-  );
 
   return (
     <>
@@ -377,7 +412,13 @@ export default function HUD({
               <ThinBar value={stamina} max={maxStamina} color="#60a5fa" label="Stamina" isEmpty={staminaEmpty} />
             </div>
             <Divider />
-            <HotbarRow hotbar={hotbar} bagCounts={bagCounts} />
+            <div className="hud-skills-group">
+              <SkillRow
+                qIcon={qSkillIcon} qName={qSkillName} qCooldownMs={qCooldownMs} qDurationMs={qDurationMs}
+                eIcon={eSkillIcon} eName={eSkillName} eCooldownMs={eCooldownMs} eDurationMs={eDurationMs}
+              />
+              <BoonStrip boonSlots={boonSlots} />
+            </div>
             <Divider />
             <div className="hud-room-group">
               <span className="hud-floor-label">Floor {floor}</span>
