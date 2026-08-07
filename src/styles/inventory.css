@@ -1,7 +1,7 @@
 /* ============================================================
    Inventory — src/styles/inventory.css
    3-column layout at 1280×640, Hades-inspired.
-   Col 1: Boons | Col 2: Attributes + Weapon | Col 3: Provisions
+   Col 1: Boons | Col 2: Attributes + Weapon | Col 3: Active Skills
    ============================================================ */
 
 /* ============================================================
@@ -182,10 +182,25 @@
 .inv-confirm-btn--cancel   { font-family: 'Courier New', monospace; font-size: 9px; color: #5a4a20; border: 1px solid #3a2a10; padding: 2px 6px; background: transparent; cursor: pointer; }
 
 /* ============================================================
+   [🧱 BLOCK: Nearby Weapon button reuse]
+   ============================================================ */
+.inv-nearby-weapon__btn {
+  font-family:    'Courier New', monospace;
+  font-size:      9px;
+  padding:        2px 7px;
+  background:     transparent;
+  cursor:         pointer;
+  letter-spacing: 1px;
+  flex-shrink:    0;
+  border:         1px solid #4a3010;
+  color:          #c08840;
+  transition:     border-color 0.1s, color 0.1s;
+}
+.inv-nearby-weapon__btn:hover { border-color: #d4af37; color: #d4af37; }
+
+/* ============================================================
    [🧱 BLOCK: Boon Slot Cards — Column 1]
-   Draggable — reorder/swap boons between slots. The upgrade
-   button inside each boon slot reuses the same pill styling
-   that used to live on the "Nearby Weapon" card.
+   Draggable — reorder/swap boons between slots.
    ============================================================ */
 .inv-boon-slot {
   display:        flex;
@@ -277,198 +292,90 @@
   gap:             5px;
 }
 
-/* ── Shared small pill button (boon slot upgrade) ── */
-.inv-nearby-weapon__btn {
-  font-family:    'Courier New', monospace;
-  font-size:      9px;
-  padding:        2px 7px;
-  background:     transparent;
-  cursor:         pointer;
-  letter-spacing: 1px;
-  flex-shrink:    0;
-  border:         1px solid #4a3010;
-  color:          #c08840;
-  transition:     border-color 0.1s, color 0.1s;
-}
-.inv-nearby-weapon__btn:hover { border-color: #d4af37; color: #d4af37; }
-
 /* ============================================================
-   [🧱 BLOCK: Consumable Bag Rows — Column 3]
+   [🧱 BLOCK: Weapon Skills Panel — Column 3]
+   Read-only display of the currently-rolled Q/E skills.
    ============================================================ */
-.inv-consumable-row {
+.inv-skills-panel {
+  display:        flex;
+  flex-direction: column;
+  gap:            10px;
+}
+
+.inv-skill-row {
   display:     flex;
   align-items: center;
-  gap:         8px;
-  padding:     6px 8px;
+  gap:         10px;
+  padding:     10px;
   border:      1px solid #1e1a10;
-  margin-bottom: 4px;
-  cursor:      grab;
-  transition:  border-color 0.1s, background 0.1s;
-  user-select: none;
+  background:  rgba(0,0,0,0.2);
 }
-.inv-consumable-row:last-child  { margin-bottom: 0; }
-.inv-consumable-row:hover       { border-color: #5a4010; background: #0e0c08; }
-.inv-consumable-row:active      { cursor: grabbing; }
 
-.inv-consumable-row__icon {
-  font-size:   16px;
+.inv-skill-row__key {
+  font-family:    'Courier New', monospace;
+  font-size:      12px;
+  font-weight:    700;
+  color:          #f0c040;
+  background:     #0a0804;
+  border:         1px solid #5a4010;
+  width:          26px;
+  height:         26px;
+  flex-shrink:    0;
+  display:        flex;
+  align-items:    center;
+  justify-content: center;
+}
+
+.inv-skill-row__icon {
+  font-size:   20px;
   flex-shrink: 0;
-  width:       22px;
+  width:       28px;
   text-align:  center;
 }
 
-.inv-consumable-row__info {
+.inv-skill-row__info {
   flex:      1;
   min-width: 0;
 }
 
-.inv-consumable-row__name {
-  font-size:   10px;
-  color:       #c8b89a;
+.inv-skill-row__name {
+  font-size:   11px;
+  color:       #d4af37;
   white-space: nowrap;
   overflow:    hidden;
   text-overflow: ellipsis;
 }
 
-.inv-consumable-row__desc {
-  font-size:  8px;
-  color:      #3a3020;
-  margin-top: 1px;
-  white-space: nowrap;
-  overflow:   hidden;
-  text-overflow: ellipsis;
+.inv-skill-row__desc {
+  font-size:   9px;
+  color:       #7a6020;
+  margin-top:  2px;
+  line-height: 1.35;
 }
 
-.inv-consumable-row__kind {
-  font-size:      8px;
-  font-weight:    700;
-  letter-spacing: 1px;
-  text-transform: uppercase;
-  padding:        1px 5px;
-  border:         1px solid;
-  flex-shrink:    0;
-}
-.inv-consumable-row__kind--potion { color: #c0860c; border-color: #4a3010; }
-.inv-consumable-row__kind--scroll { color: #38bdf8; border-color: #0a3a4a; }
-
-.inv-consumable-row__count {
+.inv-skill-row__level {
   font-size:   10px;
   font-weight: 700;
-  color:       #d4af37;
+  color:       #f0c040;
+  background:  #0a0804;
+  border:      1px solid #5a4010;
+  padding:     3px 8px;
   flex-shrink: 0;
-  min-width:   22px;
-  text-align:  right;
 }
 
-/* ============================================================
-   [🧱 BLOCK: Provisions bag grow wrapper]
-   ============================================================ */
-.inv-prov-bag {
-  flex:           1;
-  min-height:     0;
-  display:        flex;
-  flex-direction: column;
-}
-
-.inv-drop-empty {
+.inv-skill-row__empty {
   font-size:  10px;
   color:      #2a2010;
   font-style: italic;
-  padding:    6px 2px;
+  flex:       1;
 }
 
-/* ============================================================
-   [🧱 BLOCK: Hotbar Assign Panel — 4 drop targets]
-   ============================================================ */
-.inv-hotbar-assign {
-  display:        flex;
-  flex-direction: column;
-  gap:            4px;
-}
-
-.inv-hotbar-slot {
-  background:  rgba(0,0,0,0.38);
-  border:      1px solid #2a2418;
-  padding:     6px 8px;
-  transition:  border-color 0.1s, background 0.1s;
-}
-
-.inv-hotbar-slot--empty {
-  border-style: dashed;
-  border-color: #1e1a10;
-}
-
-.inv-hotbar-slot--dragover {
-  border-color: #8b6914;
-  background:   rgba(139,105,20,0.08);
-}
-
-.inv-hotbar-slot__header {
-  display:         flex;
-  justify-content: space-between;
-  align-items:     center;
-  margin-bottom:   4px;
-}
-
-.inv-hotbar-slot__key {
-  font-size:      9px;
-  font-weight:    700;
-  color:          #d4af37;
-  letter-spacing: 1px;
-  background:     #0a0804;
-  border:         1px solid #5a4010;
-  padding:        1px 5px;
-}
-
-.inv-hotbar-slot__cd {
+.inv-skills-panel__hint {
   font-size:   8px;
-  color:       #3a2808;
-  letter-spacing: 1px;
-}
-
-.inv-hotbar-slot__assigned {
-  display:     flex;
-  align-items: center;
-  gap:         7px;
-}
-
-.inv-hotbar-slot__assigned-icon { font-size: 16px; flex-shrink: 0; }
-
-.inv-hotbar-slot__assigned-info { flex: 1; min-width: 0; }
-
-.inv-hotbar-slot__assigned-name {
-  font-size:   10px;
-  color:       #c8b89a;
-  white-space: nowrap;
-  overflow:    hidden;
-  text-overflow: ellipsis;
-}
-
-.inv-hotbar-slot__assigned-count {
-  font-size:  8px;
-  color:      #4a3a18;
-  margin-top: 1px;
-}
-
-.inv-hotbar-slot__clear {
-  font-family: 'Courier New', monospace;
-  font-size:   9px;
-  color:       #5a2010;
-  border:      1px solid #2a1008;
-  padding:     1px 5px;
-  background:  transparent;
-  cursor:      pointer;
-  flex-shrink: 0;
-  transition:  color 0.1s, border-color 0.1s;
-}
-.inv-hotbar-slot__clear:hover { color: #ef4444; border-color: #7a1a1a; }
-
-.inv-hotbar-slot__placeholder {
-  font-size:  9px;
-  color:      #2a2010;
-  font-style: italic;
-  text-align: center;
-  padding:    2px 0;
+  color:       #3a3020;
+  font-style:  italic;
+  line-height: 1.5;
+  margin-top:  4px;
 }
 
 /* ============================================================

@@ -10,6 +10,9 @@ import { WeaponItem }    from "./items/types";
 import { Weapon }        from "./items/Weapon";
 import { ShopItem, getRandomShopItems } from "./items/ItemPool";
 import { WeaponPassive, getWeaponPassive } from "./WeaponPassiveRegistry";
+import {
+  MAX_SKILL_LEVEL, SKILL_COOLDOWN_MS, rollQSkill, rollESkill,
+} from "./WeaponSkillRegistry";
 
 // ============================================================
 // [🧱 BLOCK: Stat Definitions]
@@ -157,6 +160,52 @@ export class PlayerStats {
   }
 
   // ============================================================
+  // [🧱 BLOCK: Weapon Skills — Q (scroll) / E (potion)]
+  // Rolled fresh every time a weapon is equipped/claimed. There
+  // is no per-weapon-type fixed assignment — random reroll on
+  // every equip event, per Phase 3 design.
+  // ============================================================
+  private rollWeaponSkills(player: Player): void {
+    player.equippedQSkill = rollQSkill();
+    player.equippedESkill = rollESkill();
+    player.qCooldownMs    = 0;
+    player.eCooldownMs    = 0;
+    player.qDurationMs    = 0;
+    player.eDurationMs    = 0;
+    player.qWardHits      = 0;
+  }
+
+  private clearWeaponSkills(player: Player): void {
+    player.equippedQSkill = null;
+    player.equippedESkill = null;
+    player.qCooldownMs    = 0;
+    player.eCooldownMs    = 0;
+    player.qDurationMs    = 0;
+    player.eDurationMs    = 0;
+    player.qWardHits      = 0;
+  }
+
+  /**
+   * Effective Q skill level — the equipped skill performs at
+   * this level. Base level is always 1 (a fresh roll is "level
+   * 1"). Equipping the Arcane Focus boon sets it to that boon's
+   * current slot level instead (1–5), capped at MAX_SKILL_LEVEL.
+   */
+  get qSkillLevel(): number {
+    return Math.max(1, Math.min(MAX_SKILL_LEVEL, this.modifiers.qSkillLevelBonus || 1));
+  }
+
+  /** Same as qSkillLevel but for the E (potion) skill via Battle Focus. */
+  get eSkillLevel(): number {
+    return Math.max(1, Math.min(MAX_SKILL_LEVEL, this.modifiers.eSkillLevelBonus || 1));
+  }
+
+  /** Flat placeholder cooldown shared by both Q and E casts. */
+  get skillCooldownMs(): number {
+    return SKILL_COOLDOWN_MS;
+  }
+
+  // ============================================================
   // [🧱 BLOCK: Weapon Equip / Unequip]
   // ============================================================
   canBuyWeapon(item: WeaponItem, gold: number): boolean {
@@ -169,6 +218,7 @@ export class PlayerStats {
     this.equippedWeaponItem = item;
     this.applyWeaponPassive(item, player);
     player.equippedWeapon = new Weapon(item.weaponType);
+    this.rollWeaponSkills(player);
     this.applyToPlayer(player);
     return gold - item.cost;
   }
@@ -178,6 +228,7 @@ export class PlayerStats {
     this.equippedWeaponItem = item;
     this.applyWeaponPassive(item, player);
     player.equippedWeapon = new Weapon(item.weaponType);
+    this.rollWeaponSkills(player);
     this.applyToPlayer(player);
   }
 
@@ -187,6 +238,7 @@ export class PlayerStats {
     this.removeWeaponPassive(this.equippedWeaponItem, player);
     this.equippedWeaponItem = null;
     player.equippedWeapon = new Weapon('fists');
+    this.clearWeaponSkills(player);
     this.applyToPlayer(player);
     return gold + refund;
   }
@@ -246,9 +298,9 @@ export class PlayerStats {
   // ============================================================
   // [🧱 BLOCK: applySpeedOnly]
   // Returns the base maxSpeed value derived from stats and boons
-  // WITHOUT writing to player or including consumable buffs.
-  // Used by ConsumableSystem each frame to compute the Wrath
-  // Potion speed bonus on top of the correct base.
+  // WITHOUT writing to player or including active skill buffs.
+  // Used by WeaponSkillSystem each frame to compute the Wrath
+  // speed bonus on top of the correct base.
   // ============================================================
   applySpeedOnly(_player: Player): number {
     return 5 + (this.agi * 0.3) + this.modifiers.bonusSpeed;
@@ -307,6 +359,7 @@ export class PlayerStats {
     this.equippedWeaponItem  = null;
 
     player.equippedWeapon = new Weapon('fists');
+    this.clearWeaponSkills(player);
     this.applyToPlayer(player);
   }
 }

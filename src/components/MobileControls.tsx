@@ -28,26 +28,25 @@ const ACTION_BUTTONS: ActionBtn[] = [
 ];
 
 // ============================================================
-// [🧱 BLOCK: Slot Button Config]
-// 4 consumable slots — horizontal row above the HUD strip
+// [🧱 BLOCK: Skill Button Config — Q / E]
+// Replaces the old 4 consumable-slot buttons. Q = scroll-pool
+// skill, E = potion-pool skill (see WeaponSkillRegistry.ts).
 // ============================================================
-const SLOT_BUTTONS = [
-  { slotIndex: 0, label: '1' },
-  { slotIndex: 1, label: '2' },
-  { slotIndex: 2, label: '3' },
-  { slotIndex: 3, label: '4' },
+const SKILL_BUTTONS: { slot: 'Q' | 'E'; label: string }[] = [
+  { slot: 'Q', label: 'Q' },
+  { slot: 'E', label: 'E' },
 ];
 
 // ============================================================
 // [🧱 BLOCK: Props]
 // ============================================================
 interface MobileControlsProps {
-  inputRef:        React.MutableRefObject<InputHandler | null>;
-  isMobile:        boolean;
-  activeKeys?:     Set<string>;
-  onPause?:        () => void;
-  onInventory?:    () => void;
-  onSlotActivate?: (slotIndex: number) => void;
+  inputRef:         React.MutableRefObject<InputHandler | null>;
+  isMobile:         boolean;
+  activeKeys?:      Set<string>;
+  onPause?:         () => void;
+  onInventory?:     () => void;
+  onSkillActivate?: (slot: 'Q' | 'E') => void;
 }
 
 // ============================================================
@@ -59,7 +58,7 @@ export default function MobileControls({
   activeKeys,
   onPause,
   onInventory,
-  onSlotActivate,
+  onSkillActivate,
 }: MobileControlsProps) {
 
   // ── Joystick state ────────────────────────────────────────
@@ -205,12 +204,12 @@ export default function MobileControls({
   }, [inputRef]);
 
   // ============================================================
-  // [🧱 BLOCK: Slot Button Handler]
+  // [🧱 BLOCK: Skill Button Handler — Q / E]
   // ============================================================
-  const handleSlotTap = useCallback((e: React.TouchEvent, slotIndex: number) => {
+  const handleSkillTap = useCallback((e: React.TouchEvent, slot: 'Q' | 'E') => {
     e.preventDefault();
-    onSlotActivate?.(slotIndex);
-  }, [onSlotActivate]);
+    onSkillActivate?.(slot);
+  }, [onSkillActivate]);
 
   // ============================================================
   // [🧱 BLOCK: Cleanup]
@@ -286,13 +285,13 @@ export default function MobileControls({
         />
       </div>
 
-      {/* ── Slot row — full-width centered strip above HUD ── */}
+      {/* ── Skill row — full-width centered strip above HUD ── */}
       <div className="mc-slots">
-        {SLOT_BUTTONS.map(({ slotIndex, label }) => (
+        {SKILL_BUTTONS.map(({ slot, label }) => (
           <div
-            key={slotIndex}
+            key={slot}
             className="mc-slot-btn"
-            onTouchEnd={(e) => handleSlotTap(e, slotIndex)}
+            onTouchEnd={(e) => handleSkillTap(e, slot)}
           >
             <span className="mc-slot-btn__label">{label}</span>
           </div>

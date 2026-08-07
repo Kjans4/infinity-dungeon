@@ -3,14 +3,12 @@ import { Player }             from "./Player";
 import { Camera, WORLD_W, WORLD_H } from "./Camera";
 import { Door }               from "./Door";
 import { GoldDrop }           from "./GoldDrop";
-import { ConsumableDrop }     from "./ConsumableDrop";
 import { ShopNPC }            from "./ShopNPC";
 import { BossChest }          from "./BossChest";
 import { BoonDef }            from "./BoonRegistry";
 import { Particle, HitSpark, DamageNumber } from "./Particle";
 import { PlayerStats }        from "./PlayerStats";
-import { PlayerConsumables }  from "./PlayerConsumables";
-import { ConsumableSystem }   from "./ConsumableSystem";
+import { WeaponSkillSystem }  from "./WeaponSkillSystem";
 import { WeaponItem }         from "./items/types";
 import { Grunt, Shooter, Tank, Projectile, Dasher, Bomber } from "./enemy";
 import { AnyBoss }            from "./enemy/boss/index";
@@ -79,7 +77,6 @@ export class GameState {
   bossChest:        BossChest | null;
   projectiles:      Projectile[];
   goldDrops:        GoldDrop[];
-  consumableDrops:  ConsumableDrop[];
   particles:        Particle[];
   hitSparks:        HitSpark[];
   damageNumbers:    DamageNumber[];
@@ -91,12 +88,14 @@ export class GameState {
   tileMap: TileMap;
 
   // ============================================================
-  // [🧱 BLOCK: Economy + Stats + Consumables]
+  // [🧱 BLOCK: Economy + Stats + Weapon Skills]
+  // playerConsumables/consumableSystem removed as of Phase 3 —
+  // potions/scrolls became weapon-bound Q/E skills, cast state
+  // now lives directly on Player. See WeaponSkillSystem.ts.
   // ============================================================
   gold:              number;
   playerStats:       PlayerStats;
-  playerConsumables: PlayerConsumables;
-  consumableSystem:  ConsumableSystem;
+  weaponSkillSystem: WeaponSkillSystem;
 
   // ============================================================
   // [🧱 BLOCK: Pending Boon Choices — Boss Chest]
@@ -107,10 +106,10 @@ export class GameState {
 
   // ============================================================
   // [🧱 BLOCK: Pending Weapon Choices — Run-Start Picker]
-  // [🧱 Phase 2] Set on every full run reset (Menu → RAID, or
+  // [Phase 2] Set on every full run reset (Menu → RAID, or
   // Game Over → Raid Again); consumed by WeaponPicker (3 random
   // choices, pick 1, no reroll/cancel). Weapons are Shop-only
-  // after this — this is the only free-grant exception, mirroring
+  // after this — the only free-grant exception, mirroring
   // pendingBoonChoices for the Boss Chest.
   // ============================================================
   pendingWeaponChoices: WeaponItem[];
@@ -149,7 +148,6 @@ export class GameState {
     this.bossChest       = null;
     this.projectiles     = [];
     this.goldDrops       = [];
-    this.consumableDrops = [];
     this.particles       = [];
     this.hitSparks       = [];
     this.damageNumbers   = [];
@@ -158,8 +156,7 @@ export class GameState {
 
     this.gold              = 0;
     this.playerStats       = new PlayerStats();
-    this.playerConsumables = new PlayerConsumables();
-    this.consumableSystem  = new ConsumableSystem();
+    this.weaponSkillSystem = new WeaponSkillSystem();
     this.pendingBoonChoices   = [];
     this.pendingWeaponChoices = [];
 
@@ -186,7 +183,6 @@ export class GameState {
     this.bossChest       = null;
     this.projectiles     = [];
     this.goldDrops       = [];
-    this.consumableDrops = [];
     this.particles       = [];
     this.hitSparks       = [];
     this.damageNumbers   = [];
@@ -205,8 +201,7 @@ export class GameState {
     this.player            = new Player(WORLD_W / 2, WORLD_H / 2);
     this.camera            = new Camera(this.screenW, this.screenH);
     this.playerStats       = new PlayerStats();
-    this.playerConsumables = new PlayerConsumables();
-    this.consumableSystem  = new ConsumableSystem();
+    this.weaponSkillSystem = new WeaponSkillSystem();
     this.tileMap.regenerate(WORLD_W, WORLD_H);
     this.playerStats.applyToPlayer(this.player);
   }
@@ -219,7 +214,6 @@ export class GameState {
     this.enemies         = [];
     this.projectiles     = [];
     this.goldDrops       = [];
-    this.consumableDrops = [];
     this.particles       = [];
     this.hitSparks       = [];
     this.damageNumbers   = [];
@@ -232,9 +226,10 @@ export class GameState {
     this.bossChest       = null;
     this.boss            = null;
     this.pendingBoonChoices = [];
-    this.consumableSystem.reset();
+    this.weaponSkillSystem.reset();
     this.tileMap.regenerate(WORLD_W, WORLD_H);
-    // playerConsumables intentionally NOT reset — bag/hotbar persist
+    // Q/E skill rolls intentionally NOT reset — they persist with
+    // the equipped weapon across rooms, same as the weapon itself.
   }
 
   resize(w: number, h: number) {

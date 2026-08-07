@@ -14,8 +14,8 @@ import { useGameLoop }       from "@/hooks/useGameLoop";
 import HUD                   from "@/components/HUD";
 import Menu                  from "@/components/Menu";
 import Shop                  from "@/components/Shop";
-import Minimap               from "@/components/Minimap";
-import Inventory             from "@/components/Inventory";
+import Minimap                from "@/components/Minimap";
+import Inventory              from "@/components/Inventory";
 import BoonPicker            from "@/components/BoonPicker";
 import WeaponPicker          from "@/components/WeaponPicker";
 import MobileControls        from "@/components/MobileControls";
@@ -27,9 +27,9 @@ import FloorTransition       from "@/components/overlays/FloorTransition";
 import { spawnBurst }        from "@/engine/Particle";
 import { getRandomChestBoons } from "@/engine/items/ItemPool";
 import { getRandomWeaponItems } from "@/engine/items/WeaponItemRegistry";
-import { HotbarSlot }        from "@/engine/PlayerConsumables";
-import { ConsumableDef, getEffectsAtLevel } from "@/engine/ConsumableRegistry";
-import { ConsumableSystem }  from "@/engine/ConsumableSystem";
+import { getSkillDef, SKILL_COOLDOWN_MS } from "@/engine/WeaponSkillRegistry";
+import { getBoonById }       from "@/engine/BoonRegistry";
+import { WeaponSkillSystem } from "@/engine/WeaponSkillSystem";
 import { Player }            from "@/engine/Player";
 import { ShopNPC }           from "@/engine/ShopNPC";
 import "@/styles/victory.css";
@@ -105,26 +105,36 @@ function pushPlayerOutOfNPC(player: Player, npc: ShopNPC): void {
 
 // ============================================================
 // [🧱 BLOCK: HUD State]
+// Replaces the old 4-slot consumable hotbar snapshot with the
+// Q/E weapon-skill roll + a 5-boon-slot icon strip. See
+// WeaponSkillRegistry.ts / BoonRegistry.ts.
 // ============================================================
-type BlankHotbar = [HotbarSlot, HotbarSlot, HotbarSlot, HotbarSlot];
+interface BoonChip { icon: string; level: number; }
 
-const BLANK_HOTBAR: BlankHotbar = [
-  { assignedId: null, cooldownMs: 0, durationMs: 0, wardHits: 0 },
-  { assignedId: null, cooldownMs: 0, durationMs: 0, wardHits: 0 },
-  { assignedId: null, cooldownMs: 0, durationMs: 0, wardHits: 0 },
-  { assignedId: null, cooldownMs: 0, durationMs: 0, wardHits: 0 },
+const BLANK_BOON_CHIPS: BoonChip[] = [
+  { icon: '', level: 1 }, { icon: '', level: 1 }, { icon: '', level: 1 },
+  { icon: '', level: 1 }, { icon: '', level: 1 },
 ];
 
 const BLANK_HUD = {
   hp: MAX_HP, stamina: MAX_STAMINA, kills: 0, room: 1, floor: 1,
-  bossHp: 0, bossMaxHp: 0, bossIsEnraged: false, hotbar: BLANK_HOTBAR,
+  bossHp: 0, bossMaxHp: 0, bossIsEnraged: false,
+  qSkillIcon: null as string | null, qSkillName: null as string | null,
+  qCooldownMs: 0, qDurationMs: 0,
+  eSkillIcon: null as string | null, eSkillName: null as string | null,
+  eCooldownMs: 0, eDurationMs: 0,
+  boonSlots: BLANK_BOON_CHIPS,
 };
 
 interface HUDState {
   hp: number; stamina: number; kills: number;
   room: number; floor: number;
   bossHp: number; bossMaxHp: number; bossIsEnraged: boolean;
-  hotbar: BlankHotbar;
+  qSkillIcon: string | null; qSkillName: string | null;
+  qCooldownMs: number; qDurationMs: number;
+  eSkillIcon: string | null; eSkillName: string | null;
+  eCooldownMs: number; eDurationMs: number;
+  boonSlots: BoonChip[];
 }
 
 // ============================================================
@@ -228,35 +238,39 @@ export default function GameCanvas() {
   }, []);
 
   // ============================================================
-  // [🧱 BLOCK: Apply Consumable Effect]
-  // Ward scroll uses getEffectsAtLevel for level-aware hit count.
+  // [🧱 BLOCK: Cast Weapon Skill — Q / E]
+  // Q draws from the scroll pool, E from the potion pool. Both
+  // are gated by uiActive + cooldown, resolved inside
+  // WeaponSkillSystem.castQ/castE.
   // ============================================================
-  const applyConsumableEffect = useCallback((def: ConsumableDef, slotIndex: number) => {
-    const state = stateRef.current;
-    if (!state) return;
-    if (def.id === 'ward_scroll') {
-      const slot        = state.playerConsumables.slots[slotIndex];
-      const level       = state.playerConsumables.getLevel(def.id);
-      const fx          = getEffectsAtLevel(def, level);
-      const leveledHits = fx[0] ?? def.effectValue;
-      slot.wardHits     = Math.max(slot.wardHits, leveledHits);
-    }
-    state.consumableSystem.activate(def, state.player, state);
-    const color = def.kind === 'potion' ? '#4ade80' : '#a78bfa';
-    announce(`${def.icon} ${def.name}`, undefined, color);
-  }, [announce]);
-
-  // ============================================================
-  // [🧱 BLOCK: Mobile Slot Activate]
-  // ============================================================
-  const handleMobileSlotActivate = useCallback((slotIndex: number) => {
+  const castSkill = useCallback((slot: 'Q' | 'E') => {
     const ui = uiActiveRef.current;
     if (ui.menu || ui.shop || ui.gameOver || ui.boonPicker || ui.weaponPicker) return;
     const state = stateRef.current;
     if (!state) return;
-    const activated = state.playerConsumables.activateSlot(slotIndex);
-    if (activated) applyConsumableEffect(activated, slotIndex);
-  }, [applyConsumableEffect]);
+
+    const player  = state.player;
+    const skillId = slot === 'Q' ? player.equippedQSkill : player.equippedESkill;
+    if (!skillId) return;
+    const cooldown = slot === 'Q' ? player.qCooldownMs : player.eCooldownMs;
+    if (cooldown > 0) return;
+
+    if (slot === 'Q') state.weaponSkillSystem.castQ(state, player);
+    else              state.weaponSkillSystem.castE(state, player);
+
+    const def = getSkillDef(skillId);
+    if (def) {
+      const color = slot === 'Q' ? '#38bdf8' : '#a78bfa';
+      announce(`${def.icon} ${def.name}`, undefined, color);
+    }
+  }, [announce]);
+
+  // ============================================================
+  // [🧱 BLOCK: Mobile Skill Activate]
+  // ============================================================
+  const handleMobileSkillActivate = useCallback((slot: 'Q' | 'E') => {
+    castSkill(slot);
+  }, [castSkill]);
 
   // ============================================================
   // [🧱 BLOCK: Mobile Pause Handler]
@@ -300,7 +314,7 @@ export default function GameCanvas() {
 
   // ============================================================
   // [🧱 BLOCK: Weapon Picker Resolved]
-  // [🧱 Phase 2] Fires whatever setup+announce logic was deferred
+  // [Phase 2] Fires whatever setup+announce logic was deferred
   // behind the run-start weapon choice (see handleStart/handleRaidAgain).
   // ============================================================
   const handleWeaponPickerResolved = useCallback(() => {
@@ -360,15 +374,8 @@ export default function GameCanvas() {
       }
 
       if (!e.repeat) {
-        const slotMap: Record<string, number> = { Digit1: 0, Digit2: 1, Digit3: 2, Digit4: 3 };
-        if (e.code in slotMap) {
-          const ui = uiActiveRef.current;
-          if (ui.menu || ui.shop || ui.gameOver || ui.boonPicker || ui.weaponPicker) return;
-          const state = stateRef.current;
-          if (!state) return;
-          const activated = state.playerConsumables.activateSlot(slotMap[e.code]);
-          if (activated) applyConsumableEffect(activated, slotMap[e.code]);
-        }
+        if (e.code === "KeyQ") { castSkillRef.current('Q'); return; }
+        if (e.code === "KeyE") { castSkillRef.current('E'); return; }
       }
     };
 
@@ -390,21 +397,34 @@ export default function GameCanvas() {
       const s = stateRef.current; const r = roomRef.current;
       if (!s) return;
       const boss = s.boss;
-      const hotbarSnap = s.playerConsumables.slots.map((slot) => ({
-        ...slot,
-        _bagCount: slot.assignedId ? s.playerConsumables.bagCount(slot.assignedId) : 0,
-      })) as unknown as BlankHotbar;
+      const p    = s.player;
+
+      const qDef = p.equippedQSkill ? getSkillDef(p.equippedQSkill) : null;
+      const eDef = p.equippedESkill ? getSkillDef(p.equippedESkill) : null;
+
+      const boonSlots: BoonChip[] = s.playerStats.boons.slots.map((slot) => {
+        const def = slot.boonId ? getBoonById(slot.boonId) : null;
+        return { icon: def?.icon ?? '', level: slot.level };
+      });
 
       setHud({
-        hp:            Math.max(0, s.player.hp),
-        stamina:       Math.round(s.player.stamina),
+        hp:            Math.max(0, p.hp),
+        stamina:       Math.round(p.stamina),
         kills:         s.kills,
         room:          r.roomDisplay,
         floor:         r.floor,
         bossHp:        boss && !boss.isDead ? boss.hp    : 0,
         bossMaxHp:     boss                 ? boss.maxHp : 0,
         bossIsEnraged: boss                 ? boss.isEnraged : false,
-        hotbar:        hotbarSnap,
+        qSkillIcon:  qDef?.icon ?? null,
+        qSkillName:  qDef?.name ?? null,
+        qCooldownMs: p.qCooldownMs,
+        qDurationMs: p.qDurationMs,
+        eSkillIcon:  eDef?.icon ?? null,
+        eSkillName:  eDef?.name ?? null,
+        eCooldownMs: p.eCooldownMs,
+        eDurationMs: p.eDurationMs,
+        boonSlots,
       });
       setGold(s.gold);
     }, 100);
@@ -417,6 +437,9 @@ export default function GameCanvas() {
       if (iHoldTimer.current) clearTimeout(iHoldTimer.current);
     };
   }, []);
+
+  const castSkillRef = useRef(castSkill);
+  useEffect(() => { castSkillRef.current = castSkill; }, [castSkill]);
 
   const resetFloorTracking = useCallback(() => { floorKillsRef.current = 0; floorGoldRef.current = 0; }, []);
 
@@ -431,7 +454,7 @@ export default function GameCanvas() {
   // [🧱 BLOCK: Game Start / Reset Helpers]
   // ============================================================
   const resetUIState = useCallback((showMenuAfter: boolean) => {
-    setHud({ ...BLANK_HUD, hotbar: BLANK_HOTBAR }); setGold(0);
+    setHud(BLANK_HUD); setGold(0);
     setIsGameOver(false);    setIsVictory(false);   setVictoryMinimized(false);
     setShowShop(false);      setIsPaused(false);    setIsMidRoom(false);
     setShowInventory(false); setShowMenu(showMenuAfter); setShowTransition(false);
@@ -442,7 +465,7 @@ export default function GameCanvas() {
 
   // ============================================================
   // [🧱 BLOCK: Start Run — Weapon Picker Gate]
-  // [🧱 Phase 2] Room 1 setup + "PREPARE!" announce are deferred
+  // [Phase 2] Room 1 setup + "PREPARE!" announce are deferred
   // behind WeaponPicker resolution via pendingContinueRef — same
   // pattern already used for floor transitions.
   // ============================================================
@@ -583,12 +606,10 @@ export default function GameCanvas() {
     const playerSX = state.camera.toScreenX(player.x + player.width  / 2);
     const playerSY = state.camera.toScreenY(player.y + player.height / 2);
 
-    // 1. Tick consumable timers
-    state.playerConsumables.update(16);
-    // 2. Buff effects + projectile hits
-    state.consumableSystem.update(state, player, 16);
-    // 3. Sync invisibility
-    player.isInvisible = ConsumableSystem.isPhantomActive(state);
+    // 1. Weapon skill buffs + projectile hits
+    state.weaponSkillSystem.update(state, player, 16);
+    // 2. Sync invisibility
+    player.isInvisible = WeaponSkillSystem.isPhantomActive(state);
 
     // ── Death sequence ─────────────────────────────────────
     if (isDyingRef.current) {
@@ -683,8 +704,8 @@ export default function GameCanvas() {
       bossRef.current.draw(state, ctx, state.camera, player);
     }
 
-    // 5. Consumable VFX
-    state.consumableSystem.draw(ctx, state.camera, state, player);
+    // 5. Weapon skill VFX
+    state.weaponSkillSystem.draw(ctx, state.camera, state, player);
     // 6. Player
     player.draw(ctx, state.camera);
     // 7. Fog
@@ -714,7 +735,11 @@ export default function GameCanvas() {
           room={hud.room} floor={hud.floor} gold={gold}
           bossHp={hud.bossHp} bossMaxHp={hud.bossMaxHp} bossIsEnraged={hud.bossIsEnraged}
           roomPhase={roomRef.current.phase}
-          hotbar={hud.hotbar}
+          qSkillIcon={hud.qSkillIcon} qSkillName={hud.qSkillName}
+          qCooldownMs={hud.qCooldownMs} qDurationMs={hud.qDurationMs}
+          eSkillIcon={hud.eSkillIcon} eSkillName={hud.eSkillName}
+          eCooldownMs={hud.eCooldownMs} eDurationMs={hud.eDurationMs}
+          boonSlots={hud.boonSlots}
           isMobile={isMobile}
         />
       )}
@@ -731,7 +756,7 @@ export default function GameCanvas() {
           isMobile={isMobile}
           onPause={handleMobilePause}
           onInventory={handleMobileInventory}
-          onSlotActivate={handleMobileSlotActivate}
+          onSkillActivate={handleMobileSkillActivate}
         />
       )}
 
@@ -739,7 +764,7 @@ export default function GameCanvas() {
         <Shop
           floor={roomRef.current.floor} room={roomRef.current.roomDisplay}
           gold={gold} playerStats={state.playerStats} player={state.player}
-          playerConsumables={state.playerConsumables} isMidRoom={isMidRoom}
+          isMidRoom={isMidRoom}
           onGoldChange={handleGoldChange} onContinue={handleNpcClose} onClose={handleNpcClose}
         />
       )}
@@ -747,7 +772,6 @@ export default function GameCanvas() {
       {showInventory && state && (
         <Inventory
           playerStats={state.playerStats} player={state.player} gold={gold}
-          playerConsumables={state.playerConsumables}
           onGoldChange={handleGoldChange} onClose={handleInventoryClose}
         />
       )}

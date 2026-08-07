@@ -6,6 +6,9 @@ import { spawnBurst } from "./Particle";
 
 // ============================================================
 // [🧱 BLOCK: Boon Types]
+// arcane_focus/battle_focus added for Phase 3 — level the Q/E
+// weapon skill slots. They use the normal per-slot upgrade curve
+// like every other boon (no special-cased cost).
 // ============================================================
 export type BoonId =
   | 'iron_warden'      // was armor set
@@ -20,7 +23,9 @@ export type BoonId =
   | 'vampire'
   | 'overclock'
   | 'juggernaut'
-  | 'last_stand';
+  | 'last_stand'
+  | 'arcane_focus'
+  | 'battle_focus';
 
 export const MAX_BOON_LEVEL = 5;
 
@@ -29,6 +34,11 @@ export const MAX_BOON_LEVEL = 5;
 // Moved from CharmRegistry.ts — additive modifiers applied on
 // top of base stats. PlayerStats reads these to compute final
 // values. Boons write into this shared struct via onEquip/onRemove.
+//
+// qSkillLevelBonus/eSkillLevelBonus — written by Arcane Focus /
+// Battle Focus. PlayerStats.qSkillLevel/eSkillLevel read these
+// directly as the effective skill level (1–5), falling back to
+// level 1 when no such boon is equipped (value stays 0).
 // ============================================================
 export interface PlayerStatModifiers {
   bonusAtk:          number;  // Flat ATK bonus
@@ -39,6 +49,8 @@ export interface PlayerStatModifiers {
   staminaRegenMult:  number;  // Multiplier (1.0 = normal)
   dashCostReduction: number;  // Flat reduction to dash cost
   healOnKill:        number;  // HP healed per kill
+  qSkillLevelBonus:  number;  // Effective Q skill level while Arcane Focus equipped
+  eSkillLevelBonus:  number;  // Effective E skill level while Battle Focus equipped
 }
 
 export function defaultModifiers(): PlayerStatModifiers {
@@ -51,6 +63,8 @@ export function defaultModifiers(): PlayerStatModifiers {
     staminaRegenMult:  1.0,
     dashCostReduction: 0,
     healOnKill:        0,
+    qSkillLevelBonus:  0,
+    eSkillLevelBonus:  0,
   };
 }
 
@@ -90,9 +104,9 @@ export function getBoonEffectsAtLevel(def: BoonDef, level: number): BoonLevelEff
 
 // ============================================================
 // [🧱 BLOCK: Boon Pool]
-// 13 boons — 3 former armor sets + 10 former charms, converted
-// to individually-leveled boons. Values ported from the Phase 1
-// spec's draft tables.
+// 15 boons — the original 13 (3 former armor sets + 10 former
+// charms) plus arcane_focus/battle_focus (Phase 3 — skill slot
+// leveling). Values ported from the Phase 1 spec's draft tables.
 // ============================================================
 export const BOON_POOL: BoonDef[] = [
 
@@ -349,6 +363,41 @@ export const BOON_POOL: BoonDef[] = [
     onEquip:  () => {},
     onRemove: () => {},
   },
+
+  // ── Arcane Focus (Phase 3 — levels the Q weapon skill) ─────
+  // Slot level directly sets the effective Q skill level while
+  // equipped (see PlayerStats.qSkillLevel). Uses the standard
+  // per-slot upgrade curve — no special-cased cost.
+  {
+    id: 'arcane_focus', name: 'Arcane Focus', icon: '📘',
+    description: (lvl) => `Your Q skill performs as if it were Level ${lvl}.`,
+    cost: 90,
+    effectsByLevel: [
+      { qSkillLevelBonus: 1 },
+      { qSkillLevelBonus: 2 },
+      { qSkillLevelBonus: 3 },
+      { qSkillLevelBonus: 4 },
+      { qSkillLevelBonus: 5 },
+    ],
+    onEquip:  (_p, m, lvl) => { m.qSkillLevelBonus += lvl; },
+    onRemove: (_p, m, lvl) => { m.qSkillLevelBonus -= lvl; },
+  },
+
+  // ── Battle Focus (Phase 3 — levels the E weapon skill) ─────
+  {
+    id: 'battle_focus', name: 'Battle Focus', icon: '📕',
+    description: (lvl) => `Your E skill performs as if it were Level ${lvl}.`,
+    cost: 90,
+    effectsByLevel: [
+      { eSkillLevelBonus: 1 },
+      { eSkillLevelBonus: 2 },
+      { eSkillLevelBonus: 3 },
+      { eSkillLevelBonus: 4 },
+      { eSkillLevelBonus: 5 },
+    ],
+    onEquip:  (_p, m, lvl) => { m.eSkillLevelBonus += lvl; },
+    onRemove: (_p, m, lvl) => { m.eSkillLevelBonus -= lvl; },
+  },
 ];
 
 // Self-reference used inside onEquip/onRemove closures above so each
@@ -376,10 +425,10 @@ export function getRandomBoons(excludeIds: string[], count: number = 3): BoonDef
 // ============================================================
 // [🧱 BLOCK: Ultimate Effects — Level 5 Only]
 // Ported from the old ArmorRegistry.ts 5-piece bonuses. Called
-// externally by HordeSystem/BossSystem (Batch 2) — not wired
-// through onHit/onKill hooks, matching the original design where
-// these were free functions gated on an "equipped count" check
-// (now a boon-level check instead).
+// externally by HordeSystem/BossSystem — not wired through
+// onHit/onKill hooks, matching the original design where these
+// were free functions gated on an "equipped count" check (now a
+// boon-level check instead).
 // ============================================================
 
 export function tryIronWardenReflect(level: number, attacker: BaseEnemy): void {

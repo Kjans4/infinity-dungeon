@@ -3,7 +3,6 @@ import { Player }                               from "../Player";
 import { Camera }                               from "../Camera";
 import { Door }                                 from "../Door";
 import { ShopNPC }                              from "../ShopNPC";
-import { ConsumableDrop }                       from "../ConsumableDrop";
 import { BaseEnemy }                            from "../enemy/BaseEnemy";
 import { Grunt, Shooter, Tank, spawnWave }      from "../enemy";
 import { Dasher }                               from "../enemy/Dasher";
@@ -14,9 +13,8 @@ import { GameState }                            from "../GameState";
 import { GoldSystem }                           from "./GoldSystem";
 import { WeaponSystem }                         from "./WeaponSystem";
 import { RenderSystem, FREEZE_PRESETS }         from "./RenderSystem";
-import { ConsumableSystem }                     from "../ConsumableSystem";
+import { WeaponSkillSystem }                    from "../WeaponSkillSystem";
 import { spawnBurst, spawnHitSpark, spawnDamageNumber } from "../Particle";
-import { getRandomConsumableDrop }              from "../items/ItemPool";
 import { circleCircle, rectCenter }             from "../Collision";
 import {
   isRendMarked, clearRendMark, REND_BONUS_DAMAGE,
@@ -65,21 +63,6 @@ const PARRY_WINDUP_RADIUS = 80;
 const SEPARATION_PASSES   = 2;
 const SEPARATION_STRENGTH = 0.4;
 const TANK_RADIUS_BONUS   = 10;
-
-// ============================================================
-// [🧱 BLOCK: Consumable Drop Chances]
-// [🧱 Phase 2] Weapon ground drops removed entirely — weapons
-// are Shop-only now (see docs/phase-2-weapon-lock.md). Consumable
-// drops are untouched by this phase.
-// ============================================================
-const CONSUMABLE_DROP_CHANCE = {
-  grunt:   0.04,
-  shooter: 0.06,
-  tank:    0.10,
-  dasher:  0.05,
-  bomber:  0.07,
-};
-const ELITE_CONSUMABLE_MULT = 1.5;
 
 // ============================================================
 // [🧱 BLOCK: Volatile Explosion Constants]
@@ -190,7 +173,6 @@ export class HordeSystem {
     state.roomEntryTime  = Date.now();
     state.projectiles    = [];
     state.goldDrops      = [];
-    state.consumableDrops = [];
     state.particles      = [];
     state.hitSparks      = [];
     state.damageNumbers  = [];
@@ -221,7 +203,6 @@ export class HordeSystem {
     state.enemies         = [];
     state.projectiles     = [];
     state.goldDrops       = [];
-    state.consumableDrops = [];
     state.particles       = [];
     state.hitSparks       = [];
     state.damageNumbers   = [];
@@ -344,8 +325,8 @@ export class HordeSystem {
   ): boolean {
     if (player.iFrames > 0) return true;
 
-    if (ConsumableSystem.wardCanAbsorb(state)) {
-      ConsumableSystem.consumeWardHit(state);
+    if (WeaponSkillSystem.wardCanAbsorb(state)) {
+      WeaponSkillSystem.consumeWardHit(state);
       state.particles.push(...spawnBurst(
         player.x + player.width  / 2,
         player.y + player.height / 2,
@@ -354,7 +335,7 @@ export class HordeSystem {
       return true;
     }
 
-    const ironMult = ConsumableSystem.ironDamageReductionMult(state);
+    const ironMult = WeaponSkillSystem.ironDamageReductionMult(state);
     let   dmg      = Math.round(rawDamage * ironMult);
 
     dmg = this.resolveBlock(player, dmg);
@@ -544,7 +525,7 @@ export class HordeSystem {
     const threshold = this.getThreshold(rs.floor, isElite);
     const thresholdMet = state.kills >= threshold;
 
-    const playerIsInvisible = ConsumableSystem.isPhantomActive(state);
+    const playerIsInvisible = WeaponSkillSystem.isPhantomActive(state);
 
     // ── Door ─────────────────────────────────────────────────
     if (state.door) {
@@ -691,7 +672,7 @@ export class HordeSystem {
     const isHeavy  = player.attackType === "heavy" || player.attackType === "charged_heavy";
     const isLight  = player.attackType === "light" || player.attackType === "charged_light";
 
-    const atkBonus = ps.atkBonus + ps.lastStandBonus(player) + ConsumableSystem.wrathAtkBonus(state);
+    const atkBonus = ps.atkBonus + ps.lastStandBonus(player) + WeaponSkillSystem.wrathAtkBonus(state);
     const passive  = ps.weaponPassive;
 
     if (passive?.id === 'glaive' && player.isAttacking) {
@@ -743,7 +724,7 @@ export class HordeSystem {
       });
     }
 
-    // ── Kill tracking + loot rolls ────────────────────────────
+    // ── Kill tracking + gold rolls ─────────────────────────────
     const before      = state.enemies.length;
     const deadEnemies = state.enemies.filter((e) => e.isDead);
     state.enemies     = state.enemies.filter((e) => !e.isDead);
@@ -760,13 +741,6 @@ export class HordeSystem {
       this.syncFarmingAliveCount(justKilled);
 
       deadEnemies.forEach((enemy) => {
-        const type: keyof typeof CONSUMABLE_DROP_CHANCE =
-          enemy instanceof Tank    ? "tank"    :
-          enemy instanceof Shooter ? "shooter" :
-          enemy instanceof Dasher  ? "dasher"  :
-          enemy instanceof Bomber  ? "bomber"  :
-                                     "grunt";
-
         const goldType: "grunt" | "shooter" | "tank" | "boss" =
           enemy instanceof Tank    ? "tank"    :
           enemy instanceof Shooter ? "shooter" :
@@ -792,17 +766,6 @@ export class HordeSystem {
           this.handleVolatileExplosion(state, enemy, player, ps, render);
         }
 
-        const cBaseChance = CONSUMABLE_DROP_CHANCE[type];
-        const cChance     = isElite ? cBaseChance * ELITE_CONSUMABLE_MULT : cBaseChance;
-        if (Math.random() < cChance) {
-          const consumableDef = getRandomConsumableDrop();
-          state.consumableDrops.push(new ConsumableDrop(
-            enemy.x + enemy.width  / 2 + (Math.random() - 0.5) * 20,
-            enemy.y + enemy.height / 2 + (Math.random() - 0.5) * 20,
-            consumableDef
-          ));
-        }
-
         if (ps.healOnKill > 0) {
           player.hp = Math.min(player.maxHp, player.hp + ps.healOnKill);
         }
@@ -810,19 +773,6 @@ export class HordeSystem {
         onBloodReaperKill(brLevel, enemy, state.enemies, state);
       });
     }
-
-    // ── Consumable drop auto-pickup ───────────────────────────
-    state.consumableDrops = state.consumableDrops.filter((drop) => {
-      if (drop.collected) return false;
-      drop.update(player);
-      if (drop.collected) {
-        state.playerConsumables.addToBag(drop.def, 1);
-        state.particles.push(...spawnBurst(drop.x, drop.y,
-          drop.def.kind === 'potion' ? '#a78bfa' : '#38bdf8', 5, 0.8));
-        return false;
-      }
-      return true;
-    });
 
     // ── Wave spawning ─────────────────────────────────────────
     const now          = Date.now();
@@ -907,7 +857,6 @@ export class HordeSystem {
     state.shopNpc?.draw(ctx, camera, worldW);
     state.enemies.forEach((e)           => e.draw(ctx, camera));
     state.projectiles.forEach((p)       => p.draw(ctx, camera));
-    state.consumableDrops.forEach((d)   => d.draw(ctx, camera));
     this.goldSystem.draw(state, ctx, camera);
 
     state.particles.forEach((p)   => p.update());

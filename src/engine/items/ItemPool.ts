@@ -2,12 +2,12 @@
 import { WeaponItem }                          from "./types";
 import { WEAPON_ITEM_POOL }                    from "./WeaponItemRegistry";
 import { BoonDef, BOON_POOL, getRandomBoons }  from "../BoonRegistry";
-import { ConsumableDef, POTION_POOL, SCROLL_POOL } from "../ConsumableRegistry";
 
 // ============================================================
 // [🧱 BLOCK: Shop Item Union]
-// A shop slot holds a boon offer or a weapon offer. Consumables
-// are sold separately via the Provisions section (unchanged).
+// A shop slot holds a boon offer or a weapon offer. Potions/
+// scrolls are no longer purchasable individually as of Phase 3 —
+// they come from the weapon's random Q/E skill roll instead.
 // ============================================================
 export type ShopItem =
   | (WeaponItem & { kind: 'weapon' })
@@ -71,28 +71,4 @@ export function getRandomShopItems(
 // ============================================================
 export function getRandomChestBoons(ownedBoonIds: string[], count: number = 3): BoonDef[] {
   return getRandomBoons(ownedBoonIds, count);
-}
-
-// ============================================================
-// [🧱 BLOCK: Get Random Consumable Drop]
-// Used by HordeSystem to spawn consumable ground drops.
-// Weighted: potions slightly more common than scrolls.
-// ============================================================
-export function getRandomConsumableDrop(): ConsumableDef {
-  const usePotion = Math.random() < 0.55;
-  const pool      = usePotion ? POTION_POOL : SCROLL_POOL;
-  return pool[Math.floor(Math.random() * pool.length)];
-}
-
-// ============================================================
-// [🧱 BLOCK: Get Shop Consumable Options]
-// Returns a fixed set of consumables for the shop provisions
-// section — one of each potion + a selection of scrolls.
-// Shuffled so the merchant feels different each visit.
-// ============================================================
-export function getShopConsumableOptions(): ConsumableDef[] {
-  const potions  = [...POTION_POOL].sort(() => Math.random() - 0.5);
-  const scrolls  = [...SCROLL_POOL].sort(() => Math.random() - 0.5);
-  // Show all 4 potions + 3 random scrolls = 7 items
-  return [...potions, ...scrolls.slice(0, 3)];
 }
