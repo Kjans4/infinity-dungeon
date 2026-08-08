@@ -27,7 +27,7 @@ import FloorTransition       from "@/components/overlays/FloorTransition";
 import { spawnBurst }        from "@/engine/Particle";
 import { getRandomChestBoons } from "@/engine/items/ItemPool";
 import { getRandomWeaponItems } from "@/engine/items/WeaponItemRegistry";
-import { getSkillDef, SKILL_COOLDOWN_MS } from "@/engine/WeaponSkillRegistry";
+import { getSkillDef } from "@/engine/WeaponSkillRegistry";
 import { getBoonById }       from "@/engine/BoonRegistry";
 import { WeaponSkillSystem } from "@/engine/WeaponSkillSystem";
 import { Player }            from "@/engine/Player";
@@ -241,7 +241,8 @@ export default function GameCanvas() {
   // [🧱 BLOCK: Cast Weapon Skill — Q / E]
   // Q draws from the scroll pool, E from the potion pool. Both
   // are gated by uiActive + cooldown, resolved inside
-  // WeaponSkillSystem.castQ/castE.
+  // WeaponSkillSystem.castQ/castE. Casting is silent — no HUD
+  // announcement — the projectile/particle VFX is the feedback.
   // ============================================================
   const castSkill = useCallback((slot: 'Q' | 'E') => {
     const ui = uiActiveRef.current;
@@ -257,13 +258,7 @@ export default function GameCanvas() {
 
     if (slot === 'Q') state.weaponSkillSystem.castQ(state, player);
     else              state.weaponSkillSystem.castE(state, player);
-
-    const def = getSkillDef(skillId);
-    if (def) {
-      const color = slot === 'Q' ? '#38bdf8' : '#a78bfa';
-      announce(`${def.icon} ${def.name}`, undefined, color);
-    }
-  }, [announce]);
+  }, []);
 
   // ============================================================
   // [🧱 BLOCK: Mobile Skill Activate]
